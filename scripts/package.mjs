@@ -41,6 +41,7 @@ mkdirSync(join(stage, 'app'), { recursive: true })
 cpSync(process.execPath, join(stage, 'node', 'node.exe'))
 cpSync(join(root, 'launcher/JARVIS.vbs'), join(stage, 'JARVIS.vbs'))
 cpSync(join(root, 'LICENSE'), join(stage, 'LICENSE'))
+cpSync(join(root, 'DISCLAIMER.txt'), join(stage, 'DISCLAIMER.txt'))
 cpSync(join(root, 'bridge'), join(stage, 'app/bridge'), {
   recursive: true,
   filter: (src) => !src.endsWith('.test.mjs'),
