@@ -22,6 +22,8 @@ Compression=lzma2/normal
 SolidCompression=yes
 WizardStyle=modern
 LicenseFile=stage\LICENSE
+; Shown after the license: who JARVIS is and is not affiliated with.
+InfoBeforeFile=stage\DISCLAIMER.txt
 UninstallDisplayName=JARVIS
 
 [Tasks]

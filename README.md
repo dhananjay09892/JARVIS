@@ -505,6 +505,21 @@ All of this lives in `bridge/server.mjs`:
 
 ---
 
+## Disclaimer
+
+JARVIS is an independent, free, non-commercial fan project. It is **not** made,
+approved, endorsed or sponsored by Marvel, Disney, Anthropic or ElevenLabs.
+The name J.A.R.V.I.S. is a tribute to Marvel's Iron Man stories; "Iron Man",
+"J.A.R.V.I.S." and "Marvel" belong to their owners (including Marvel
+Characters, Inc. and The Walt Disney Company), and no footage, images or voice
+recordings from any film are included. "Claude" and "Claude Code" are Anthropic's,
+"ElevenLabs" is ElevenLabs, Inc.'s; you use your own accounts under their terms.
+Provided "as is" with no warranty. Rights holders with a concern: please open an
+[issue](https://github.com/dhananjay09892/JARVIS/issues). Full text:
+[DISCLAIMER.txt](DISCLAIMER.txt).
+
+---
+
 ## Credits & licence
 
 MIT.

@@ -1,0 +1,45 @@
+JARVIS - DISCLAIMER
+
+JARVIS is an independent, free, non-commercial fan project.
+
+NOT AFFILIATED
+JARVIS is not made, approved, endorsed or sponsored by Marvel, Disney, or anyone
+connected with the Iron Man films or comics. It is not an official product of
+any of them.
+
+ABOUT THE NAME
+The name J.A.R.V.I.S. ("Just A Rather Very Intelligent System") comes from
+Marvel's Iron Man stories. It is used here only as a tribute. "Iron Man",
+"J.A.R.V.I.S.", "Marvel" and related names, characters and logos are trademarks
+or copyrights of their respective owners, including Marvel Characters, Inc. and
+The Walt Disney Company. No rights in them are claimed. JARVIS contains no
+footage, images, sound or voice recordings from any film, show or comic.
+
+CLAUDE, ANTHROPIC AND OTHER BRANDS
+"Claude" and "Claude Code" are products of Anthropic, PBC. "ElevenLabs" is a
+product of ElevenLabs, Inc. JARVIS is not affiliated with, endorsed by, or
+sponsored by either company. You use your own Claude subscription and your own
+optional ElevenLabs key, under those companies' own terms. All other product
+names belong to their owners.
+
+NO WARRANTY
+JARVIS is provided "as is", under the MIT license, with no promises of any kind.
+It can make mistakes, and what an AI says can be wrong. To the fullest extent
+the law allows, the author is not responsible for any loss or damage from using
+it.
+
+YOU STAY IN CONTROL
+By default JARVIS can look and answer, but it cannot change anything on your
+computer. If you turn on "Let JARVIS take real actions" it can run commands and
+change files. You are responsible for what you approve - read each approval
+before you accept it.
+
+YOUR DATA
+Your settings, keys and memories are stored on your own computer. What you say
+to JARVIS is sent to the services you connect (for example Claude, and
+ElevenLabs if you add a key), under their own privacy terms.
+
+QUESTIONS OR CONCERNS
+If you are a rights holder with a concern about this project, please open an
+issue at https://github.com/dhananjay09892/JARVIS/issues and it will be
+answered promptly.
