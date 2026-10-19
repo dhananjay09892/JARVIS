@@ -55,6 +55,13 @@
   letter-spacing: 0.2em;
   cursor: pointer;
 }
+/* Dialogs portalled out of .hud keep the HUD's lettering. */
+.hud-modal {
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+}
 .mem-card { color: #cfe8ff; font-size: 13px; }
 .mem-head { display: flex; justify-content: space-between; align-items: center; }
 .mem-tabs { display: flex; gap: 8px; margin: 8px 0; }
