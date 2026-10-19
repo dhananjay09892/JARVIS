@@ -32,3 +32,6 @@ jarvis-memory*
 *.sqlite-wal
 *.sqlite-shm
 .jarvis-memory/
+
+installer/stage/
+dist-installer/

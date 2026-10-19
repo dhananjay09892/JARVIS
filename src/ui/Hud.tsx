@@ -9,6 +9,7 @@ import { GestureGuide } from './GestureGuide'
 import { LANGUAGE_OPTIONS } from '../lib/language'
 import { Approvals } from './Approvals'
 import { Memory } from './Memory'
+import { Settings } from './Settings'
 
 const statusText: Record<Phase, string> = {
   offline: 'OFFLINE',
@@ -201,6 +202,7 @@ export function Hud() {
 
         <div className="status">
           <Memory />
+          <Settings />
           <label className="language-picker">
             <span>INPUT</span>
             <select

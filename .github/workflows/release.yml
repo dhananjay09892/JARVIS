@@ -1,0 +1,39 @@
+name: Windows installer
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Bridge tests
+        run: node --test bridge/settings.test.mjs bridge/approvals.test.mjs bridge/apps.test.mjs bridge/development.test.mjs bridge/memory.test.mjs bridge/workspace.test.mjs
+      - run: node scripts/package.mjs
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json | ConvertFrom-Json).version
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$v" installer\jarvis.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-Setup
+          path: dist-installer/JARVIS-Setup.exe
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-installer/JARVIS-Setup.exe

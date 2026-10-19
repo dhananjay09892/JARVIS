@@ -31,11 +31,14 @@ import { memoryServer, isMemoryTool } from './memory-tools.mjs'
 import { developmentServer } from './development.mjs'
 import { approvalQueue } from './approvals.mjs'
 import { homedir, tmpdir } from 'node:os'
-import { readFileSync, readdirSync, realpathSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
+import { setting, updateSettings, publicSettings, readSettings } from './settings.mjs'
+import { claudeStatus, startClaudeLogin } from './claude-cli.mjs'
+import { fileURLToPath } from 'node:url'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
 
@@ -161,7 +164,8 @@ function originAllowed(origin) {
   }
   if (url.protocol !== 'http:') return false
   if (!LOCAL_HOSTS.has(url.hostname)) return false
-  return isDevPort(Number(url.port))
+  // The installed app serves its own UI from this port.
+  return isDevPort(Number(url.port)) || Number(url.port) === PORT
 }
 
 /**
@@ -172,13 +176,14 @@ function originAllowed(origin) {
  * runs a shell, or changes the world waits for JARVIS_ALLOW_WRITES=1. Start
  * without it, and turn it on once you trust what you're demoing.
  */
-const ALLOW_WRITES = process.env.JARVIS_ALLOW_WRITES === '1'
+const ALLOW_WRITES =
+  process.env.JARVIS_ALLOW_WRITES === '1' || readSettings().JARVIS_ALLOW_WRITES === '1'
 
 /**
  * The orchestrator model. Override with JARVIS_MODEL to trade quality for pace
  * — claude-sonnet-5 is noticeably snappier on camera if Opus feels slow.
  */
-const MODEL = process.env.JARVIS_MODEL ?? 'claude-opus-5'
+const MODEL = setting('JARVIS_MODEL') ?? 'claude-opus-5'
 
 /**
  * How hard the model thinks before answering.
@@ -195,7 +200,7 @@ const MODEL = process.env.JARVIS_MODEL ?? 'claude-opus-5'
  * matters more than pace; drop back to 'low' when filming and every second of
  * dead air shows.
  */
-const EFFORT = process.env.JARVIS_EFFORT ?? 'high'
+const EFFORT = setting('JARVIS_EFFORT') ?? 'high'
 
 /**
  * Both spellings of every renamed built-in are listed on purpose. The SDK
@@ -581,7 +586,8 @@ Using tools:
  * never sees it: it POSTs text to /tts here and gets audio back.
  */
 function elevenKey() {
-  if (process.env.ELEVENLABS_API_KEY) return process.env.ELEVENLABS_API_KEY
+  const configured = setting('ELEVENLABS_API_KEY')
+  if (configured) return configured
   try {
     const cfg = JSON.parse(
       readFileSync(join(homedir(), '.claude.json'), 'utf8'),
@@ -592,7 +598,7 @@ function elevenKey() {
   }
 }
 
-const VOICE_ID = process.env.JARVIS_VOICE_ID ?? 'JBFqnCBsd6RMkjVDRZzb'
+const VOICE_ID = setting('JARVIS_VOICE_ID') ?? 'JBFqnCBsd6RMkjVDRZzb'
 const HINDI_VOICE_ID = process.env.JARVIS_HINDI_VOICE_ID ?? VOICE_ID
 
 /**
@@ -795,6 +801,24 @@ function corsFor(req) {
   return headers
 }
 
+/** Built UI, served by the bridge when it exists (installed app). */
+const DIST_DIR = (() => {
+  const dir = fileURLToPath(new URL('../dist', import.meta.url))
+  return existsSync(join(dir, 'index.html')) ? dir : null
+})()
+const STATIC_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.mp3': 'audio/mpeg',
+  '.wasm': 'application/wasm',
+  '.onnx': 'application/octet-stream',
+}
+
 // One HTTP server for both the speech proxy and the WebSocket upgrade.
 const http = await import('node:http')
 
@@ -943,6 +967,82 @@ const handleRequest = async (req, res) => {
   }
 
   const requestUrl = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`)
+
+  // ---- Settings & first-run setup -------------------------------------
+  // Secrets never leave this process: the page learns only "set / not set".
+  // Writes need a real, allowed Origin (a browser page of ours) — curl and
+  // scripts are refused even if JARVIS_ALLOW_NO_ORIGIN is on.
+  if (requestUrl.pathname === '/settings') {
+    if (req.method === 'GET') {
+      res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify(publicSettings()))
+    }
+    if (req.method === 'POST') {
+      if (!origin) {
+        res.writeHead(403, cors)
+        return res.end('forbidden')
+      }
+      let body = ''
+      for await (const chunk of req) {
+        body += chunk
+        if (body.length > 8 * 1024) {
+          req.destroy()
+          res.writeHead(400, cors)
+          return res.end('body too large')
+        }
+      }
+      try {
+        updateSettings(JSON.parse(body || '{}'))
+      } catch (err) {
+        res.writeHead(400, { ...cors, 'content-type': 'application/json' })
+        return res.end(JSON.stringify({ ok: false, reason: String(err?.message ?? err) }))
+      }
+      res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ ok: true, ...publicSettings() }))
+    }
+  }
+
+  // Is Claude Code installed and signed in? The brain cannot work without it.
+  if (req.method === 'GET' && requestUrl.pathname === '/setup/status') {
+    const c = claudeStatus()
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(
+      JSON.stringify({ claudeInstalled: c.installed, claudeVersion: c.version, claudeLoggedIn: c.loggedIn }),
+    )
+  }
+
+  // "Sign in" button: opens the Claude sign-in page in the user's browser.
+  if (req.method === 'POST' && requestUrl.pathname === '/setup/claude-login') {
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    startClaudeLogin()
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ ok: true }))
+  }
+
+  // "Test key" button: ask ElevenLabs who we are. Uses the saved key.
+  if (req.method === 'POST' && requestUrl.pathname === '/setup/test-elevenlabs') {
+    const key = elevenKey()
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    if (!key) return res.end(JSON.stringify({ ok: false, reason: 'No key saved yet.' }))
+    try {
+      const r = await fetch('https://api.elevenlabs.io/v1/user', {
+        headers: { 'xi-api-key': key },
+        signal: AbortSignal.timeout(10000),
+      })
+      return res.end(
+        JSON.stringify(
+          r.ok
+            ? { ok: true }
+            : { ok: false, reason: r.status === 401 ? 'ElevenLabs rejected that key.' : `ElevenLabs answered ${r.status}.` },
+        ),
+      )
+    } catch {
+      return res.end(JSON.stringify({ ok: false, reason: 'Could not reach ElevenLabs. Check your internet.' }))
+    }
+  }
 
   if (req.method === 'POST' && requestUrl.pathname === '/tts') {
     const key = elevenKey()
@@ -1108,6 +1208,25 @@ const handleRequest = async (req, res) => {
     } catch (err) {
       res.writeHead(502, cors)
       return res.end(String(err?.message ?? err))
+    }
+  }
+
+  // The installed app has no Vite: serve the built UI (dist/) from here.
+  if (req.method === 'GET' && DIST_DIR) {
+    const name = decodeURIComponent(requestUrl.pathname)
+    const wanted = resolvePath(DIST_DIR, '.' + (name === '/' ? '/index.html' : name))
+    const inside = relative(DIST_DIR, wanted)
+    if (!inside.startsWith('..') && !isAbsolute(inside)) {
+      try {
+        const info = await stat(wanted)
+        if (info.isFile()) {
+          const type = STATIC_TYPES[wanted.slice(wanted.lastIndexOf('.')).toLowerCase()]
+          res.writeHead(200, { ...cors, 'content-type': type ?? 'application/octet-stream' })
+          return res.end(await readFile(wanted))
+        }
+      } catch {
+        /* fall through to 404 */
+      }
     }
   }
 
