@@ -13,9 +13,53 @@ laptop only has to draw the interface. **ElevenLabs is an optional add-on** that
 gives JARVIS a much better voice and sharper hearing; without it he speaks and
 listens through the browser's own speech, and everything still works.
 
+**Just want to use it?** Skip to [Install on Windows](#install-on-windows-no-setup-no-commands):
+download one installer and run it.
+
 ---
 
-## Requirements
+## Install on Windows (no setup, no commands)
+
+**1. Download the installer:**
+[**JARVIS-Setup.exe**](https://github.com/dhananjay09892/JARVIS/releases/latest/download/JARVIS-Setup.exe)
+(about 140 MB, Windows 10 or 11). Step-by-step pictures and help:
+[jarvis.pateldhananjay.com](https://www.jarvis.pateldhananjay.com/).
+
+**2. Double-click it and click Next, Install, Finish.** It installs just for you,
+so there is no administrator prompt. Windows may show *"Windows protected your PC"*
+because the installer is not code-signed yet: click **More info**, then
+**Run anyway**.
+
+**3. First start.** JARVIS opens in its own window and shows a short welcome:
+**Sign in** with your Claude account (Claude Code is already included in the
+installer — there is nothing else to install), optionally paste an ElevenLabs key
+for a better voice (you can skip it), then click **INITIALISE**, allow the
+microphone, and say **"Hey Jarvis"**.
+
+That is all you need. You do **not** need Node.js, `npm`, git or a terminal.
+
+**What you need besides the installer:** a Claude subscription, a microphone, and
+Google Chrome or Microsoft Edge.
+
+**Changing things later.** Click **SETTINGS** at the top right to add or remove the
+ElevenLabs key, change the model and effort, or allow JARVIS to take real actions
+(off by default). Model, effort and actions apply after you restart JARVIS.
+
+**Updating.** When a newer version exists, an **UPDATE** button appears at the top
+right. Download the new installer and run it; your settings and memories are kept.
+
+**Uninstalling.** Windows **Settings → Apps → Installed apps → JARVIS → Uninstall**.
+Your settings are kept in `%APPDATA%\JARVIS` and memories in
+`%LOCALAPPDATA%\JARVIS`; delete those folders too to erase everything.
+
+---
+
+## Run from source (developers)
+
+Everyone else can skip this section. Running from source needs Node.js, npm and
+a terminal, and is for working on JARVIS itself.
+
+### Requirements
 
 **In one line:** a Claude Code subscription, plus two free things every computer
 can have — Node.js and Chrome. That's the whole list.
@@ -40,7 +84,7 @@ language.
 
 ---
 
-## Quick start
+### Quick start
 
 First, install, then start it:
 
