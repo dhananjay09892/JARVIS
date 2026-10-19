@@ -1,12 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, mkdir, writeFile, symlink, link } from 'node:fs/promises'
+import { mkdtemp, rm, mkdir, writeFile, symlink, link, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { workspaceFiles } from './workspace.mjs'
 
 test('workspace files are scoped and edits require a matching version', async () => {
-  const temporary = await mkdtemp(join(tmpdir(), 'jarvis-workspace-test-'))
+  // realpath: some runners hand out 8.3 short temp paths (RUNNER~1) that the code resolves to long ones.
+  const temporary = await realpath(await mkdtemp(join(tmpdir(), 'jarvis-workspace-test-')))
   const root = join(temporary, 'workspace')
   const outside = join(temporary, 'outside')
   await mkdir(root)
