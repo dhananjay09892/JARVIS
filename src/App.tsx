@@ -57,6 +57,10 @@ const AWAIT_SPEECH_MS = 14000
  *  again to continue a thought. */
 const FOLLOW_UP_MS = 11000
 
+/** Carry on within this long of a turn being sent, before he has started
+ *  answering, and the new words are joined to the old ones as one request. */
+const CONTINUE_WINDOW_MS = 15000
+
 /** crypto.randomUUID needs a secure context, which a LAN address over plain
  *  http is not. Not worth failing a whole turn over an id. */
 const newId = () =>
@@ -86,6 +90,10 @@ export default function App() {
    * the phase, the speaker, or the busy state on its way to the floor.
    */
   const turn = useRef(0)
+  /** The request most recently sent, and when. */
+  const lastSent = useRef<{ said: string; at: number } | null>(null)
+  /** Set when you start talking again while he is still only thinking. */
+  const carry = useRef<{ said: string; at: number } | null>(null)
   const booting = useRef(false)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const voicePoll = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -130,6 +138,7 @@ export default function App() {
   const respond = async (said: string): Promise<void> => {
     const mine = ++turn.current
     const stale = () => mine !== turn.current
+    lastSent.current = { said, at: Date.now() }
 
     clearIdle()
     const s = store.getState()
@@ -302,6 +311,12 @@ export default function App() {
     const wasBusy =
       phase === 'thinking' || phase === 'tooling' || phase === 'speaking'
 
+    // A pause mid-sentence can end the turn early. If he has not started
+    // answering yet, what you say next belongs to the same request.
+    const last = lastSent.current
+    carry.current =
+      phase === 'thinking' && last && Date.now() - last.at < CONTINUE_WINDOW_MS ? last : null
+
     silence()
     if (wasBusy) {
       // Abandon the answer in flight. The turn counter moves in respond()'s
@@ -326,10 +341,22 @@ export default function App() {
       listen(AWAIT_SPEECH_MS)
       return
     }
-    const said = text.replace(LEADING_NAME, '').trim()
+    let said = text.replace(LEADING_NAME, '').trim()
     if (!said) {
       listen(AWAIT_SPEECH_MS)
       return
+    }
+
+    const carried = carry.current
+    carry.current = null
+    if (carried && Date.now() - carried.at < CONTINUE_WINDOW_MS) {
+      said = `${carried.said} ${said}`.replace(/\s+/g, ' ').trim()
+      // Replace the half-sentence in the transcript instead of showing it twice.
+      const turns = store.getState().turns
+      const lastTurn = turns[turns.length - 1]
+      if (lastTurn?.role === 'user' && lastTurn.text === carried.said) {
+        store.getState().setTurns(turns.slice(0, -1))
+      }
     }
 
     void respond(said)

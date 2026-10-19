@@ -573,7 +573,10 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
   // 200ms lag on the echo gate is imperceptible.
   const guardPoll = setInterval(() => {
     const mode = h.mode()
-    vad?.setGuard(mode === 'guard')
+    // The raised bar exists to keep his own voice out. While he is only
+    // thinking there is no voice to keep out, and a normal-volume "...and also"
+    // after a pause has to be heard, so the bar drops back to normal then.
+    vad?.setGuard(mode === 'guard' && speakingNow() !== '')
     // He has stood down — by Escape, by the idle timeout, or by dropping back
     // to the wake word. Anything half-said belonged to a conversation that is
     // over, and letting the hold expire later would open the next one with a
@@ -748,7 +751,7 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
           // has already had a pass at; here the evidence is a transcript of
           // audio that includes his own playback, and one word of that is not
           // evidence of anything.
-          if (words < 2) return
+          if (words < 2 && speakingNow()) return
         }
       }
       started = true
