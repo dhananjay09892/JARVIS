@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { BACKEND, BRIDGE_HTTP_URL } from '../config'
 
 type UpdateInfo = {
@@ -57,8 +58,10 @@ export function UpdateNotice() {
     setInfo(null)
   }
 
-  return (
-    <div className="approval-backdrop mem-backdrop">
+  // Portalled to <body>: inside .hud this dialog is stacked below the full-screen
+  // INITIALISE button, so a first-time user could not see the wizard.
+  return createPortal(
+    <div className="approval-backdrop mem-backdrop hud-modal">
       <section
         className="approval-card mem-card"
         role="dialog"
@@ -92,6 +95,7 @@ export function UpdateNotice() {
           <button onClick={hide}>Not now</button>
         </p>
       </section>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { BACKEND } from '../config'
 import {
   getSettings,
@@ -159,8 +160,10 @@ export function Settings() {
     </>
   )
 
-  return (
-    <div className="approval-backdrop mem-backdrop">
+  // Portalled to <body>: inside .hud this dialog is stacked below the full-screen
+  // INITIALISE button, so a first-time user could not see the wizard.
+  return createPortal(
+    <div className="approval-backdrop mem-backdrop hud-modal">
       <section
         className="approval-card mem-card"
         role="dialog"
@@ -279,6 +282,7 @@ export function Settings() {
           </>
         )}
       </section>
-    </div>
+    </div>,
+    document.body,
   )
 }
