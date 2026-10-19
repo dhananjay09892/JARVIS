@@ -169,6 +169,10 @@ body::after {
      pinned right whether or not the brand is there — and with both present it
      changes nothing, since space-between had already used that space up. */
   margin-left: auto;
+  /* .hud is pointer-events: none so it never eats a click meant for the scene.
+     This row holds real controls (MEMORY, SETTINGS, the language picker), so it
+     opts back in. It is only as wide as its contents, so nothing else is blocked. */
+  pointer-events: auto;
 }
 
 .language-picker {

@@ -38,6 +38,7 @@ import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
 import { setting, updateSettings, publicSettings, readSettings } from './settings.mjs'
 import { claudeStatus, startClaudeLogin } from './claude-cli.mjs'
+import { checkForUpdate } from './update.mjs'
 import { fileURLToPath } from 'node:url'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
@@ -1020,6 +1021,12 @@ const handleRequest = async (req, res) => {
     startClaudeLogin()
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(JSON.stringify({ ok: true }))
+  }
+
+  // Is a newer JARVIS released? Notification only; see bridge/update.mjs.
+  if (req.method === 'GET' && requestUrl.pathname === '/update') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify(await checkForUpdate()))
   }
 
   // "Test key" button: ask ElevenLabs who we are. Uses the saved key.

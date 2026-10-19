@@ -10,6 +10,7 @@ import { LANGUAGE_OPTIONS } from '../lib/language'
 import { Approvals } from './Approvals'
 import { Memory } from './Memory'
 import { Settings } from './Settings'
+import { UpdateNotice } from './UpdateNotice'
 
 const statusText: Record<Phase, string> = {
   offline: 'OFFLINE',
@@ -202,6 +203,7 @@ export function Hud() {
 
         <div className="status">
           <Memory />
+          <UpdateNotice />
           <Settings />
           <label className="language-picker">
             <span>INPUT</span>
