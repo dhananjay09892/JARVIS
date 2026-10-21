@@ -8,6 +8,7 @@ import { Pointer } from './Pointer'
 import { GestureGuide } from './GestureGuide'
 import { LANGUAGE_OPTIONS } from '../lib/language'
 import { Approvals } from './Approvals'
+import { Missions } from './Missions'
 import { Memory } from './Memory'
 import { Settings } from './Settings'
 import { UpdateNotice } from './UpdateNotice'
@@ -366,6 +367,7 @@ export function Hud() {
         </div>
       )}
       <GestureGuide live={gestures} />
+      <Missions />
       <Approvals />
     </div>
   )

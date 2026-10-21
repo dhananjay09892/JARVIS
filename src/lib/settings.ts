@@ -38,7 +38,7 @@ export async function saveSettings(patch: Record<string, string>): Promise<Publi
 
 export async function getSetupStatus(): Promise<SetupStatus> {
   const res = await fetch(`${BRIDGE_HTTP_URL}/setup/status`, { signal: AbortSignal.timeout(20000) })
-  if (!res.ok) throw new Error('Could not check Claude Code.')
+  if (!res.ok) throw new Error('Could not check your Claude sign-in.')
   return res.json()
 }
 

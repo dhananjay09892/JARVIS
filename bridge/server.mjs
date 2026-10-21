@@ -25,6 +25,9 @@ import { appsServer } from './apps.mjs'
 import { workspaceServer, workspaceFiles, WORKSPACE_ROOT } from './workspace.mjs'
 import { openWorkflows, createApprovalHub, createEngine } from './workflows.mjs'
 import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
+import { createTaskManager } from './tasks.mjs'
+import { openTaskStore } from './task-store.mjs'
+import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
 import { createSessionMemory } from './conversation.mjs'
 import { memoryServer, isMemoryTool } from './memory-tools.mjs'
@@ -366,6 +369,10 @@ function decideTool(name) {
     // Recipes can only be changed through an approval card, and their action
     // steps ask again on every run.
     if (server === 'jarvis_workflows') return isWorkflowTool(mcpToolOf(name))
+    // Delegation and progress reports only move text around the board; what a
+    // sub-agent may then do is still decided tool by tool, right here.
+    if (server === 'jarvis_tasks') return isTaskTool(mcpToolOf(name))
+    if (server === 'jarvis_task') return ['report_progress', 'ask_owner'].includes(mcpToolOf(name))
 
     // The camera. Not withheld behind ALLOW_WRITES: looking changes nothing,
     // and the real gate is the browser's own camera permission plus an
@@ -566,6 +573,17 @@ Workflows:
 - Steps that run commands or push ask for approval on every run, scheduled or
   not, and wait if the owner is away. You cannot approve or skip them, and a
   workflow grants no permission. Tell the owner when a run is waiting.
+
+Tasks:
+- jarvis_tasks hands work to background agents so you can keep talking. Anything
+  that will take more than a few seconds — research, a code change, several
+  steps of file work — goes through spawn_task, and several can run at once.
+  The brief you write must stand alone: the agent cannot see this conversation.
+- After spawning, say only that it is started, in a few words. Progress is on
+  the Mission Board, so do not narrate it. Report on a task only when asked, or
+  when its status shows it finished, and then in a sentence.
+- A task that needs approval shows its own card, named for the task. Never claim
+  a task did something its status does not say.
 
 Using tools:
 - You have real tools on this machine. Use them rather than guessing.
@@ -1326,6 +1344,82 @@ const RESULT_FAILURES = {
   default: 'The turn ended without an answer.',
 }
 
+/**
+ * Background tasks (see bridge/tasks.mjs). One manager for the whole bridge, so
+ * a task keeps running if the page reloads and the board refills on reconnect.
+ *
+ * A sub-agent gets the workspace and development tools plus whatever Claude
+ * Code has configured, every one behind the same decideTool gate as the voice
+ * session, and its approvals go through the hub tagged with the task. It does
+ * not get jarvis_tasks, so it cannot start tasks of its own.
+ */
+const WORKER_PROMPT = `You are a JARVIS worker agent carrying out one task alone, in the background.
+Nobody is listening: write for a screen, not for speech.
+
+First call report_progress with a plan of 2 to 8 short steps. Call it again as you
+start each step, with the step number and a one-line note. Keep working until the
+goal is met, then finish with a plain summary of what you did and found, under
+120 words, with no preamble. If the goal cannot be met, say exactly why.
+
+If you truly cannot proceed without a decision, call ask_owner with one short
+question; otherwise decide for yourself.
+
+Use only the tools you are given. Commands and deletions ask the owner for
+approval and wait; do not try to work around a refusal. Never invent results.`
+
+let taskStore = null
+try {
+  taskStore = openTaskStore()
+} catch (err) {
+  console.error('[jarvis] task history unavailable — tasks will not survive a restart:', err.message)
+}
+
+const taskManager = createTaskManager({
+  store: taskStore,
+  runAgent: ({ task, signal, report, ask, wrapApprove }) => {
+    const approve = wrapApprove(approvalHub.request)
+    const controller = new AbortController()
+    signal.addEventListener('abort', () => controller.abort(), { once: true })
+    return query({
+      prompt: `Task: ${task.title}
+
+${task.goal}`,
+      options: {
+        abortController: controller,
+        mcpServers: {
+          ...MCP_SERVERS,
+          jarvis_task: progressServer(report, ask),
+          jarvis_workspace: workspaceServer(approve),
+          jarvis_development: developmentServer(approve),
+        },
+        systemPrompt: WORKER_PROMPT,
+        cwd: homedir(),
+        settingSources: [],
+        model: MODEL,
+        effort: EFFORT,
+        maxTurns: 40,
+        permissionMode: 'default',
+        disallowedTools: ALLOW_WRITES ? [] : ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Agent', 'Task'],
+        hooks: {
+          PreToolUse: [{
+            hooks: [async (input) => decideTool(input.tool_name) ? {} : {
+              hookSpecificOutput: {
+                hookEventName: 'PreToolUse',
+                permissionDecision: 'deny',
+                permissionDecisionReason: 'Use the approved JARVIS workspace and development tools instead.',
+              },
+            }],
+          }],
+        },
+        includePartialMessages: true,
+        canUseTool: async (toolName) => decideTool(toolName)
+          ? { behavior: 'allow' }
+          : { behavior: 'deny', message: 'Blocked. Use the workspace and development tools; commands wait for owner approval.' },
+      },
+    })
+  },
+})
+
 wss.on('connection', (socket, req) => {
   console.log('[jarvis] client connected')
 
@@ -1411,6 +1505,7 @@ wss.on('connection', (socket, req) => {
 
   // Pending workflow approvals are shown to whichever browser is connected.
   const detachHub = approvalHub.attach(send)
+  const detachTasks = taskManager.subscribe(send)
 
   const approvals = approvalQueue({
     send,
@@ -1522,6 +1617,7 @@ wss.on('connection', (socket, req) => {
         jarvis_development: developmentServer(approvals.request),
         // The camera, which unlike everything else here has to ask and wait.
         jarvis_eyes: visionServer(ask),
+        jarvis_tasks: taskServer(taskManager),
         ...(workflows && { jarvis_workflows: workflowServer({ store: workflows, engine, approve: approvals.request }) }),
         ...(sm && {
           jarvis_memory: memoryServer(memory, {
@@ -1773,6 +1869,21 @@ wss.on('connection', (socket, req) => {
       })
     }
 
+    if (msg.type === 'task_answer' && typeof msg.id === 'string' && typeof msg.text === 'string') {
+      taskManager.answer(msg.id, msg.text)
+      return
+    }
+
+    if (msg.type === 'task_dismiss' && typeof msg.id === 'string') {
+      taskManager.dismiss(msg.id)
+      return
+    }
+
+    if (msg.type === 'task_cancel' && typeof msg.id === 'string') {
+      taskManager.cancel(msg.id)
+      return
+    }
+
     if (msg.type === 'reply' && typeof msg.id === 'string') {
       if (msg.id.startsWith('approval-')) {
         approvals.reply(msg.id, msg.approved)
@@ -1833,6 +1944,7 @@ wss.on('connection', (socket, req) => {
     console.log('[jarvis] client disconnected')
     closed = true
     detachHub()
+    detachTasks()
     sm?.close()
     approvals.cancel()
     deliver?.(null)

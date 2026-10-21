@@ -45,6 +45,12 @@ export type VoiceHandlers = {
   onWake: (trailing: string) => void
   /** The user has genuinely started talking. This is the barge-in trigger. */
   onSpeechStart: () => void
+  /**
+   * Fired repeatedly while the user is audibly talking, while a segment is
+   * still being transcribed, or while a held thought is waiting to be sent.
+   * The app uses it to keep its stand-down timer from firing mid-sentence.
+   */
+  onActivity?: () => void
   /** Live transcript, for the caption under the reactor. */
   onPartial: (text: string) => void
   /** A complete, endpointed utterance. */
@@ -579,6 +585,14 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
     // over, and letting the hold expire later would open the next one with a
     // fragment of the last.
     if ((mode === 'wake' || mode === 'deaf') && assemble.held()) assemble.cancel()
+    // Still mid-thought: talking now, or words recorded but not yet turned into
+    // a turn (the transcription round trip plus the assembler's hold can take
+    // several seconds for a long sentence). Tell the app, or its standby timer,
+    // started before you began, expires underneath you and the rest of the
+    // sentence is thrown away as "not his name".
+    if (mode === 'command' && (vad?.meter().speaking || pendingAudio.length || draining || assemble.held())) {
+      h.onActivity?.()
+    }
   }, 200)
 
   return {

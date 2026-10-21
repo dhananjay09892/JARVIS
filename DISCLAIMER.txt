@@ -34,6 +34,14 @@ computer. If you turn on "Let JARVIS take real actions" it can run commands and
 change files. You are responsible for what you approve - read each approval
 before you accept it.
 
+WHILE IT WAITS FOR "HEY JARVIS"
+While JARVIS is waiting for you to say "Hey Jarvis", it listens through the
+microphone and sends short clips of speech it hears to a speech service
+(ElevenLabs if you added a key, otherwise your browser's own speech service,
+which in Chrome is Google's) just to check for the name. Room sound can leave
+your computer before you wake it. An offline wake-word engine is planned. Until
+then, close JARVIS when you do not want it listening.
+
 YOUR DATA
 Your settings, keys and memories are stored on your own computer. What you say
 to JARVIS is sent to the services you connect (for example Claude, and
