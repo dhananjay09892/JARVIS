@@ -207,10 +207,11 @@ export type TaskView = {
   id: string
   title: string
   goal: string
-  status: 'queued' | 'running' | 'waiting_approval' | 'done' | 'failed' | 'cancelled'
+  status: 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'done' | 'failed' | 'cancelled'
   steps: { label: string; state: 'done' | 'active' | 'todo' }[]
   percent: number
   note: string
+  question: string
   log: { at: number; kind: string; text: string }[]
   result: string
   error: string
@@ -229,6 +230,10 @@ export function watchTasks(fn: (task: TaskView) => void) {
 
 export function cancelTask(id: string) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_cancel', id }))
+}
+
+export function answerTask(id: string, text: string) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_answer', id, text }))
 }
 
 export function answerApproval(id: string, approved: boolean) {

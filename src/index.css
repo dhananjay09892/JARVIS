@@ -2060,3 +2060,10 @@ kbd {
 .mission-detail { text-transform: none; letter-spacing: normal; }
 .mission-detail .mission-result { max-height: 140px; overflow: auto; }
 .missions { bottom: 72px; max-height: 52vh; }
+.mission-waiting_input { border-color: #ffb300; }
+.mission-waiting_input .mission-row em { color: #ffb300; }
+.mission-ask { margin-top: 8px; display: grid; grid-template-columns: 1fr auto; gap: 6px; text-transform: none; }
+.mission-ask p { grid-column: 1 / -1; margin: 0; font-size: 11px; overflow-wrap: anywhere; }
+.mission-ask input, .mission-ask button { border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--bg) 92%, transparent); color: inherit; font: inherit; font-size: 11px; padding: 4px 6px; }
+.mission-ask input { min-width: 0; }
+.mission-ask button { font-size: 9px; letter-spacing: 0.2em; cursor: pointer; }

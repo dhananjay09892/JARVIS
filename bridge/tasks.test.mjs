@@ -125,3 +125,40 @@ test('a late subscriber is replayed every task', async () => {
   m.subscribe((f) => seen.push(f.task.title))
   assert.deepEqual(seen, ['one'])
 })
+
+test('a question parks the task until answered; cancel releases it with no answer', async () => {
+  const { runAgent, runs } = fakeAgent()
+  const m = createTaskManager({ runAgent, log: silent })
+  const a = m.spawn({ title: 'a', goal: 'g' }).task.id
+  const b = m.spawn({ title: 'b', goal: 'g' }).task.id
+  await tick()
+  const first = runs[0].ctx.ask('Which branch?')
+  assert.equal(m.get(a).status, 'waiting_input')
+  assert.equal(m.get(a).question, 'Which branch?')
+  assert.equal(await runs[0].ctx.ask('second at once'), null)
+  assert.equal(m.answer(a, 'main').ok, true)
+  assert.equal(await first, 'main')
+  assert.equal(m.get(a).status, 'running')
+  assert.equal(m.answer(a, 'again').ok, false)
+
+  const pending = runs[1].ctx.ask('Sure?')
+  m.cancel(b)
+  assert.equal(await pending, null)
+  assert.equal(m.get(b).status, 'cancelled')
+})
+
+test('an approval and a question can overlap without losing the waiting state', async () => {
+  const { runAgent, runs } = fakeAgent()
+  const m = createTaskManager({ runAgent, log: silent })
+  const id = m.spawn({ title: 'a', goal: 'g' }).task.id
+  await tick()
+  let release
+  const gate = runs[0].ctx.wrapApprove(() => new Promise((r) => { release = r }))('Run', 'x')
+  const q = runs[0].ctx.ask('Q?')
+  release(true)
+  await gate
+  assert.equal(m.get(id).status, 'waiting_input')
+  m.answer(id, 'ok')
+  await q
+  assert.equal(m.get(id).status, 'running')
+})

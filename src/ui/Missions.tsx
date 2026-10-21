@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { cancelTask, watchTasks, type TaskView } from '../lib/bridge'
+import { answerTask, cancelTask, watchTasks, type TaskView } from '../lib/bridge'
 
-const LIVE = new Set<TaskView['status']>(['queued', 'running', 'waiting_approval'])
+const LIVE = new Set<TaskView['status']>(['queued', 'running', 'waiting_approval', 'waiting_input'])
 const LABEL: Record<TaskView['status'], string> = {
   queued: 'QUEUED',
   running: 'RUNNING',
   waiting_approval: 'NEEDS APPROVAL',
+  waiting_input: 'NEEDS YOU',
   done: 'DONE',
   failed: 'FAILED',
   cancelled: 'CANCELLED',
@@ -15,6 +16,22 @@ const elapsed = (t: TaskView, now: number) => {
   if (!t.startedAt) return ''
   const s = Math.max(0, Math.round(((t.endedAt ?? now) - t.startedAt) / 1000))
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`
+}
+
+function Question({ task }: { task: TaskView }) {
+  const [text, setText] = useState('')
+  const send = () => {
+    if (!text.trim()) return
+    answerTask(task.id, text.trim())
+    setText('')
+  }
+  return (
+    <form className="mission-ask" onSubmit={(e) => { e.preventDefault(); send() }}>
+      <p>{task.question}</p>
+      <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type your answer" aria-label={`Answer for ${task.title}`} />
+      <button type="submit">SEND</button>
+    </form>
+  )
 }
 
 /** Mission Board: every background task, live, with a way to stop it. */
@@ -67,6 +84,7 @@ export function Missions() {
               {t.result && <p className="mission-result">{t.result}</p>}
             </div>
           )}
+          {t.status === 'waiting_input' && <Question task={t} />}
           <div className="mission-actions">
             {LIVE.has(t.status)
               ? <button onClick={() => cancelTask(t.id)}>CANCEL</button>

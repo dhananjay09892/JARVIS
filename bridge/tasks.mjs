@@ -23,7 +23,8 @@ const MAX_LOG = 40
 const MAX_STEPS = 12
 const clip = (s, n) => (typeof s === 'string' ? s.trim().slice(0, n) : '')
 
-const ACTIVE = new Set(['queued', 'running', 'waiting_approval'])
+const ACTIVE = new Set(['queued', 'running', 'waiting_approval', 'waiting_input'])
+export const ANSWER_TTL_MS = 30 * 60 * 1000
 export const isActive = (task) => ACTIVE.has(task.status)
 
 /** What the browser and the orchestrator see: no signals, no internals. */
@@ -36,6 +37,7 @@ function snapshot(t) {
     steps: t.steps.map((s, i) => ({ label: s, state: i < t.step - 1 ? 'done' : i === t.step - 1 ? 'active' : 'todo' })),
     percent: t.status === 'done' ? 100 : t.steps.length ? Math.round((Math.max(0, t.step - 1) / t.steps.length) * 100) : 0,
     note: t.note,
+    question: t.question?.text ?? '',
     log: t.log.slice(-MAX_LOG),
     result: t.result,
     error: t.error,
@@ -63,7 +65,7 @@ export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now 
     for (const t of finished.slice(0, Math.max(0, finished.length - MAX_KEPT))) tasks.delete(t.id)
   }
 
-  const running = () => [...tasks.values()].filter((t) => t.status === 'running' || t.status === 'waiting_approval').length
+  const running = () => [...tasks.values()].filter((t) => isActive(t) && t.status !== 'queued').length
 
   function pump() {
     for (const t of tasks.values()) {
@@ -74,6 +76,8 @@ export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now 
 
   function finish(t, status, fields = {}) {
     if (!isActive(t)) return
+    // Release a parked question first, while the task still counts as active.
+    t.question?.settle(null)
     Object.assign(t, fields, { status, endedAt: now() })
     if (status === 'done') t.step = t.steps.length + 1
     note(t, status, fields.error ?? fields.result ?? status)
@@ -113,9 +117,33 @@ export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now 
       return await approve(`Task "${t.title}": ${title}`, details)
     } finally {
       t.waiting -= 1
-      if (t.status === 'waiting_approval' && t.waiting === 0) t.status = 'running'
+      if (t.status === 'waiting_approval' && t.waiting === 0) t.status = t.question ? 'waiting_input' : 'running'
       emit(t)
     }
+  }
+
+  /** Lets the agent put one question to the owner and wait for the typed answer. */
+  const asker = (t) => (text) => {
+    const q = clip(text, 500)
+    if (!isActive(t) || t.question || !q) return Promise.resolve(null)
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => t.question?.settle(null), ANSWER_TTL_MS)
+      timer.unref?.()
+      t.question = {
+        text: q,
+        settle(answer) {
+          clearTimeout(timer)
+          t.question = null
+          if (isActive(t) && t.waiting === 0) t.status = 'running'
+          note(t, 'answer', answer === null ? 'no answer' : 'answered')
+          emit(t)
+          resolve(answer)
+        },
+      }
+      t.status = 'waiting_input'
+      note(t, 'question', q)
+      emit(t)
+    })
   }
 
   async function start(t) {
@@ -128,6 +156,7 @@ export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now 
         task: snapshot(t),
         signal: t.abort.signal,
         report: reporter(t),
+        ask: asker(t),
         wrapApprove: (approve) => approver(t, approve),
       })
       for await (const msg of stream) {
@@ -188,6 +217,7 @@ export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now 
         startedAt: null,
         endedAt: null,
         waiting: 0,
+        question: null,
         tools: new Set(),
         abort: new AbortController(),
       }
@@ -196,6 +226,13 @@ export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now 
       emit(t)
       pump()
       return { ok: true, task: snapshot(t) }
+    },
+    /** The owner's typed answer to a task's question. */
+    answer(id, text) {
+      const t = tasks.get(id)
+      if (!t?.question) return { ok: false, reason: 'That task is not waiting for an answer.' }
+      t.question.settle(clip(text, 2000))
+      return { ok: true }
     },
     get: (id) => (tasks.has(id) ? snapshot(tasks.get(id)) : null),
     list: () => [...tasks.values()].map(snapshot),

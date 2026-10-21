@@ -371,7 +371,7 @@ function decideTool(name) {
     // Delegation and progress reports only move text around the board; what a
     // sub-agent may then do is still decided tool by tool, right here.
     if (server === 'jarvis_tasks') return isTaskTool(mcpToolOf(name))
-    if (server === 'jarvis_task') return mcpToolOf(name) === 'report_progress'
+    if (server === 'jarvis_task') return ['report_progress', 'ask_owner'].includes(mcpToolOf(name))
 
     // The camera. Not withheld behind ALLOW_WRITES: looking changes nothing,
     // and the real gate is the browser's own camera permission plus an
@@ -1360,11 +1360,14 @@ start each step, with the step number and a one-line note. Keep working until th
 goal is met, then finish with a plain summary of what you did and found, under
 120 words, with no preamble. If the goal cannot be met, say exactly why.
 
+If you truly cannot proceed without a decision, call ask_owner with one short
+question; otherwise decide for yourself.
+
 Use only the tools you are given. Commands and deletions ask the owner for
 approval and wait; do not try to work around a refusal. Never invent results.`
 
 const taskManager = createTaskManager({
-  runAgent: ({ task, signal, report, wrapApprove }) => {
+  runAgent: ({ task, signal, report, ask, wrapApprove }) => {
     const approve = wrapApprove(approvalHub.request)
     const controller = new AbortController()
     signal.addEventListener('abort', () => controller.abort(), { once: true })
@@ -1376,7 +1379,7 @@ ${task.goal}`,
         abortController: controller,
         mcpServers: {
           ...MCP_SERVERS,
-          jarvis_task: progressServer(report),
+          jarvis_task: progressServer(report, ask),
           jarvis_workspace: workspaceServer(approve),
           jarvis_development: developmentServer(approve),
         },
@@ -1855,6 +1858,11 @@ wss.on('connection', (socket, req) => {
           inbox.push(text)
         }
       })
+    }
+
+    if (msg.type === 'task_answer' && typeof msg.id === 'string' && typeof msg.text === 'string') {
+      taskManager.answer(msg.id, msg.text)
+      return
     }
 
     if (msg.type === 'task_cancel' && typeof msg.id === 'string') {

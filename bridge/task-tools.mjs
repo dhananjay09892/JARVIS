@@ -53,7 +53,7 @@ export function taskServer(manager) {
  * The sub-agent's side, bound to one task. Calling this is how it shows a plan
  * and moves along it; the board is only as accurate as these calls.
  */
-export function progressServer(report) {
+export function progressServer(report, ask) {
   return createSdkMcpServer({
     name: 'jarvis_task',
     version: '1.0.0',
@@ -67,6 +67,15 @@ export function progressServer(report) {
           note: z.string().max(160).optional().describe('One line on what you are doing right now'),
         },
         async (a) => reply(report(a))),
+      tool('ask_owner',
+        'Ask the owner ONE short question when you cannot continue without a decision. It waits for their typed answer on the board. Do not use it for things you can reasonably decide yourself.',
+        { question: z.string().min(1).max(500) },
+        async ({ question }) => {
+          const answer = await ask(question)
+          return reply(answer === null
+            ? { answered: false, note: 'No answer. Proceed on your best judgement, or stop and say what is missing.' }
+            : { answered: true, answer })
+        }),
     ],
   })
 }
