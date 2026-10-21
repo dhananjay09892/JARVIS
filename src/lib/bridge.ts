@@ -24,6 +24,7 @@ type Frame = {
   name?: string
   text?: string
   message?: string
+  task?: TaskView
   panel?: Panel
   blade?: Blade
   op?: string
@@ -201,6 +202,49 @@ export function watchApprovals(
   }
 }
 
+/** A background task as the bridge reports it — the Mission Board's row. */
+export type TaskView = {
+  id: string
+  title: string
+  goal: string
+  status: 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'done' | 'failed' | 'cancelled' | 'interrupted'
+  steps: { label: string; state: 'done' | 'active' | 'todo' }[]
+  percent: number
+  note: string
+  question: string
+  log: { at: number; kind: string; text: string }[]
+  result: string
+  error: string
+  costUsd: number | null
+  createdAt: number
+  startedAt: number | null
+  endedAt: number | null
+}
+
+let onTask: ((task: TaskView) => void) | null = null
+let onTaskRemoved: ((id: string) => void) | null = null
+export function watchTasks(fn: (task: TaskView) => void, removed?: (id: string) => void) {
+  onTask = fn
+  onTaskRemoved = removed ?? null
+  return () => {
+    if (onTask === fn) onTask = null
+    onTaskRemoved = removed && onTaskRemoved === removed ? null : onTaskRemoved
+  }
+}
+
+/** Removes an ended task from the board and from the bridge's saved history. */
+export function dismissTask(id: string) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_dismiss', id }))
+}
+
+export function cancelTask(id: string) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_cancel', id }))
+}
+
+export function answerTask(id: string, text: string) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_answer', id, text }))
+}
+
 export function answerApproval(id: string, approved: boolean) {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     throw new Error('Bridge disconnected; action cannot be approved.')
@@ -332,6 +376,10 @@ function dispatch(ws: WebSocket) {
       } else {
         ws.send(JSON.stringify({ type: 'reply', id: msg.id, approved: false }))
       }
+    } else if (msg.type === 'task_removed' && msg.id) {
+      onTaskRemoved?.(msg.id)
+    } else if (msg.type === 'task' && msg.task?.id) {
+      onTask?.(msg.task as TaskView)
     } else if (msg.type === 'approval_closed') {
       onApprovalClosed?.(String(msg.approvalId))
     } else if (msg.type === 'capture' && msg.id) {
