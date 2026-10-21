@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { answerTask, cancelTask, watchTasks, type TaskView } from '../lib/bridge'
+import { answerTask, cancelTask, dismissTask, watchTasks, type TaskView } from '../lib/bridge'
 
 const LIVE = new Set<TaskView['status']>(['queued', 'running', 'waiting_approval', 'waiting_input'])
 const LABEL: Record<TaskView['status'], string> = {
@@ -10,6 +10,7 @@ const LABEL: Record<TaskView['status'], string> = {
   done: 'DONE',
   failed: 'FAILED',
   cancelled: 'CANCELLED',
+  interrupted: 'INTERRUPTED',
 }
 
 const elapsed = (t: TaskView, now: number) => {
@@ -41,9 +42,12 @@ export function Missions() {
   const [collapsed, setCollapsed] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
-  useEffect(() => watchTasks((task) => setTasks((current) => ({ ...current, [task.id]: task }))), [])
+  useEffect(() => watchTasks(
+    (task) => setTasks((current) => ({ ...current, [task.id]: task })),
+    (id) => setTasks(({ [id]: _gone, ...rest }) => rest),
+  ), [])
 
-  const list = Object.values(tasks).sort((a, b) => (b.startedAt ?? Infinity) - (a.startedAt ?? Infinity))
+  const list = Object.values(tasks).sort((a, b) => b.createdAt - a.createdAt)
   const live = list.filter((t) => LIVE.has(t.status)).length
   useEffect(() => {
     if (!live) return
@@ -52,7 +56,6 @@ export function Missions() {
   }, [live])
 
   if (!list.length) return null
-  const dismiss = (id: string) => setTasks(({ [id]: _gone, ...rest }) => rest)
 
   return (
     <aside className="missions" aria-label="Mission board">
@@ -88,7 +91,7 @@ export function Missions() {
           <div className="mission-actions">
             {LIVE.has(t.status)
               ? <button onClick={() => cancelTask(t.id)}>CANCEL</button>
-              : <button onClick={() => dismiss(t.id)}>DISMISS</button>}
+              : <button onClick={() => dismissTask(t.id)}>DISMISS</button>}
           </div>
         </section>
       ))}

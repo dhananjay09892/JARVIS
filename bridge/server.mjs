@@ -26,6 +26,7 @@ import { workspaceServer, workspaceFiles, WORKSPACE_ROOT } from './workspace.mjs
 import { openWorkflows, createApprovalHub, createEngine } from './workflows.mjs'
 import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
+import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
 import { createSessionMemory } from './conversation.mjs'
@@ -1366,7 +1367,15 @@ question; otherwise decide for yourself.
 Use only the tools you are given. Commands and deletions ask the owner for
 approval and wait; do not try to work around a refusal. Never invent results.`
 
+let taskStore = null
+try {
+  taskStore = openTaskStore()
+} catch (err) {
+  console.error('[jarvis] task history unavailable — tasks will not survive a restart:', err.message)
+}
+
 const taskManager = createTaskManager({
+  store: taskStore,
   runAgent: ({ task, signal, report, ask, wrapApprove }) => {
     const approve = wrapApprove(approvalHub.request)
     const controller = new AbortController()
@@ -1862,6 +1871,11 @@ wss.on('connection', (socket, req) => {
 
     if (msg.type === 'task_answer' && typeof msg.id === 'string' && typeof msg.text === 'string') {
       taskManager.answer(msg.id, msg.text)
+      return
+    }
+
+    if (msg.type === 'task_dismiss' && typeof msg.id === 'string') {
+      taskManager.dismiss(msg.id)
       return
     }
 

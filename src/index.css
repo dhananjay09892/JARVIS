@@ -2067,3 +2067,4 @@ kbd {
 .mission-ask input, .mission-ask button { border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--bg) 92%, transparent); color: inherit; font: inherit; font-size: 11px; padding: 4px 6px; }
 .mission-ask input { min-width: 0; }
 .mission-ask button { font-size: 9px; letter-spacing: 0.2em; cursor: pointer; }
+.mission-interrupted { border-color: #ffb300; opacity: 0.8; }

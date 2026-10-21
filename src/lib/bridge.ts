@@ -207,7 +207,7 @@ export type TaskView = {
   id: string
   title: string
   goal: string
-  status: 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'done' | 'failed' | 'cancelled'
+  status: 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'done' | 'failed' | 'cancelled' | 'interrupted'
   steps: { label: string; state: 'done' | 'active' | 'todo' }[]
   percent: number
   note: string
@@ -216,16 +216,25 @@ export type TaskView = {
   result: string
   error: string
   costUsd: number | null
+  createdAt: number
   startedAt: number | null
   endedAt: number | null
 }
 
 let onTask: ((task: TaskView) => void) | null = null
-export function watchTasks(fn: (task: TaskView) => void) {
+let onTaskRemoved: ((id: string) => void) | null = null
+export function watchTasks(fn: (task: TaskView) => void, removed?: (id: string) => void) {
   onTask = fn
+  onTaskRemoved = removed ?? null
   return () => {
     if (onTask === fn) onTask = null
+    onTaskRemoved = removed && onTaskRemoved === removed ? null : onTaskRemoved
   }
+}
+
+/** Removes an ended task from the board and from the bridge's saved history. */
+export function dismissTask(id: string) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_dismiss', id }))
 }
 
 export function cancelTask(id: string) {
@@ -367,6 +376,8 @@ function dispatch(ws: WebSocket) {
       } else {
         ws.send(JSON.stringify({ type: 'reply', id: msg.id, approved: false }))
       }
+    } else if (msg.type === 'task_removed' && msg.id) {
+      onTaskRemoved?.(msg.id)
     } else if (msg.type === 'task' && msg.task?.id) {
       onTask?.(msg.task as TaskView)
     } else if (msg.type === 'approval_closed') {

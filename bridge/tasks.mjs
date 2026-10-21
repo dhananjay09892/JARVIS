@@ -42,18 +42,44 @@ function snapshot(t) {
     result: t.result,
     error: t.error,
     costUsd: t.costUsd,
+    createdAt: t.createdAt,
     startedAt: t.startedAt,
     endedAt: t.endedAt,
   }
 }
 
-export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now = () => Date.now(), log = console } = {}) {
+export function createTaskManager({ runAgent, store = null, concurrency = MAX_CONCURRENT, now = () => Date.now(), log = console } = {}) {
   const tasks = new Map()
   const listeners = new Set()
 
   const emit = (t) => {
-    const frame = { type: 'task', task: snapshot(t) }
+    const snap = snapshot(t)
+    // A failing disk must not stop a task; the board still works from memory.
+    try { store?.save(snap, t.createdAt) } catch (err) { log.error?.('[jarvis] task store write failed:', err.message) }
+    const frame = { type: 'task', task: snap }
     for (const send of listeners) send(frame)
+  }
+
+  /** Back from disk. Nothing is resumed: an unfinished task lost its agent with the old process. */
+  function restore() {
+    let saved = []
+    try { saved = store?.load() ?? [] } catch (err) { log.error?.('[jarvis] task store read failed:', err.message) }
+    for (const s of saved) {
+      const t = {
+        id: s.id, title: s.title, goal: s.goal, status: s.status, steps: s.steps.map((x) => x.label),
+        step: s.steps.filter((x) => x.state === 'done').length + 1, note: s.note, log: s.log, result: s.result,
+        error: s.error, costUsd: s.costUsd, startedAt: s.startedAt, endedAt: s.endedAt, createdAt: s.createdAt ?? s.startedAt ?? now(),
+        waiting: 0, question: null, tools: new Set(), abort: new AbortController(),
+      }
+      if (ACTIVE.has(t.status)) {
+        t.status = 'interrupted'
+        t.error = 'Interrupted: JARVIS restarted while this was running.'
+        t.endedAt = now()
+        note(t, 'interrupted', t.error)
+        emit(t)
+      }
+      tasks.set(t.id, t)
+    }
   }
   const note = (t, kind, text) => {
     t.log.push({ at: now(), kind, text: clip(text, 160) })
@@ -62,7 +88,12 @@ export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now 
 
   function prune() {
     const finished = [...tasks.values()].filter((t) => !isActive(t))
-    for (const t of finished.slice(0, Math.max(0, finished.length - MAX_KEPT))) tasks.delete(t.id)
+    for (const t of finished.slice(0, Math.max(0, finished.length - MAX_KEPT))) forget(t.id)
+  }
+
+  function forget(id) {
+    tasks.delete(id)
+    try { store?.remove(id) } catch (err) { log.error?.('[jarvis] task store delete failed:', err.message) }
   }
 
   const running = () => [...tasks.values()].filter((t) => isActive(t) && t.status !== 'queued').length
@@ -198,7 +229,18 @@ export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now 
     }
   }
 
+  restore()
+
   return {
+    /** Removes an ended task from the board and from disk. A live one is cancelled first by the owner, not here. */
+    dismiss(id) {
+      const t = tasks.get(id)
+      if (!t) return { ok: false, reason: 'No such task.' }
+      if (isActive(t)) return { ok: false, reason: 'Cancel it first.' }
+      forget(id)
+      for (const send of listeners) send({ type: 'task_removed', id })
+      return { ok: true }
+    },
     spawn({ title, goal }) {
       const g = clip(goal, 4000)
       if (!g) return { ok: false, reason: 'A task needs a goal.' }
@@ -214,6 +256,7 @@ export function createTaskManager({ runAgent, concurrency = MAX_CONCURRENT, now 
         result: '',
         error: '',
         costUsd: null,
+        createdAt: now(),
         startedAt: null,
         endedAt: null,
         waiting: 0,
