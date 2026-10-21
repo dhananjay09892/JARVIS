@@ -335,6 +335,20 @@ export default function App() {
     void respond(said)
   }
 
+  /**
+   * The user is mid-thought. The stand-down timer was armed when the window
+   * opened, not when they started talking, so a long sentence begun late in the
+   * window would otherwise run out the clock and drop him to standby halfway
+   * through it. Push the deadline out for as long as there is activity.
+   */
+  const onActivity = () => {
+    if (!idleTimer.current) return
+    const phase = store.getState().phase
+    if (phase !== 'listening' && phase !== 'waking') return
+    clearIdle()
+    idleTimer.current = setTimeout(goDormant, AWAIT_SPEECH_MS)
+  }
+
   const onPartial = (text: string) => {
     store.getState().setCaption(text)
   }
@@ -571,6 +585,7 @@ export default function App() {
       language: () => store.getState().language,
       onWake,
       onSpeechStart,
+      onActivity,
       onPartial,
       onUtterance,
       onError: onVoiceError,
