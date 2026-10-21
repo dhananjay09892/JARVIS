@@ -51,11 +51,12 @@ anything marked *unaudited* was not read in depth.
 | 36 | [Economics and licensing](36-economics-and-licensing.md) | Pending | P1 | Unknown costs/licences → cost table, caps, licence register, IP review |
 | 37 | [Execution roadmap and risks](37-execution-roadmap-and-risks.md) | – | – | Dependency graph, 30/60/90 days, ADR list, risk register |
 | 38 | [Shared data contracts](38-shared-data-contracts.md) | Pending | P0/P1 | Ad-hoc shapes → typed, validated schemas and event topics |
+| 39 | [Settings and control center](39-settings-and-control-center.md) | Partial | P1 | Six flat settings, restart to apply → settings registry, 15 sections, live apply, keychain secrets, per-person scope |
 
 ## Mapping from the 12-step "movie Jarvis" list
 
 1 → 03 · 2 → 02 · 3 → 04 · 4 → 04 · 5 → 05 · 6 → 06 · 7 → 07 · 8 → 08 · 9 → 09 · 10 → 10 · 11 → 11 · 12 → 12.
-Added because a real assistant needs them: 01, 13–38.
+Added because a real assistant needs them: 01, 13–39.
 
 ## What to build first
 

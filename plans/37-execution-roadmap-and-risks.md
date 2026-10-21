@@ -54,9 +54,10 @@ phase.
 **Days 31–60 (start Phase 1):**
 1. Brain interface refactor with Claude adapter and conformance suite (21).
 2. OpenAI-compatible API adapter, keys server-side only (25).
-3. Speaker ID MVP: enroll/identify, owner vs guest (01).
-4. Reflex layer + fast/deep routing (06); effort default decision (05).
-5. Multilingual audit and per-person language profile (28).
+3. Settings registry and API, secrets to keychain (39) so every new feature gets its settings for free.
+4. Speaker ID MVP: enroll/identify, owner vs guest (01).
+5. Reflex layer + fast/deep routing (06); effort default decision (05).
+6. Multilingual audit and per-person language profile (28).
 
 **Days 61–90 (finish Phase 1, begin Phase 2):**
 1. Wizard v2 with calibration and echo test (29).
