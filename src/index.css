@@ -2057,3 +2057,6 @@ kbd {
   padding: 3px 8px;
   cursor: pointer;
 }
+.mission-detail { text-transform: none; letter-spacing: normal; }
+.mission-detail .mission-result { max-height: 140px; overflow: auto; }
+.missions { bottom: 72px; max-height: 52vh; }
