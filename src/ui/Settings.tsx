@@ -15,7 +15,7 @@ import {
  * Settings and first-run setup, in one dialog.
  *
  * The first time JARVIS opens (setupDone is not "1") it shows a three-step
- * wizard: Claude Code, an optional voice key, then done. Afterwards the same
+ * wizard: Claude sign-in, an optional voice key, then done. Afterwards the same
  * button opens the full settings form. Every step can be skipped — nothing
  * here is required for JARVIS to run on the browser's own speech.
  */
@@ -59,7 +59,7 @@ export function Settings() {
     try {
       setStatus(await getSetupStatus())
     } catch {
-      setNote('Could not check Claude Code.')
+      setNote('Could not check your Claude sign-in.')
     }
   }, [])
 
@@ -114,12 +114,12 @@ export function Settings() {
   }
 
   const claudeLine = !status
-    ? 'Checking Claude Code…'
+    ? 'Checking your Claude sign-in…'
     : !status.claudeInstalled
-      ? 'Claude Code was not found. Reinstall JARVIS, or install it from https://docs.claude.com/en/docs/claude-code.'
+      ? 'Claude was not found on this computer. Reinstall JARVIS to fix it.'
       : !status.claudeLoggedIn
         ? 'Not signed in yet. Press Sign in, finish in the browser window that opens, then press Check again.'
-        : `Claude Code is ready (${status.claudeVersion}).`
+        : `Claude is ready (version ${status.claudeVersion.split(' ')[0]}).`
 
   const keyBlock = (
     <>
@@ -181,8 +181,8 @@ export function Settings() {
 
         {wizard && step === 0 && (
           <>
-            <h3>1 · Claude Code</h3>
-            <p className="mem-note">JARVIS thinks with your Claude Code login. There is no API key to copy.</p>
+            <h3>1 · Claude</h3>
+            <p className="mem-note">JARVIS thinks with your own Claude account. There is no API key to copy.</p>
             <p role="status">{claudeLine}</p>
             <button
               disabled={busy}
@@ -218,7 +218,7 @@ export function Settings() {
 
         {!wizard && s && (
           <>
-            <h3>Claude Code</h3>
+            <h3>Claude</h3>
             <p role="status">{claudeLine}</p>
             <button
               disabled={busy}

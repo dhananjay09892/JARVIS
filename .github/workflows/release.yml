@@ -19,7 +19,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Bridge tests
-        run: node --test bridge/settings.test.mjs bridge/update.test.mjs bridge/approvals.test.mjs bridge/apps.test.mjs bridge/development.test.mjs bridge/memory.test.mjs bridge/workspace.test.mjs
+        run: node --test bridge/settings.test.mjs bridge/update.test.mjs bridge/node-version.test.mjs bridge/approvals.test.mjs bridge/apps.test.mjs bridge/development.test.mjs bridge/memory.test.mjs bridge/workspace.test.mjs
       - run: node scripts/package.mjs
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y

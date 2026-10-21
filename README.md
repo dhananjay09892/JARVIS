@@ -3,11 +3,11 @@
 A browser voice assistant with an Iron Man holographic interface. Say
 **"Hey Jarvis"**, he wakes, listens, and does real things through your tools —
 searches the web, generates images, drives your phone, reads your mail. The face
-is a web page (React + Vite + Three.js + custom GLSL). The brain is Claude Code,
-run headless as a library.
+is a web page (React + Vite + Three.js + custom GLSL). The brain is Claude,
+run headless through Anthropic's Agent SDK.
 
-**The only subscription you need is Claude Code.** No API keys, no OpenAI
-account, no cloud bill — the brain runs on your existing Claude Code login, and
+**The only subscription you need is Claude.** No API keys, no OpenAI
+account, no cloud bill — the brain runs on your own Claude login, and
 the heavy work (the model itself) runs on Anthropic's servers, so even a low-end
 laptop only has to draw the interface. **ElevenLabs is an optional add-on** that
 gives JARVIS a much better voice and sharper hearing; without it he speaks and
@@ -31,7 +31,7 @@ because the installer is not code-signed yet: click **More info**, then
 **Run anyway**.
 
 **3. First start.** JARVIS opens in its own window and shows a short welcome:
-**Sign in** with your Claude account (Claude Code is already included in the
+**Sign in** with your Claude account (the Claude software is already included in the
 installer — there is nothing else to install), optionally paste an ElevenLabs key
 for a better voice (you can skip it), then click **INITIALISE**, allow the
 microphone, and say **"Hey Jarvis"**.
@@ -61,19 +61,20 @@ a terminal, and is for working on JARVIS itself.
 
 ### Requirements
 
-**In one line:** a Claude Code subscription, plus two free things every computer
+**In one line:** a Claude subscription, plus two free things every computer
 can have — Node.js and Chrome. That's the whole list.
 
-- **Claude Code, installed and logged in** — this is the only account you need.
-  Install it with the official method — `npm install -g @anthropic-ai/claude-code`,
+- **The `claude` command, installed and signed in** — this is the only account you
+  need. Install it with the official method — `npm install -g @anthropic-ai/claude-code`,
   or the platform installer at <https://docs.claude.com/en/docs/claude-code> —
   then run `claude` once and complete login. The bridge reuses that login. **No
   API key**, and usage is billed to your existing Claude account.
-- **Node.js 20 or newer** — free, one installer from <https://nodejs.org>. This
-  is a Node web app, so it is the one unavoidable tool.
+- **Node.js 22.13 or newer** — free, one installer from <https://nodejs.org>. This
+  is a Node web app, so it is the one unavoidable tool. (Older versions fail because
+  the bridge uses the built-in `node:sqlite`; `npm start` tells you so.)
 - **Google Chrome or Microsoft Edge**, in a **real browser window** — not an
   embedded preview pane. Preview panes (including the one inside editors and
-  Claude Code) block microphone access, so the page loads and looks right but
+  Claude's own tools) block microphone access, so the page loads and looks right but
   never hears you. JARVIS also needs WebGL, which these browsers provide.
 - **Optional: an ElevenLabs API key** — a good add-on, not a requirement. It
   gives a better voice and sharper transcription; the free tier is plenty for a
@@ -101,7 +102,7 @@ listeners whose process ancestry identifies the JARVIS launcher; unrelated
 processes on the same ports are left alone. Add `-Writes` only when you want
 browser actions and other effectful tools enabled.
 The restart script invokes Node directly, so npm does not need to be on the
-new window's PATH. It checks for Node.js 20+ and installed dependencies before
+new window's PATH. It checks for Node.js 22.13+ and installed dependencies before
 stopping the current session.
 
 Prefer two terminals? Run them separately instead:
@@ -144,7 +145,7 @@ the brain and the hands.
   ┌─ browser (the face) ───────────────┐        ┌─ bridge (the brain) ─────────────┐
   │  "Hey Jarvis" wake word            │        │  Node · bridge/server.mjs        │
   │  local VAD  →  speech to text      │   ws   │  Claude Agent SDK                │
-  │  reactor UI (Three.js + GLSL)      │◄─────► │   = Claude Code, headless        │
+  │  reactor UI (Three.js + GLSL)      │◄─────► │   = Claude, headless             │
   │  text to speech                    │  8787  │  spawns your MCP servers         │
   │  heads-up display                  │        │  permission gate (decideTool)    │
   └────────────────────────────────────┘        └──────────────────────────────────┘
@@ -153,13 +154,13 @@ the brain and the hands.
 Everything you see and hear happens in the browser. The bridge is a single Node
 process (`bridge/server.mjs`) that runs the **Claude Agent SDK**
 (`@anthropic-ai/claude-agent-sdk`) — this spawns the real `claude` CLI as a child
-process, so **the brain literally is Claude Code, headless.** They talk over a
+process, so **the brain is Claude, running headless.** They talk over a
 WebSocket (plus a few HTTP endpoints) on `ws://localhost:8787`.
 
 **Why a bridge at all?** A browser tab cannot spawn the local stdio MCP servers —
 `higgsfield`, `elevenlabs`, `android`, `playwright`, `exa`, `serper`, and the
 rest. The bridge can. And because it is the Agent SDK, it authenticates off your
-existing Claude Code login: no API key, billed to that same Claude account.
+own Claude login: no API key, billed to that same Claude account.
 
 **The model.** `claude-opus-5` at effort `medium` by default. Override with the
 `JARVIS_MODEL` and `JARVIS_EFFORT` environment variables. On startup the bridge
@@ -198,7 +199,7 @@ ElevenLabs key) once at boot and picks the engines.
 
 ## What JARVIS can do
 
-Beyond answering, JARVIS reaches every MCP server in your Claude Code
+Beyond answering, JARVIS reaches every MCP server in your Claude
 configuration, and can drive his own interface.
 
 ### Your tools
@@ -558,7 +559,10 @@ The name J.A.R.V.I.S. is a tribute to Marvel's Iron Man stories; "Iron Man",
 Characters, Inc. and The Walt Disney Company), and no footage, images or voice
 recordings from any film are included. "Claude" and "Claude Code" are Anthropic's,
 "ElevenLabs" is ElevenLabs, Inc.'s; you use your own accounts under their terms.
-Provided "as is" with no warranty. Rights holders with a concern: please open an
+While JARVIS waits for "Hey Jarvis", short clips of speech it hears are sent to a
+speech service (ElevenLabs if you added a key, otherwise your browser's, which in
+Chrome is Google's) to check for the name, so room sound can leave your computer
+before you wake it; an offline wake-word engine is planned. Provided "as is" with no warranty. Rights holders with a concern: please open an
 [issue](https://github.com/dhananjay09892/JARVIS/issues). Full text:
 [DISCLAIMER.txt](DISCLAIMER.txt).
 

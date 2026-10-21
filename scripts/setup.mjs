@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'dotenv';
+import { nodeSupported, MIN_NODE_TEXT } from './node-version.mjs';
 
 const tick = '  ok  ';
 const warn = ' note ';
@@ -26,14 +27,13 @@ console.log('------------------------------------------------------------');
 
 // --- Node version --------------------------------------------------------
 try {
-  const major = Number(process.versions.node.split('.')[0]);
-  if (Number.isFinite(major) && major >= 20) {
-    line(tick, `Node.js ${process.versions.node} (20+ required).`);
+  if (nodeSupported()) {
+    line(tick, `Node.js ${process.versions.node} (${MIN_NODE_TEXT}+ required).`);
   } else {
-    line(warn, `Node.js ${process.versions.node} is below 20. Please upgrade — the bridge needs Node 20 or newer.`);
+    line(warn, `Node.js ${process.versions.node} is below ${MIN_NODE_TEXT}. Please upgrade — the bridge needs Node ${MIN_NODE_TEXT} or newer (it uses node:sqlite).`);
   }
 } catch {
-  line(warn, 'Could not read the Node.js version. JARVIS needs Node 20 or newer.');
+  line(warn, `Could not read the Node.js version. JARVIS needs Node ${MIN_NODE_TEXT} or newer.`);
 }
 
 // --- Claude CLI on PATH ---------------------------------------------------
@@ -115,7 +115,7 @@ if (elSource) {
 // --- How to run ----------------------------------------------------------
 console.log('');
 console.log('To run JARVIS, open two terminals:');
-console.log('  1)  npm run bridge      # the brain (Claude Code, headless)');
+console.log('  1)  npm run bridge      # the brain (Claude, headless)');
 console.log('  2)  npm run dev         # the face (open http://localhost:5173 in Chrome)');
 console.log('');
 console.log('Then click INITIALISE and say "Hey Jarvis".');
