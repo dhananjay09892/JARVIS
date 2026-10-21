@@ -30,3 +30,6 @@ Gate test suite ≥ 100 cases; red-team prompt-injection suite (pages, emails, f
 
 ## Risks
 Over-blocking annoys users → risk tiers instead of blanket denial; MCP servers that mislabel tools → policy by tool name *and* capability annotations *and* user-defined overrides.
+
+## Related plans
+[15](15-policy-trust-and-privacy.md) · [35 never-list](35-ethics-limits-and-governance.md) · [16 red-team suite](16-evals-and-observability.md) · [20 channel injection](20-messaging-channels.md) · [38 PolicyRequest](38-shared-data-contracts.md)

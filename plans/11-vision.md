@@ -30,3 +30,6 @@ Event precision ≥ 90 %, miss rate ≤ 5 % in tested zones, false alerts ≤ 2/
 
 ## Risks
 Privacy law on recording/recognition, bystanders (neighbours, visitors), storage of snapshots → local retention limits, encryption, auto-delete, clear signage/indicators.
+
+## Related plans
+[14](14-ambient-context.md) · [12](12-proactive-alerts.md) · [09](09-smart-home.md) · [35 consent and law](35-ethics-limits-and-governance.md) · [01 presence](01-speaker-identification.md)

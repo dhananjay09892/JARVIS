@@ -41,3 +41,6 @@ Arbitration correct ≥ 95 %; added network latency ≤ 150 ms; satellite uptime
 
 ## Risks
 Echo and feedback loops, double answers, Wi-Fi drops, firmware maintenance burden → start with Tier A/B, ship C only once the protocol is stable.
+
+## Related plans
+[01](01-speaker-identification.md) · [02](02-offline-wake-word.md) · [09](09-smart-home.md) · [34 mobility](34-wearables-and-mobility.md) · [38 DeviceEvent](38-shared-data-contracts.md)

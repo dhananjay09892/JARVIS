@@ -33,3 +33,6 @@ Command success ≥ 97 % on a fixed phrase set; zero tier-2 actions without appr
 
 ## Risks
 Misheard commands with physical consequences → tiers + confirmations; vendor cloud dependence → prefer local protocols; entity naming chaos → onboarding wizard that tidies names/areas.
+
+## Related plans
+[03 rooms](03-multi-room-satellites.md) · [11 vision events](11-vision.md) · [12 alerts](12-proactive-alerts.md) · [15 risk tiers](15-policy-trust-and-privacy.md) · [30 family](30-household-and-family.md)

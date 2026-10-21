@@ -35,3 +35,6 @@ Task success rate per skill (target ≥ 90 %), mean steps vs. ladder level used,
 
 ## Risks
 UI agents mis-click → last resort + approval; destructive commands → schema-validated runner and policy tiers; credentials exposure → never read password managers, never type secrets.
+
+## Related plans
+[19 skills](19-skills-ecosystem.md) · [13 missions](13-autonomy-and-background-agents.md) · [15](15-policy-trust-and-privacy.md) · [17 platform support](17-deployment-and-resilience.md)

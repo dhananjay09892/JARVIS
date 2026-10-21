@@ -32,24 +32,47 @@ anything marked *unaudited* was not read in depth.
 | 17 | [Deployment and resilience](17-deployment-and-resilience.md) | Partial | P1/P2 | Unsigned Windows installer → service, signing, backup, degraded modes |
 | 18 | [HUD and multi-surface UI](18-hud-and-presence-ui.md) | Partial | P2 | HUD exists → state language, phone app, accessibility |
 | 19 | [Skills ecosystem](19-skills-ecosystem.md) | Pending | Later | Workflows only → signed, sandboxed skill packs |
+| 20 | [Messaging channels (own number, WhatsApp, Telegram)](20-messaging-channels.md) | Pending | P1 | Voice/browser only → channel adapters, sender allow-list, approvals over chat |
+| 21 | [Multi-brain framework](21-multi-brain-framework.md) | Pending | P1 | Claude-only (`brain.ts`, Agent SDK in `server.mjs`) → provider interface, conformance suite, fallback |
+| 22 | [Brain: OpenAI Codex / ChatGPT plan](22-brain-openai-codex.md) | Pending | P1 | Subscription login documented; third-party use terms unconfirmed |
+| 23 | [Brain: GitHub Copilot](23-brain-github-copilot.md) | Pending | P1 | Official embeddable SDK; verify GA status and quota |
+| 24 | [Brain: Google Gemini](24-brain-google-gemini.md) | Pending | P2 | API key first; free Google-login path reportedly ended (unverified) |
+| 25 | [Brain: API-key providers](25-brain-api-providers.md) | Partial | P1 | Anthropic direct path only, key in browser → server-side tool-loop adapter, OpenAI/OpenRouter/compatible |
+| 26 | [Brain: local models](26-brain-local-models.md) | Pending | P2 | Nothing → Ollama/LM Studio, offline basics |
+| 27 | [Brain: other agent CLIs (evaluation)](27-brain-other-agent-clis.md) | Pending | Later | Research rubric for Cursor, Amp, OpenCode, Qwen, Grok, Mistral |
+| 28 | [Multilingual (English, Gujarati, Hindi, mixed)](28-multilingual.md) | Partial | P1 | Language option, English-only replies → per-person profile, detection, code-switching STT, native TTS |
+| 29 | [Onboarding and first run](29-onboarding-and-first-run.md) | Partial | P1 | Welcome wizard → hardware/echo test, wake calibration, guided connectors, first success |
+| 30 | [Household and family](30-household-and-family.md) | Pending | P2 | Single user → profiles, child mode, shared lists, routines, guest mode, elder care |
+| 31 | [Money and life admin](31-finance-and-admin.md) | Pending | Later | Nothing → bills, receipts, subscriptions, scam shield (read-only; no payments) |
+| 32 | [Health and wellbeing](32-health-and-wellbeing.md) | Pending | Later | Nothing → reminders, sleep, routines, vault; supportive, not medical |
+| 33 | [Knowledge work and meetings](33-knowledge-work-and-meetings.md) | Pending | P1/P2 | Keyword memory → cited RAG, meeting minutes, briefs, drafting, research |
+| 34 | [Wearables and mobility](34-wearables-and-mobility.md) | Pending | Later | Home PC only → phone, earbuds, watch, car, secure remote access |
+| 35 | [Ethics, limits and governance](35-ethics-limits-and-governance.md) | Pending | **P0** | Disclaimer only → published never-list, red-team gate, incident process |
+| 36 | [Economics and licensing](36-economics-and-licensing.md) | Pending | P1 | Unknown costs/licences → cost table, caps, licence register, IP review |
+| 37 | [Execution roadmap and risks](37-execution-roadmap-and-risks.md) | – | – | Dependency graph, 30/60/90 days, ADR list, risk register |
+| 38 | [Shared data contracts](38-shared-data-contracts.md) | Pending | P0/P1 | Ad-hoc shapes → typed, validated schemas and event topics |
 
 ## Mapping from the 12-step "movie Jarvis" list
 
 1 → 03 · 2 → 02 · 3 → 04 · 4 → 04 · 5 → 05 · 6 → 06 · 7 → 07 · 8 → 08 · 9 → 09 · 10 → 10 · 11 → 11 · 12 → 12.
-Added because a real assistant needs them: 01, 13–19.
+Added because a real assistant needs them: 01, 13–38.
 
 ## What to build first
 
-1. **Phase 0, trust:** 08 (gate and injection), 02 (private wake), 15 (policy extraction), 16 (baseline metrics).
-2. **Phase 1, identity and feel:** 01, 05, 06.
-3. **Phase 2, proactive and context:** 12, 14, 07.
-4. **Phase 3, autonomy:** 13, 19.
-5. **Phase 4, home and perception:** 09, 03, 11.
-6. **Phase 5, resilience and polish:** 17, 18, offline half of 04.
+The authoritative order, dependency graph and 30/60/90-day plan are in [37](37-execution-roadmap-and-risks.md). In short:
+
+1. **Phase 0, trust and truth:** 08, 15, 02, 16, 35, 36.
+2. **Phase 1, identity and feel:** 01, 05, 06, 21 + 25, 28, 29.
+3. **Phase 2, proactive and connected:** 12, 20 (Telegram first), 14, 07, then 22 or 23 once their terms are confirmed.
+4. **Phase 3, autonomy and work:** 13, 19, 33, 31.
+5. **Phase 4, home and the world:** 09, 03, 11, 30, 34, 32.
+6. **Phase 5, resilience and polish:** 17, 18, offline 04 + 26, 24, 27.
+
+Use [38](38-shared-data-contracts.md) as the shared vocabulary so plans built in parallel still fit together.
 
 ## Standing constraints
 
-- JARVIS stays on the user's own Claude subscription (recorded decision; API key only as fallback).
+- The default brain stays Claude on the user's own subscription (recorded decision). Other brains (21–27) are optional, sit behind the provider interface, and none may loosen the policy engine.
 - Effectful actions are off by default and always pass the policy engine (15).
 - Raw audio, video and voiceprints stay local; only text/snapshots go to cloud models when needed.
 - Windows installer is the main product; Node 22.13+ for source users.

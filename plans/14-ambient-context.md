@@ -33,3 +33,6 @@ Deixis accuracy on a test script ≥ 90 %; avg context tokens per turn ≤ budge
 
 ## Risks
 Surveillance feel → opt-in, indicator, on-demand-first design; token bloat → relevance ranking and summarisation; stale context → TTLs.
+
+## Related plans
+[07](07-memory-upgrade.md) · [15](15-policy-trust-and-privacy.md) · [33](33-knowledge-work-and-meetings.md) · [34 location](34-wearables-and-mobility.md) · [29 permissions UX](29-onboarding-and-first-run.md)

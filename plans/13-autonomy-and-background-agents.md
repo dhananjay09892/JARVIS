@@ -35,3 +35,6 @@ Mission success rate; % requiring human help; average cost per mission; approval
 
 ## Risks
 Runaway cost/loops → budgets and watchdogs; compounding errors → verifier step and checkpoints; hidden side effects → dry-run first, reversible actions preferred, full audit trail.
+
+## Related plans
+[19](19-skills-ecosystem.md) · [15 budgets](15-policy-trust-and-privacy.md) · [33 research missions](33-knowledge-work-and-meetings.md) · [21 brains](21-multi-brain-framework.md) · [38 Mission](38-shared-data-contracts.md)

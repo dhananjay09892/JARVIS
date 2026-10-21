@@ -39,3 +39,6 @@ Recall@5 on a paraphrase test set ≥ 90 %; user-approved suggestion rate; stale
 
 ## Risks
 Wrong or creepy memories → approval + provenance; prompt injection through remembered content → memory is data, never instructions (08/15).
+
+## Related plans
+[01 per-speaker](01-speaker-identification.md) · [14](14-ambient-context.md) · [32 vault](32-health-and-wellbeing.md) · [33 knowledge base](33-knowledge-work-and-meetings.md) · [38 MemoryItem](38-shared-data-contracts.md)

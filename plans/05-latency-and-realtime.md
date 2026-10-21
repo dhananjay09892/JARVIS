@@ -35,3 +35,6 @@ Median ≤ 1.0 s, p95 ≤ 2.5 s on fast path; barge-in stop latency ≤ 250 ms; 
 
 ## Risks
 Speculative start wastes tokens; aggressive endpointing clips users → keep per-user tunable and test with the pause-heavy recordings already in the bug history.
+
+## Related plans
+[06](06-brain-routing.md) · [16 traces](16-evals-and-observability.md) · [04 streaming STT](04-local-speech-stack.md) · [21 brain latency](21-multi-brain-framework.md)

@@ -36,3 +36,6 @@ Time to author a skill < 15 min; first-party pack success ≥ 90 % on their test
 
 ## Risks
 Supply-chain attacks (the main one) → signatures, permission prompts, sandbox, review; skill sprawl → quotas and curated defaults.
+
+## Related plans
+[13](13-autonomy-and-background-agents.md) · [15](15-policy-trust-and-privacy.md) · [33](33-knowledge-work-and-meetings.md) · [36 marketplace licensing](36-economics-and-licensing.md)

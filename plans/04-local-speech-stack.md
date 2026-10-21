@@ -37,3 +37,6 @@ WER on a recorded set (home noise, accents); time-to-first-audio; MOS-style list
 
 ## Risks
 Model licences (some "open" TTS forbids commercial use), CPU load on laptops, voice-clone ethics/legal.
+
+## Related plans
+[02](02-offline-wake-word.md) · [28 multilingual](28-multilingual.md) · [26 offline brain](26-brain-local-models.md) · [17 degraded modes](17-deployment-and-resilience.md) · [36 voice licences](36-economics-and-licensing.md)
