@@ -3,7 +3,7 @@
 What to fix, in what order, and what can wait. Each item was checked against the
 code where it could be (marked ✔ verified). Effort figures are rough.
 
-Last updated: October 2026 · app version 0.1.4
+Last updated: October 2026 · app version 0.1.4 · #5 decision recorded
 
 ---
 
@@ -20,28 +20,34 @@ Last updated: October 2026 · app version 0.1.4
 
 ## P0 — do first
 
-### 5. "No API key" vs Anthropic's terms — ~1 day (not half a day)
-- **Problem.** Anthropic's Agent SDK overview says: *"Unless previously approved,
-  Anthropic does not allow third party developers to offer claude.ai login or rate
-  limits for their products, including agents built on the Claude Agent SDK. Use the
-  API key authentication methods…"* ✔ verified (code.claude.com/docs/en/agent-sdk/overview).
-  JARVIS's whole pitch, and the installer's **Sign in** button, is "use your Claude
-  subscription, no API key".
-- **Second problem, same page: branding.** The page does **not** permit the name
-  "Claude Code" for a third-party product, and says a product "should maintain its own
-  branding and not appear to be Claude Code". We say "Claude Code" in ~12 places in the
-  README, ~8 in `Settings.tsx` and on 9 landing-site files. Allowed wording is
-  "{YourAgentName} Powered by Claude".
-- **Decide first.** Either (a) ask Anthropic for approval and keep subscription login, or
-  (b) make **API-key authentication the default**. Option (b) changes the product
-  promise: users pay API usage, not a subscription.
-- **If (b):** add an *Anthropic API key* field to the Settings page and wizard (stored in
-  `settings.db` like the ElevenLabs key), pass it to the bridge as `ANTHROPIC_API_KEY`,
-  keep subscription sign-in only as an opt-in "I have approval" path, then rewrite the
-  site headline, download page, guides and disclaimer. Replace "Claude Code" wording with
-  "Claude".
-- **Why P0.** The distribution model depends on it, and a policy problem found after
-  launch is far more expensive than one found now.
+### 5. Subscription login vs Anthropic's terms — DECIDED: keep it; manage the risk (~half a day)
+- **Decision (October 2026): JARVIS keeps using Claude Code on the user's own Claude
+  subscription.** No API-key path becomes the default.
+- **The risk that remains.** Anthropic's Agent SDK overview says: *"Unless previously
+  approved, Anthropic does not allow third party developers to offer claude.ai login or
+  rate limits for their products, including agents built on the Claude Agent SDK."*
+  ✔ verified (code.claude.com/docs/en/agent-sdk/overview). Keeping subscription login
+  means shipping on something Anthropic may not have approved. It is a known, accepted
+  risk, not a closed question.
+- **Do under this decision:**
+  1. **Ask Anthropic for approval** (the page names the sales team as the contact for
+     partner and branding questions) and record the answer here. This turns "unless
+     previously approved" into a yes or a no.
+  2. **Be plain on the site and in the wizard** that JARVIS runs on the user's *own*
+     Claude login and is billed to their account, and is not made or endorsed by Anthropic
+     (the disclaimer already says the second part).
+  3. **Fix the branding.** The same page says third-party products may not use the name
+     "Claude Code" and "should maintain [their] own branding and not appear to be Claude
+     Code". Allowed wording: "Claude", or "{YourAgentName} Powered by Claude". We say
+     "Claude Code" in ~12 places in the README, ~8 in `Settings.tsx` and on 9 landing-site
+     files. Reword to "your Claude subscription" / "Powered by Claude".
+  4. **Keep a fallback.** Optional and small: an *Anthropic API key* field in Settings
+     (stored in `settings.db`, passed to the bridge as `ANTHROPIC_API_KEY`) as an
+     alternative sign-in, so there is a ready path if approval is refused.
+- **Revisit if** Anthropic says no, or changes the terms. Then the API-key path becomes
+  the default and the site headline, download page and guides change with it.
+
+---
 
 ### 3. The permission gate guesses from tool names — 2–3 h
 - **Problem.** `READ_VERB` in `bridge/server.mjs:309` only checks that a tool name
@@ -149,14 +155,14 @@ Last updated: October 2026 · app version 0.1.4
 - ~15 screenshot placeholders remain (Windows desktop shots, public Claude / ElevenLabs
   pages, logged-in shots with the key blurred). Merge the open guide PRs after the next
   release exists. (P2)
-- Update the install guide's data-folder and wizard text if the auth change in #5 lands.
+- Update the guides' "Claude Code" wording when the branding change in #5 lands.
 
 ---
 
 ## Suggested order
 
 1. **This week:** #1 + #8 (one small PR), #3, correct the wake-word disclosure (#2, wording only).
-2. **Decide #5** (approval vs API-key default) before any wider promotion; it shapes the site, the wizard and the guides.
+2. **#5 (decided: keep subscription login):** ask Anthropic for approval, and fix the "Claude Code" wording on the site, the README and the Settings screen, before any wider promotion.
 3. **Then:** #4, #6, installer signing, PR CI.
 4. **Then:** wake-word engine (#2 full), #7.
 5. **Later:** #10 first, then #13 / #9 / #11 / #12 as demand appears.
