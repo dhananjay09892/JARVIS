@@ -1,18 +1,37 @@
-# 10 · Computer and phone control
+# 10 · Hands: computer, phone and browser control
 
-**Status:** Partial · **Priority:** P1 (wording), Later (cross-platform) · **Effort:** hours / 1–2 weeks
+**Status:** Partial · **Priority:** P1 (labels), Later (breadth) · **Effort:** 2–6 weeks
 
-## Today
-Android MCP (phone), approved Windows app launching and commands (`bridge/apps.mjs`),
-dedicated development workspace (`workspace.mjs`), Chrome driving (`chrome.mjs`), and daily
-workflows (`workflows.mjs`).
+## End state
+"Open the project, run the tests, and email me the summary." / "Book the 7pm table." /
+"Find that PDF Sam sent last month." JARVIS operates your PC, phone and browser reliably
+using the **cheapest dependable method first** (API → MCP → saved automation → UI agent),
+shows what it is doing, and asks before anything consequential.
 
-## Steps
-1. **Honest labels (hours):** `apps.mjs:34` throws off Windows. Mark launching and approved
-   commands "Windows only" in README/site and check the platform before showing the card.
-2. **Fixed automations first:** a small library of saved workflows for repeated jobs
-   ("open project and email report"). Use screen-clicking agents only for one-offs.
-3. **macOS/Linux** launching later, behind the same approval queue.
+## Today (verified)
+Android MCP (phone), approved Windows app launching & commands (`apps.mjs`, throws on
+non-Windows), development workspace (`workspace.mjs`), Chrome driving (`chrome.mjs`), daily
+workflows (`workflows.mjs`), mission board for tasks (`tasks.mjs`, `task-store.mjs`).
 
-## Done when
-No feature claims a platform it does not support; at least three example workflows ship.
+## Execution ladder
+1. Direct API / MCP tool (fast, reliable).
+2. Saved workflow/automation (deterministic, reviewed).
+3. Local OS scripting (PowerShell/AppleScript/Shortcuts) via approved command runner.
+4. Browser automation (DOM/accessibility tree).
+5. Screen-vision "computer use" agent (slowest, last resort, always visible + interruptible).
+
+## Phases
+1. **Truthful platform support (hours):** label Windows-only features; platform check before cards.
+2. **Skill library (1–2 w):** 15–20 reviewed, parameterised automations: open project, daily standup summary, file search, meeting prep, expense capture, screenshot-to-note, etc. (see 19).
+3. **Safer command runner:** allow-listed commands with argument schemas, dry-run preview, working-dir sandbox, timeouts, output size caps, secrets redaction.
+4. **Window/screen awareness (with 14):** "what's on my screen?", "fix this error" with consent per capture.
+5. **Phone depth:** notifications triage, calls/messages draft-and-approve, location-aware reminders.
+6. **Computer-use agent (optional):** gated, step-by-step narration, hard stop word, region/app allow-list, recorded run log.
+7. **macOS/Linux parity:** abstract the launcher behind platform adapters.
+8. **Undo & audit:** every action logged with enough detail to reverse (move file → record original path).
+
+## Metrics
+Task success rate per skill (target ≥ 90 %), mean steps vs. ladder level used, % tasks solved at levels 1–3, interrupted-run recovery rate.
+
+## Risks
+UI agents mis-click → last resort + approval; destructive commands → schema-validated runner and policy tiers; credentials exposure → never read password managers, never type secrets.

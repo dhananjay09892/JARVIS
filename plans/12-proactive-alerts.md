@@ -1,22 +1,30 @@
-# 12 · Proactive alerts (JARVIS speaks first)
+# 12 · Proactive JARVIS: briefings, alerts, anticipation
 
-**Status:** Pending · **Priority:** Later, but the most valuable of that group · **Effort:** 2–4 days
+**Status:** Pending · **Priority:** P1 (highest-value "Later" item) · **Effort:** 2–4 weeks
 
-## Today
-The bridge scheduler runs daily workflows at a local time (`bridge/workflows.mjs`, checked
-every 30 s, only while the bridge runs). Workflows have no way to *speak* or show a card on
-their own.
+## End state
+JARVIS speaks first when it matters, in the right place, at the right time, in the right tone:
+"Good morning. Rain by nine, your first meeting moved to ten, and the build from last night
+passed." He knows when to stay quiet, batches low-value news, interrupts for urgent things,
+and learns what you actually care about.
 
-## Steps
-1. **"announce" workflow step:** speaks text and/or pushes a panel to the open UI; queued if
-   the UI is closed and delivered on next open.
-2. **Morning briefing workflow** (calendar, mail count, weather) as a shipped template.
-3. **Quiet hours + urgency:** each alert has a level; at night only `urgent` interrupts;
-   others wait until morning. Settings for the window.
-4. **Event triggers:** build finished/failed (development workspace), mission-board task
-   done, later camera/sensor events ([11](11-vision.md), [09](09-smart-home.md)).
-5. Never interrupt mid-conversation; wait for idle (`wake` mode).
+## Today (verified)
+Daily scheduled workflows (`workflows.mjs`, checked every 30 s while the bridge runs). No
+spoken/pushed announcement step, no event bus, no quiet hours.
 
-## Done when
-A scheduled briefing speaks at the set time, a night-time non-urgent alert is held until
-morning, and an urgent one speaks immediately.
+## Building blocks
+1. **Event bus (3 d):** sources (scheduler, task completion, builds, calendar, mail, sensors, camera) publish typed events.
+2. **Notification policy engine (3 d):** each candidate alert gets `urgency` (info/normal/important/urgent), `audience` (who), `place` (room), `privacy` (private/public). Decision = f(urgency, quiet hours, presence, current activity, speaker present, focus mode).
+3. **Delivery channels:** speak in room, HUD card, phone push, queue-for-next-wake ("while you were away…").
+4. **"announce" workflow step** and event-triggered workflows.
+5. **Briefings (3 d):** morning/evening/weekly templates (calendar, travel time, weather, tasks, mail highlights, overnight jobs, home status); length adapts; skippable by voice.
+6. **Anticipation (1–2 w):** travel-time alerts from calendar + location, "you usually call Mum on Sundays", package/arrival reminders, bill due — each from a rule or approved learned routine (07).
+7. **Do-not-disturb intelligence:** meetings (from calendar), calls, sleep schedule, focus sessions, guests present; urgent override list (smoke, leak, family).
+8. **Feedback loop:** "not now / don't tell me this again / more like this" adjusts a per-source score; weekly digest of what was suppressed.
+9. **Escalation:** unacknowledged urgent alerts repeat → other room → phone push.
+
+## Metrics
+Alert usefulness rating ≥ 80 % kept; interruptions during focus/sleep = 0 non-urgent; briefing delivered on time ≥ 99 %; suppression transparency (user can ask "what did you hold back?").
+
+## Risks
+Annoyance is the failure mode → conservative defaults, explicit opt-in per source, a one-word mute ("quiet"), and every alert shows *why* it fired.

@@ -1,47 +1,54 @@
-# 01 · Speaker identification ("who is talking?")
+# 01 · Speaker identification and presence ("who is talking, who is here")
 
-**Status:** Pending · **Priority:** P1 · **Effort:** 3–5 days
+**Status:** Pending · **Priority:** P1 · **Effort:** 1–2 weeks for full scope · **Depends on:** 15 (roles)
 
-## Goal
-When more than one person talks to JARVIS, he knows who each utterance came from, greets
-them by name, uses their memory and applies their permissions. Unknown voices are "guest".
+## End state
+JARVIS recognises each household member by voice within a sentence, greets them by name,
+loads *their* memory and preferences, applies *their* permissions, and knows who is currently
+present. A stranger is a "guest" with chat-only access. Kids/guests cannot approve spending
+or unlock doors. Multi-speaker overlap is handled gracefully ("one at a time, please") instead
+of producing garbage.
 
-## Today
-- `src/lib/vad.ts` cuts the mic into one audio blob per utterance.
-- `src/lib/voice.ts` `transcribe()` posts the blob to bridge `/stt` and gets text back.
-- No identity is attached anywhere. Scribe diarization only labels speakers inside one file
-  ("speaker 0/1"), not across turns, and is poor on 2–3 s clips, so it is not enough.
+## Today (verified)
+`vad.ts` yields one blob per utterance → `voice.ts transcribe()` → bridge `/stt` → text only.
+No identity anywhere.
 
-## Approach: voice enrollment + speaker verification
-1. **Embedding model.** Small speaker-embedding model as ONNX (ECAPA-TDNN or WeSpeaker).
-   Run it in the **bridge** with `onnxruntime-node` so voiceprints never leave the machine
-   and the browser bundle stays small. (Alternative: `onnxruntime-web` in the page.)
-2. **Enrollment.** "Jarvis, learn my voice": prompt for 3–4 sentences, average the
-   embeddings, store `{ id, name, role, embedding[] }` in a new local SQLite table beside
-   the memory database (`%LOCALAPPDATA%\JARVIS`).
-3. **Identify.** In `transcribe()`, send the same blob to bridge `POST /speaker`. Return
-   `{ speaker, score }` by cosine similarity against enrolled voiceprints; below threshold
-   means `guest`.
-4. **Short utterances** ("stop", "yes") are unreliable. Below ~1.5 s of speech, reuse the
-   speaker from the previous turn within a time window instead of re-scoring.
-5. **Use the result.** Pass `speaker` with the utterance to the conversation, inject
-   `Speaker: <name>` into the turn context, and scope memory per speaker.
-6. **Permissions.** Roles `owner` / `member` / `guest`. Only `owner` can approve effectful
-   tools, run commands or change settings. Guests get chat only.
-7. **Fallback.** Spoken declaration ("it's Priya") sets the speaker for the session.
+## Architecture
+```
+VAD segment ─┬─► STT (text)
+             └─► Speaker service (bridge): resample 16 kHz → embed → cosine vs. voiceprints
+                       → { speaker | guest, score, confidence band }
+Fusion: voice score + recent-speaker carry-over + (optional) face/room presence → final identity
+Identity → turn context, memory scope, policy role
+```
+- Model: ECAPA-TDNN / WeSpeaker ONNX in bridge via `onnxruntime-node` (voiceprints never leave the machine).
+- Voiceprint = several embeddings per person (different mic distances, moods), not one average.
+- Store in the encrypted local DB beside memory; delete = hard delete.
 
-## Privacy and safety
-- Voiceprints are biometric data: local only, never sent to any API, deletable in Settings
-  ("Forget my voice"), and stated in `DISCLAIMER.txt`.
-- Voice ID is **not authentication**. Recordings and impersonation can fool it. Never let it
-  alone unlock anything destructive; approvals still need a click.
+## Phases
+1. **MVP (3–4 d):** `/speaker/enroll`, `/speaker/identify`, spoken enrollment ("learn my voice"), `speaker` field on utterances, name in system prompt, owner/guest split.
+2. **Robustness (3–4 d):** short-utterance carry-over (<1.5 s reuse previous within 20 s), confidence bands (confident / unsure / unknown) — unsure → JARVIS asks "is that you, Priya?" for risky actions only, running adaptive enrollment (add embeddings from confirmed turns, capped and reversible).
+3. **Presence (3 d):** maintain "who is here" from recent speech + (later) satellites/cameras; expire after N minutes; expose to policy and proactive alerts (don't read private mail aloud when a guest is present).
+4. **Overlap and diarization (optional):** use Scribe diarization or an overlap detector to refuse mixed speech; per-speaker barge-in rules (only the active speaker can interrupt).
+5. **Per-speaker personality:** address style, language, verbosity, wake-word acceptance.
 
-## Done when
-- Enroll two people; each is recognised ≥ 95 % of the time on normal sentences in a quiet room.
-- A guest voice cannot approve an effectful tool.
-- Deleting a voiceprint removes the row and the embedding.
-- Unit tests for enrollment, scoring threshold and the previous-speaker carry-over.
+## Policy hooks (see 15)
+- Roles: `owner`, `member`, `child`, `guest`.
+- Risky actions require `owner`/`member` identity **and** an approval click; identity alone never authorises.
+- "Privacy mode": when an unknown/guest voice is present, suppress private readouts.
 
-## Open questions
-- Threshold tuning per mic/room (needs a small calibration step).
-- Whether to also gate the wake word on the owner's voice (stricter, more misses).
+## Metrics (to track in 16)
+- Equal error rate on an enrolled test set ≤ 5 % for sentences ≥ 3 s, quiet room.
+- Guest false-accept rate on risky actions: 0 by policy design (approval click always required).
+- Added latency ≤ 150 ms per utterance (run in parallel with STT).
+
+## Risks
+- Spoofing by recording/impersonation → never sole authentication.
+- Biometric data law (GDPR/BIPA-style): explicit consent at enrollment, in-app delete, disclosed in `DISCLAIMER.txt`.
+- Mic variance across rooms → adaptive enrollment and per-device calibration.
+- Children's voices change → allow re-enroll prompts.
+
+## Acceptance tests
+- Enroll A and B; alternate 40 sentences; ≥ 95 % correct identification.
+- Guest voice asks to run a command → denied with a spoken explanation.
+- Delete voiceprint → rows and embeddings gone; verified by test.

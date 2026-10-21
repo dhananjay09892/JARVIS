@@ -1,17 +1,35 @@
-# 09 · Smart home
+# 09 · The house that obeys (smart home)
 
-**Status:** Pending · **Priority:** Later · **Effort:** 2–3 days · **Needs:** plan 08 (gate) first
+**Status:** Pending · **Priority:** Later · **Effort:** 2–4 weeks · **Depends on:** 08/15 (gate, roles), 03 (rooms)
 
-## Goal
-"Turn off the lights", "lock the door" through Home Assistant, safely.
+## End state
+Natural commands ("it's cold in here", "movie night", "goodnight") control lights, climate,
+blinds, media, locks and appliances through Home Assistant; scenes and routines are created
+by voice; JARVIS reports the home state ("garage door has been open 20 minutes") and reacts
+to events — with safety tiers so the dangerous things are never one misheard word away.
 
-## Steps
-1. Connect the **Home Assistant MCP server** (documented setup in README, no code needed to try).
-2. **Risk levels** in `decideTool`: lights/media free; climate with a confirm; locks, garage,
-   alarm always need an approval card (and, after plan 01, the owner's voice).
-3. Expose only an allow-list of entities to JARVIS, not the whole house.
-4. Keep Home Assistant's own local command handling for basics so they work if the AI is down.
-5. Test with a dry-run mode that logs intended calls instead of sending them.
+## Architecture
+Home Assistant (mini PC) + Matter/Zigbee/Z-Wave devices ← MCP/REST/WebSocket ← JARVIS policy engine ← orchestrator.
+HA's own local intents handle trivial commands even when AI/cloud is down.
 
-## Done when
-Lights respond by voice; a lock command shows an approval and does nothing until approved.
+## Phases
+1. **Connect (2–3 d):** HA MCP server or direct WebSocket; entity allow-list UI (only exposed entities).
+2. **Risk tiers in policy (2 d):**
+   | Tier | Examples | Rule |
+   |---|---|---|
+   | 0 | lights, media, fans | free |
+   | 1 | climate, blinds, covers | free for members, log |
+   | 2 | locks, garage, alarm disarm, ovens | approval card + member identity + (optional) PIN |
+   | 3 | anything unsafe/irreversible | never by voice alone |
+3. **Room awareness (2 d):** "the lights" → current room (03); area/floor/group names learned.
+4. **Scenes and routines by voice (3 d):** "create a movie scene", stored as HA scenes/automations after approval.
+5. **State queries and summaries (2 d):** "is the house locked?", "what's using power?"
+6. **Event reactions (with 12):** door left open, leak sensor, smoke → urgent proactive alert regardless of quiet hours (policy-defined).
+7. **Energy & comfort intelligence (later):** schedule heating from calendar/presence; suggestions, not silent changes.
+8. **Safety interlocks:** dry-run mode, rate limits, "undo that" for the last action, kill switch (15).
+
+## Metrics
+Command success ≥ 97 % on a fixed phrase set; zero tier-2 actions without approval in tests; median command-to-device latency ≤ 1.5 s total.
+
+## Risks
+Misheard commands with physical consequences → tiers + confirmations; vendor cloud dependence → prefer local protocols; entity naming chaos → onboarding wizard that tidies names/areas.

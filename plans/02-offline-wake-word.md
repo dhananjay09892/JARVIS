@@ -1,27 +1,42 @@
-# 02 · Offline wake word
+# 02 · Wake word and always-on listening, done privately
 
-**Status:** Partial · **Priority:** P0 (trust) · **Effort:** 30 min disclosure now, ~1 day engine
+**Status:** Partial · **Priority:** P0 (trust) · **Effort:** 30 min disclosure, 2–4 days full
 
-## Problem
-While asleep, every phrase the mic hears is transcribed by ElevenLabs Scribe (or Google, in
-browser mode) just to look for "Jarvis" (`WAKE` regex in `src/lib/voice.ts`). Room audio is
-sent to the cloud before anyone says the wake word. `WAKE_ENGINE` in `src/config.ts` is
-defined and unused; Porcupine is already a dependency.
+## End state
+A tiny on-device model listens continuously and **nothing leaves the machine until it hears
+"Jarvis"**. Wake is reliable across rooms and TV noise, adapts to your voice (optionally only
+wakes for recognised speakers), supports a conversational window (no need to repeat the name
+for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone button).
 
-## Steps
-1. **Now (wording only):** correct `DISCLAIMER.txt`, the download page and the Settings text
-   to say room audio is transcribed while asleep.
-2. **Engine:** run an offline detector while in `wake` mode. Options:
-   - Picovoice **Porcupine** (built-in "Jarvis", needs a free access key), or
-   - **openWakeWord** (free, has a "Hey Jarvis" model; runs via ONNX/WASM or a bridge sidecar).
-3. **Gate the cloud:** in `wake` mode, VAD segments are *not* sent to `/stt`. Only after the
-   engine fires does `h.onWake()` run and transcription start (keep any trailing words by
-   buffering ~2 s of pre-roll audio).
-4. **Fallback:** no key / no model → today's transcript matching, clearly labelled in the UI.
-5. **Sensitivity setting** in Settings (TV and music cause false wakes).
-6. Keep the clap trigger (`clap.ts`) as is.
+## Today (verified)
+- Wake = regex over transcripts (`WAKE` in `voice.ts`); asleep audio is transcribed by Scribe/Google.
+- `WAKE_ENGINE` in `config.ts` unused; Porcupine is installed.
+- Clap trigger exists (`clap.ts`).
 
-## Done when
-- With the engine on, a network trace during a minute of room talk shows no audio uploads.
-- Wake rate and false-wake rate measured over a recorded test set, numbers in this file.
-- Falls back cleanly when the key is missing.
+## Phases
+1. **Disclose (30 min):** fix DISCLAIMER, site, Settings wording.
+2. **Engine (1–2 d):** Porcupine ("Jarvis" built in) *or* openWakeWord ("hey jarvis"), run in
+   the page (WASM) or bridge. Keep a 2–3 s ring buffer so the words after the name are not lost.
+   In `wake` mode the VAD blobs are **dropped locally**; only a wake event starts STT.
+3. **Tuning (1 d):** sensitivity slider; false-wake log; a "TV mode" (raise threshold when media
+   is playing, see `music.ts`/system audio level).
+4. **Conversation window:** after an answer, stay in `command` for N seconds (default 8, learns
+   from user behaviour) so follow-ups need no name; shorten if a different/unknown voice speaks.
+5. **Verified wake (with 01):** optional "only wake for enrolled voices" to reduce TV/guest wakes.
+6. **Alternate wakes:** hotkey, tray click, phone push-to-talk, gesture (already have hands.ts).
+7. **Custom phrase:** let users pick their own name/phrase (Porcupine custom keyword or openWakeWord training).
+
+## Fallback matrix
+| Situation | Behaviour |
+|---|---|
+| Engine + key present | Offline wake, cloud only after wake |
+| No key | openWakeWord (free) |
+| Neither works | Today's transcript matching, UI shows a "cloud listening" badge |
+
+## Metrics
+- Wake recall ≥ 95 % at 3 m in a quiet room; ≥ 85 % with TV at conversational level.
+- False wakes ≤ 1 per 8 h of ambient TV/speech.
+- Network audit: zero upload bytes while idle (automated test in 16).
+
+## Risks
+Licence/keys (Picovoice free tier limits), model size on low-end laptops, mic permissions in iframes/panes.
