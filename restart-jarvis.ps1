@@ -17,11 +17,11 @@ if (-not $nodePath) {
     Select-Object -First 1
 }
 if (-not $nodePath) {
-  throw 'Node.js was not found. Install Node.js 20 or newer, then run this script again.'
+  throw 'Node.js was not found. Install Node.js 22.13 or newer, then run this script again.'
 }
-& $nodePath -e 'if (Number(process.versions.node.split(".")[0]) < 20) process.exit(1)'
+& $nodePath -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 13) ? 0 : 1)'
 if ($LASTEXITCODE -ne 0) {
-  throw 'JARVIS requires a working Node.js 20 or newer installation.'
+  throw 'JARVIS requires a working Node.js 22.13 or newer installation.'
 }
 if (-not (Test-Path -LiteralPath (Join-Path $appRoot 'node_modules\vite\bin\vite.js'))) {
   throw 'JARVIS dependencies are missing. Run npm install in this folder before restarting.'

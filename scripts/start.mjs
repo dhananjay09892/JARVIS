@@ -14,6 +14,10 @@ import { spawn } from 'node:child_process'
 import process from 'node:process'
 import { cpSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { parse } from 'dotenv'
+import { assertNode } from './node-version.mjs'
+
+// node:sqlite needs Node 22.13+; say so plainly instead of crashing in the bridge.
+assertNode()
 
 /**
  * Put MediaPipe's WebAssembly where the page can actually load it.
