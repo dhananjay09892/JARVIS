@@ -36,7 +36,7 @@ this file decides *in what order*.
 ## Phase 0 · Trust and truth
 
 ### Q01 · Plan 08 · Fix the permission gate
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** 08 phase 1. Word-split tool names; check for a read verb first and no action verb; move `decideTool` into its own module; table-driven tests including adversarial names.
 - **Done when:** the known gate defects are fixed and covered by tests.
