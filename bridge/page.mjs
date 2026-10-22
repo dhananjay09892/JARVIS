@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { fetchText, peek, proxyError } from './net.mjs'
+import { stripHiddenHtml, stripHiddenText } from './untrusted.mjs'
 
 /**
  * Showing a web page on the display.
@@ -100,17 +101,27 @@ function stripDangerous(html) {
   return out
 }
 
+/** A numeric character reference as a character, or nothing if it is not one. */
+const codePoint = (n) => (Number.isInteger(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : '')
+
+/**
+ * Plain text from a fragment of markup. Invisible characters are removed after
+ * entities are decoded, since `&#8203;` is a zero-width space too (plan 08).
+ */
 const textOf = (html) =>
-  html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
-    .replace(/\s+/g, ' ')
+  stripHiddenText(
+    html
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&#(\d+);/g, (_, d) => codePoint(Number(d)))
+      .replace(/&#x([0-9a-f]+);/gi, (_, h) => codePoint(parseInt(h, 16))),
+  )
+    .text.replace(/\s+/g, ' ')
     .trim()
 
 const escape = (s) =>
@@ -261,8 +272,11 @@ function absolute(href, base) {
  * was furniture. Images are rewritten through /img so that even in reading mode
  * the browser never talks to the publisher.
  */
-function toReader(html, pageUrl, bridgeOrigin) {
-  const clean = stripDangerous(html)
+export function toReader(html, pageUrl, bridgeOrigin) {
+  // Hidden elements go before anything else: text the page hides from a
+  // sighted reader has no business on a blade, and is where injected
+  // instructions live (plan 08, phase 2).
+  const clean = stripHiddenHtml(stripDangerous(html)).html
   const body = articleBody(clean)
   const title = titleOf(html)
   const lead = metaContent(html, ['og:image', 'twitter:image'])
@@ -516,7 +530,7 @@ export async function probeUrl(url) {
       maxBytes: MAX_PAGE_BYTES,
       timeoutMs: PAGE_TIMEOUT_MS,
     })
-    const clean = stripDangerous(full.text)
+    const clean = stripHiddenHtml(stripDangerous(full.text)).html
     const readable = readableText(articleBody(clean))
     const title = titleOf(full.text)
     const lead = metaContent(full.text, ['og:image', 'twitter:image'])

@@ -4,6 +4,7 @@ import { createConnection } from 'node:net'
 import { readdir, stat } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { join } from 'node:path'
+import { markUntrustedResult } from './untrusted.mjs'
 
 /**
  * JARVIS's hands on your actual browser.
@@ -479,7 +480,10 @@ function forward(name, { needsTab = true } = {}) {
         const tab = await resolveTab(undefined)
         if (tab !== null) reply = await link.call(name, { ...(args ?? {}), tabId: tab })
       }
-      return toResult(reply)
+      // Everything the browser hands back describes a page somebody else wrote,
+      // so it reaches the model inside an <untrusted_data> envelope with its
+      // invisible characters removed (plan 08, phase 2).
+      return markUntrustedResult(toResult(reply), `chrome:${name}`)
     } catch (err) {
       // Plainly worded because it may well be spoken. The model is told what to
       // do about it, since it is the only one that can act.
