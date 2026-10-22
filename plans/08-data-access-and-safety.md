@@ -13,7 +13,7 @@ Any MCP server in the user's Claude config; effectful tools default-deny; approv
 (`READ_VERB`), #4 read-only mode can still exfiltrate via URLs.
 
 ## Phases
-1. **Fix the gate (P0, 2–3 h):** word-split names; read verb first and no action verb; move `decideTool` into its own module; table-driven tests including adversarial names.
+1. ✅ **Fix the gate (P0, 2–3 h) — done (autopilot, 2026-10-22, awaiting review):** word-split names; read verb first and no action verb; move `decideTool` into its own module (`bridge/tool-gate.mjs`); table-driven tests including adversarial names (`bridge/tool-gate.test.mjs`, 141 cases).
 2. **Injection defence (P1, 1–2 d):**
    - Mark all tool/page/email/file text as *untrusted data* in the prompt and in code paths.
    - **Taint tracking:** once a turn has read private content, outbound actions (open URL, fetch, send, write) require approval unless the target was named by the user.
@@ -30,6 +30,20 @@ Gate test suite ≥ 100 cases; red-team prompt-injection suite (pages, emails, f
 
 ## Risks
 Over-blocking annoys users → risk tiers instead of blanket denial; MCP servers that mislabel tools → policy by tool name *and* capability annotations *and* user-defined overrides.
+
+## Autopilot log
+- **2026-10-22 — Phase 1 (fix the gate).** Moved `decideTool` and its lists out of
+  `bridge/server.mjs` into dependency-free `bridge/tool-gate.mjs` (`createToolGate`).
+  Read verbs now match the *first whole word* of the tool name (`checkout_cart` no longer
+  passes as `check`), and a new whole-word `ACTION_WORDS` veto (archive, move, share,
+  forward, reply, order, checkout, transfer, approve, merge, submit, upload, run, set,
+  cancel, plus money/access/machine verbs) withholds names like `read_and_archive`. The old
+  substring `EFFECTFUL_VERB` veto is kept unchanged. A parity check against the old gate
+  showed only tightenings (old allow → new deny), no loosening. 141 table-driven cases.
+  Known trade-off: reads whose noun is an action word (`get_order`) and unseparated names
+  (`listdevices`) are now withheld in read-only mode; per-tool overrides belong to 15.
+  **Left:** add `bridge/tool-gate.test.mjs` to the CI test list in
+  `.github/workflows/release.yml` (not touched by autopilot); Phase 2 injection defence next.
 
 ## Related plans
 [15](15-policy-trust-and-privacy.md) · [35 never-list](35-ethics-limits-and-governance.md) · [16 red-team suite](16-evals-and-observability.md) · [20 channel injection](20-messaging-channels.md) · [38 PolicyRequest](38-shared-data-contracts.md)
