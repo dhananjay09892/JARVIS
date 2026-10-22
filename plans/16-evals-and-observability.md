@@ -33,3 +33,6 @@ test corpus, no latency traces, no end-to-end evals.
 
 ## Risks
 Collecting audio is itself a privacy risk → synthetic corpus first, explicit opt-in for real captures, local only.
+
+## Related plans
+[35 red-team gate](35-ethics-limits-and-governance.md) · [37 roadmap gates](37-execution-roadmap-and-risks.md) · [38 contract tests](38-shared-data-contracts.md) · [36 cost metrics](36-economics-and-licensing.md)

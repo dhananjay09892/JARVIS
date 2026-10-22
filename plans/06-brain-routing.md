@@ -45,3 +45,6 @@ Home-control-tuned small models only after 09 is in place.
 
 ## Risks
 Misrouting a hard question to the fast model → escalate on uncertainty; subscription rate limits → routing also reduces load.
+
+## Related plans
+[21 multi-brain](21-multi-brain-framework.md) · [07 memory](07-memory-upgrade.md) · [14 context](14-ambient-context.md) · [28 per-language persona](28-multilingual.md) · [38 TurnContext](38-shared-data-contracts.md)

@@ -28,3 +28,6 @@ Alert usefulness rating ≥ 80 % kept; interruptions during focus/sleep = 0 non-
 
 ## Risks
 Annoyance is the failure mode → conservative defaults, explicit opt-in per source, a one-word mute ("quiet"), and every alert shows *why* it fired.
+
+## Related plans
+[20 channels](20-messaging-channels.md) · [14](14-ambient-context.md) · [34 push](34-wearables-and-mobility.md) · [32 health nudges](32-health-and-wellbeing.md) · [38 Notification](38-shared-data-contracts.md)

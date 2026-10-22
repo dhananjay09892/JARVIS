@@ -52,3 +52,6 @@ Identity → turn context, memory scope, policy role
 - Enroll A and B; alternate 40 sentences; ≥ 95 % correct identification.
 - Guest voice asks to run a command → denied with a spoken explanation.
 - Delete voiceprint → rows and embeddings gone; verified by test.
+
+## Related plans
+[15 roles](15-policy-trust-and-privacy.md) · [03 rooms](03-multi-room-satellites.md) · [28 per-person language](28-multilingual.md) · [30 family](30-household-and-family.md) · [38 Identity contract](38-shared-data-contracts.md)

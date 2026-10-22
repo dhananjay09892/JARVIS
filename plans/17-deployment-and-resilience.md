@@ -27,3 +27,6 @@ Uptime, crash-free sessions ≥ 99.5 %, restore drill passes quarterly, update r
 
 ## Risks
 Signing cost/process, DB migrations corrupting data → backup-before-migrate, LAN exposure → auth + TLS + local-only default.
+
+## Related plans
+[29 onboarding](29-onboarding-and-first-run.md) · [34 remote access](34-wearables-and-mobility.md) · [36 licences](36-economics-and-licensing.md) · [37 phases](37-execution-roadmap-and-risks.md)

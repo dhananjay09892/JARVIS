@@ -36,3 +36,6 @@ Risk tiers: **R0** read local · **R1** read private/remote · **R2** reversible
 
 ## Risks
 Approval fatigue → grants, batching, learned safe patterns (proposed, never silent); complexity → keep the rules in one file with exhaustive tests.
+
+## Related plans
+[35](35-ethics-limits-and-governance.md) · [16 audit tests](16-evals-and-observability.md) · [38 PolicyRequest/Decision](38-shared-data-contracts.md) · [01](01-speaker-identification.md) · [08](08-data-access-and-safety.md)

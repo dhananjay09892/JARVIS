@@ -40,3 +40,6 @@ for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone bu
 
 ## Risks
 Licence/keys (Picovoice free tier limits), model size on low-end laptops, mic permissions in iframes/panes.
+
+## Related plans
+[04 speech stack](04-local-speech-stack.md) · [16 network audit test](16-evals-and-observability.md) · [29 calibration](29-onboarding-and-first-run.md) · [35 consent](35-ethics-limits-and-governance.md)

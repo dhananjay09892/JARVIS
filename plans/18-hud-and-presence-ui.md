@@ -29,3 +29,6 @@ Task completion without voice (accessibility) 100 %; idle GPU/CPU budgets; compr
 
 ## Risks
 Visual flair costing battery/CPU → adaptive quality; clutter → default minimal, progressive disclosure.
+
+## Related plans
+[29](29-onboarding-and-first-run.md) · [12](12-proactive-alerts.md) · [15 privacy centre](15-policy-trust-and-privacy.md) · [34 PWA](34-wearables-and-mobility.md) · [28 scripts/Unicode](28-multilingual.md)
