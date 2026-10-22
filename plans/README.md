@@ -28,7 +28,7 @@ anything marked *unaudited* was not read in depth.
 | 13 | [Autonomy and background agents](13-autonomy-and-background-agents.md) | Partial | P1 | Mission board exists → planner/verifier, budgets, parallel agents |
 | 14 | [Ambient context](14-ambient-context.md) | Pending | P2 | Nothing → context broker, screen/calendar awareness |
 | 15 | [Policy, trust, privacy](15-policy-trust-and-privacy.md) | Partial | **P0** | Approvals + `decideTool` → policy engine, roles, audit, kill switch |
-| 16 | [Evals and observability](16-evals-and-observability.md) | Pending | **P0/P1** | Diagnostics panel → traces, corpus, CI metrics |
+| 16 | [Evals and observability](16-evals-and-observability.md) | Partial | **P0/P1** | Turn traces + latency number → corpus, evals, CI metrics |
 | 17 | [Deployment and resilience](17-deployment-and-resilience.md) | Partial | P1/P2 | Unsigned Windows installer → service, signing, backup, degraded modes |
 | 18 | [HUD and multi-surface UI](18-hud-and-presence-ui.md) | Partial | P2 | HUD exists → state language, phone app, accessibility |
 | 19 | [Skills ecosystem](19-skills-ecosystem.md) | Pending | Later | Workflows only → signed, sandboxed skill packs |

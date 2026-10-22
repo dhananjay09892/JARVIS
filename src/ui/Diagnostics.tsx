@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
+import { fetchTraceStats, traceDiag, type TraceStats } from '../lib/trace'
 
 /**
  * The "why can't he hear me / why can't I hear him" panel.
@@ -44,6 +45,12 @@ type TtsDiag = {
   lastText: string
 }
 
+/** Milliseconds as seconds, or a dash when there is nothing yet. */
+const secs = (ms: number | null | undefined) => (ms === null || ms === undefined ? '—' : `${(ms / 1000).toFixed(2)}s`)
+
+/** Plan 16's target: median end of speech → first audio ≤ 1.0 s. */
+const LATENCY_TARGET_MS = 1000
+
 const ago = (t: number) => (t ? `${((Date.now() - t) / 1000).toFixed(1)}s ago` : '—')
 
 function Row({ k, v, bad }: { k: string; v: string; bad?: boolean }) {
@@ -77,6 +84,25 @@ export function Diagnostics() {
     if (!open) return
     const id = setInterval(() => tick((n) => n + 1), 250)
     return () => clearInterval(id)
+  }, [open])
+
+  // The rolling numbers live in the bridge's trace store, so they survive a
+  // reload. Polled slowly: they only move once per turn.
+  const [stats, setStats] = useState<TraceStats | null>(null)
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    const load = () => {
+      void fetchTraceStats(50).then((s) => {
+        if (alive) setStats(s)
+      })
+    }
+    load()
+    const id = setInterval(load, 2000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
   }, [open])
 
   if (!open) return null
@@ -118,6 +144,27 @@ export function Diagnostics() {
       <Row k="last heard" v={v.heard ? `"${v.heard}" ${ago(v.heardAt ?? 0)}` : '— nothing yet'} bad={!v.heard} />
       <Row k="last drop" v={v.dropped || '—'} bad={Boolean(v.dropped)} />
       <Row k="error" v={v.lastError || '—'} bad={Boolean(v.lastError)} />
+
+      <div className="diag-sec">LATENCY · end of speech → first audio</div>
+      {stats?.enabled && stats.latency ? (
+        <>
+          <Row
+            k="median"
+            v={`${secs(stats.latency.median)} over ${stats.latency.n} turns`}
+            bad={(stats.latency.median ?? 0) > LATENCY_TARGET_MS}
+          />
+          <Row k="p95" v={secs(stats.latency.p95)} />
+          <Row k="errors / interrupted" v={`${stats.errors ?? 0} / ${stats.interrupted ?? 0}`} />
+        </>
+      ) : (
+        <Row
+          k="median (this session)"
+          v={`${secs(traceDiag.localMedianMs)}${stats && !stats.enabled ? ' · traces off' : stats ? '' : ' · bridge unreachable'}`}
+          bad={(traceDiag.localMedianMs ?? 0) > LATENCY_TARGET_MS}
+        />
+      )}
+      <Row k="last turn" v={secs(traceDiag.lastLatencyMs)} bad={(traceDiag.lastLatencyMs ?? 0) > LATENCY_TARGET_MS} />
+      <Row k="traces not saved" v={String(traceDiag.postFailures)} bad={traceDiag.postFailures > 0} />
 
       <div className="diag-sec">SPEAKING · press T to test</div>
       <Row k="engine" v={String(t.engine ?? 'system')} />

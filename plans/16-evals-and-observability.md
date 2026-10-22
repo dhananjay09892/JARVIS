@@ -1,6 +1,6 @@
 # 16 · Evals and observability (so "feels better" becomes a number)
 
-**Status:** Pending (a diagnostics panel and `window.__voice` exist) · **Priority:** P0/P1 · **Effort:** 2–3 weeks
+**Status:** Partial (turn trace store and latency in Diagnostics, 2026-10-22) · **Priority:** P0/P1 · **Effort:** 2–3 weeks
 
 ## End state
 Every promise in these plans has a measured metric, a regression test and a dashboard. A
@@ -33,6 +33,22 @@ test corpus, no latency traces, no end-to-end evals.
 
 ## Risks
 Collecting audio is itself a privacy risk → synthetic corpus first, explicit opt-in for real captures, local only.
+
+## Autopilot log
+- **2026-10-22 — Component 1 (trace store), first slice (Q06).** `bridge/traces.mjs`: one
+  local SQLite record per turn (`traces.db` beside memory), holding stage timings relative to
+  turn start (speechEnd, transcribed, firstTool, firstToken, firstAudio, end), route, model,
+  STT/TTS engine, tool *names* and a redacted ≤200-char error. Never transcript text, answers,
+  audio or tool arguments. Pruned by age (14 days, `JARVIS_TRACE_RETENTION_DAYS`) and count
+  (5000). `POST /traces` (same Origin rule as settings) and `GET /traces/stats`. Off switch:
+  `JARVIS_TRACES=0`. The page side is `src/lib/trace.ts`. Diagnostics (press D) shows a
+  LATENCY section with rolling median and p95 for end of speech → first audio, red above
+  1.0 s. 8 tests in `bridge/traces.test.mjs`.
+  **Left:** policy decisions per turn (after Q04 `policy.mjs`); wake timestamp and a separate
+  "route chosen" stage (after 06); the browser STT engine has no end-of-speech mark, so those
+  turns measure from turn start; the first audio can be a tool filler ("On it"), and a
+  separate first-answer-audio mark may be worth adding. Component 2 (wider metrics panel) and
+  the rest are untouched.
 
 ## Related plans
 [35 red-team gate](35-ethics-limits-and-governance.md) · [37 roadmap gates](37-execution-roadmap-and-risks.md) · [38 contract tests](38-shared-data-contracts.md) · [36 cost metrics](36-economics-and-licensing.md)

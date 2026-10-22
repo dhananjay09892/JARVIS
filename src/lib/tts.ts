@@ -9,6 +9,7 @@ import {
 import * as kokoro from './kokoro'
 import { caps } from './capabilities'
 import { languageOption, type Language } from './language'
+import { mark as markTrace } from './trace'
 
 /**
  * Speech output.
@@ -536,6 +537,7 @@ export function createSpeaker(language: Language = 'en'): Speaker {
 
       u.onstart = () => {
         started = true
+        markTrace('firstAudio')
         diag.started++
         diag.lastError = ''
         if (watchdog) clearTimeout(watchdog)
@@ -648,6 +650,7 @@ export function createSpeaker(language: Language = 'en'): Speaker {
       // SpeechSynthesisUtterance.onstart, and it is what makes the diagnostics
       // verdict — and the T self-test — tell the truth on the premium path.
       audio.onplaying = () => {
+        markTrace('firstAudio')
         diag.started++
         diag.lastError = ''
       }

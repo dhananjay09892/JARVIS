@@ -66,7 +66,7 @@ this file decides *in what order*.
 - **Done when:** each policy decision writes an entry and a test detects a tampered entry.
 
 ### Q06 · Plans 16 + 05 · Turn tracing and the latency number
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** 16 component 1 and 05 phase 1. One trace per turn with timestamps for wake → STT → route → first token → first audio, model and route chosen, tools used, policy decisions and errors; local SQLite, retention-limited, redacted. Show rolling median and p95 latency in Diagnostics.
 - **Done when:** Diagnostics shows a real latency number from traces.
