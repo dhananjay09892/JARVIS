@@ -1,6 +1,7 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { probeUrl } from './page.mjs'
+import { markUntrustedResult } from './untrusted.mjs'
 
 /**
  * The `display` tool — JARVIS's screen.
@@ -419,7 +420,12 @@ export function displayServer(emit, emitBlade) {
         { url: z.string().describe('The absolute URL to inspect.') },
         async (args) => {
           const report = await probeUrl(String(args.url ?? ''))
-          return { content: [{ type: 'text', text: JSON.stringify(report, null, 1) }] }
+          // The title and excerpt are the page's own words, so the report goes
+          // back labelled as untrusted data (plan 08, phase 2).
+          return markUntrustedResult(
+            { content: [{ type: 'text', text: JSON.stringify(report, null, 1) }] },
+            'page:probe_url',
+          )
         },
       ),
     ],

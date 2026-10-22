@@ -35,6 +35,7 @@ import { memoryServer, isMemoryTool } from './memory-tools.mjs'
 import { developmentServer } from './development.mjs'
 import { approvalQueue } from './approvals.mjs'
 import { createToolGate } from './tool-gate.mjs'
+import { UNTRUSTED_PROMPT, untrustedNotice } from './untrusted.mjs'
 import { homedir, tmpdir } from 'node:os'
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
@@ -474,7 +475,9 @@ Using tools:
   is read out loud, and a URL becomes "aitch tee tee pee colon slash slash".
   Put the source in the panel as a short tag like "REUTERS" instead.
 - If a tool fails or isn't connected, one plain sentence saying so.
-- If you don't know, say you don't know.`
+- If you don't know, say you don't know.
+
+${UNTRUSTED_PROMPT}`
 
 /**
  * ElevenLabs credentials, borrowed from the MCP server config.
@@ -1285,7 +1288,9 @@ If you truly cannot proceed without a decision, call ask_owner with one short
 question; otherwise decide for yourself.
 
 Use only the tools you are given. Commands and deletions ask the owner for
-approval and wait; do not try to work around a refusal. Never invent results.`
+approval and wait; do not try to work around a refusal. Never invent results.
+
+${UNTRUSTED_PROMPT}`
 
 let taskStore = null
 try {
@@ -1330,6 +1335,9 @@ ${task.goal}`,
               },
             }],
           }],
+          // Results the bridge does not build itself are labelled as untrusted
+          // data as they come back (plan 08, phase 2). See untrusted.mjs.
+          PostToolUse: [{ hooks: [async (input) => untrustedNotice(input)] }],
         },
         includePartialMessages: true,
         canUseTool: async (toolName) => decideTool(toolName)
@@ -1590,6 +1598,11 @@ wss.on('connection', (socket, req) => {
             },
           }],
         }],
+        // Results the bridge does not build itself — built-in tools such as
+        // WebFetch, and other people's MCP servers — come back with a note that
+        // they are untrusted data (plan 08, phase 2). JARVIS's own browser and
+        // page tools wrap their results where they are built. See untrusted.mjs.
+        PostToolUse: [{ hooks: [async (input) => untrustedNotice(input)] }],
       },
       // Without this the SDK only emits whole assistant messages, and JARVIS
       // would sit silent until the entire answer was written. Partial events

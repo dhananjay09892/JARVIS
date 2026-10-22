@@ -42,7 +42,7 @@ this file decides *in what order*.
 - **Done when:** the known gate defects are fixed and covered by tests.
 
 ### Q02 · Plan 08 · Untrusted content and hidden text
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q01
 - **Scope:** 08 phase 2, first half. Mark all tool, page, email and file text as untrusted data in the prompt and in code paths; strip or neutralise hidden text (zero-width characters, white-on-white) from fetched pages.
 - **Done when:** untrusted content is labelled everywhere it enters a turn, with tests for the stripping.
