@@ -48,7 +48,7 @@ this file decides *in what order*.
 - **Done when:** untrusted content is labelled everywhere it enters a turn, with tests for the stripping.
 
 ### Q03 · Plan 08 · Taint tracking and URL exfiltration
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q01
 - **Scope:** 08 phase 2, second half. Once a turn has read private content, outbound actions (open URL, fetch, send, write) need approval unless the user named the target; only proxy image and video URLs that appeared in a tool result.
 - **Done when:** an injected "open this URL with my data" is blocked in a test.

@@ -14,10 +14,10 @@ Any MCP server in the user's Claude config; effectful tools default-deny; approv
 
 ## Phases
 1. ✅ **Fix the gate (P0, 2–3 h) — done (autopilot, 2026-10-22, awaiting review):** word-split names; read verb first and no action verb; move `decideTool` into its own module (`bridge/tool-gate.mjs`); table-driven tests including adversarial names (`bridge/tool-gate.test.mjs`, 141 cases).
-2. **Injection defence (P1, 1–2 d) — first half done (autopilot Q02, 2026-10-22, awaiting review):**
+2. ✅ **Injection defence (P1, 1–2 d) — done (autopilot Q02 + Q03, 2026-10-22, awaiting review):**
    - ✅ Mark all tool/page/email/file text as *untrusted data* in the prompt and in code paths.
-   - **Taint tracking:** once a turn has read private content, outbound actions (open URL, fetch, send, write) require approval unless the target was named by the user.
-   - Only proxy image/video URLs that appeared in a tool result.
+   - ✅ **Taint tracking:** once a turn has read private content, outbound actions (open URL, fetch, send, write) require approval unless the target was named by the user (`bridge/taint.mjs`).
+   - ✅ Only proxy image/video URLs that appeared in a tool result.
    - ✅ Strip/neutralise hidden text (zero-width, white-on-white) from fetched pages.
 3. **Connector catalogue (1 w):** curated, documented setups for calendar, mail, tasks, notes, files, weather, news, finance (read-only), GitHub; each with a read-only profile and an "enable writes" profile.
 4. **Scopes and consent:** per-connector, per-speaker (01/15), time-boxed grants ("allow sending for 10 minutes").
@@ -62,6 +62,36 @@ Over-blocking annoys users → risk tiers instead of blanket denial; MCP servers
   that the note reaches the model; add the new test files to the CI list in
   `.github/workflows/release.yml`; a metric (hidden characters removed per turn) for 16;
   Q03 (taint tracking, image/video URL proxy limits) next.
+
+- **2026-10-22 — Q03, Phase 2 second half (taint tracking and URL exfiltration).** New
+  dependency-free `bridge/taint.mjs`, wired into the `PreToolUse`/`PostToolUse` hooks of
+  both the voice session and background workers. A session becomes tainted when it reads
+  private content: local files, saved memories riding along with a turn, the user's
+  Chrome, mail/calendar or any MCP server not on a short public list (search, registries,
+  OpenRouter); unknown tools count as private. Taint is sticky for the session, because
+  private text stays in the model's context. Once tainted, an outbound call — `WebFetch`,
+  `Bash`, `probe_url`, an article blade, `chrome_navigate`/`chrome_type`/`chrome_form_input`,
+  a delegated task brief with a link, any third-party tool the gate's veto calls effectful,
+  or any tool whose arguments carry a URL or address — needs an approval card unless every
+  target is a host the owner named (spoken "bbc dot co dot uk" counts), an address the
+  owner named, or a URL that arrived verbatim in external content (search results, fetched
+  pages, browser reads; never memory, workspace, task reports or shell output, so a built
+  URL cannot be laundered). An approved host or address is not asked about again that
+  session. Local tools (files, memory, the HUD, workspace and development tools, which
+  have their own cards) never ask. `/img` and `/media` now serve only URLs seen in
+  external results, the owner's words, or a rendered reading view. Workers start tainted
+  and treat their brief's links as named. Tests: `bridge/taint.test.mjs` (19), including
+  the injected "open this URL with my data" case across eight outbound tools.
+  **Deviation to review:** the plan says "named by the user"; URLs copied unchanged from
+  external content are also let through, because otherwise every search-then-show turn
+  after a memory recall would ask. Recipients (emails) must always be owner-named.
+  **Left:** the hook `timeout` field and `tool_response` shape could not be checked
+  against the installed SDK (npm registry unreachable again) — confirm on a real bridge
+  that a tainted `WebFetch` shows the card and waits; model-remembered image URLs (not
+  from any tool result) will no longer render; a tool badge can light for a call that is
+  then refused at the taint card; add `bridge/taint.test.mjs` to the CI list in
+  `.github/workflows/release.yml`; a metric for 16 (outbound asks/refusals per session);
+  the red-team injection suite from the Metrics line is still to build. Phase 3 next.
 
 ## Related plans
 [15](15-policy-trust-and-privacy.md) · [35 never-list](35-ethics-limits-and-governance.md) · [16 red-team suite](16-evals-and-observability.md) · [20 channel injection](20-messaging-channels.md) · [38 PolicyRequest](38-shared-data-contracts.md)
