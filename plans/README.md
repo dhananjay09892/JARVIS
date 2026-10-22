@@ -61,7 +61,7 @@ Added because a real assistant needs them: 01, 13–39.
 
 ## What to build first
 
-The authoritative order, dependency graph and 30/60/90-day plan are in [37](37-execution-roadmap-and-risks.md). In short:
+The authoritative order, dependency graph and 30/60/90-day plan are in [37](37-execution-roadmap-and-risks.md). The task-by-task order the autopilot follows is in [QUEUE.md](QUEUE.md). In short:
 
 1. **Phase 0, trust and truth:** 08, 15, 02, 16, 35, 36.
 2. **Phase 1, identity and feel:** 01, 05, 06, 21 + 25, 28, 29.
