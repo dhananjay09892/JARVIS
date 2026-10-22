@@ -5,8 +5,9 @@ import { Boot } from './ui/Boot'
 import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
 import { useStore } from './store'
-import { startVoice, type Voice, type VoiceMode } from './lib/voice'
-import { createSpeaker, cycleVoice, currentVoiceName } from './lib/tts'
+import { startVoice, diag as voiceDiag, type Voice, type VoiceMode } from './lib/voice'
+import { createSpeaker, cycleVoice, currentVoiceName, diag as ttsDiag } from './lib/tts'
+import * as trace from './lib/trace'
 import * as sfx from './lib/sfx'
 import * as music from './lib/music'
 import * as hands from './lib/hands'
@@ -172,11 +173,20 @@ export default function App() {
     const turnId = newId()
     let started = false
     let filled = false
+    let failure: string | null = null
+
+    // One timing record per turn (lib/trace.ts). Opened here, after the
+    // "new conversation" shortcut, so only real turns are measured.
+    trace.beginTurn(usingBridge ? 'bridge' : 'direct', {
+      stt: voiceDiag.engine,
+      tts: ttsDiag.engine,
+    })
 
     try {
       const { text } = await ask(said, history.current, {
         onText: (delta) => {
           if (stale()) return
+          trace.mark('firstToken')
           if (!started) {
             started = true
             store.getState().setPhase('speaking')
@@ -191,6 +201,7 @@ export default function App() {
         },
         onTool: (name) => {
           if (stale()) return
+          trace.noteTool(name)
           // Only claim the tooling phase while he has nothing to say yet.
           // Setting it unconditionally pinned the machine in 'tooling' for the
           // rest of any answer that called a tool after it started talking,
@@ -227,11 +238,14 @@ export default function App() {
     } catch (err) {
       if (stale()) return
       console.error(err)
+      failure = err instanceof Error ? err.message : 'error'
       sfx.play('error')
       store
         .getState()
         .setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
+      // A stale turn was talked over; the next turn (or the barge-in) closes it.
+      if (!stale()) trace.endTurn(failure === null ? 'ok' : 'error', failure ?? undefined)
       if (!stale()) {
         speaker.current = null
         sfx.duck(false)
@@ -308,6 +322,7 @@ export default function App() {
       // replacement; bumping it here covers the case where nothing replaces it.
       turn.current++
       interrupt()
+      trace.endTurn('interrupted')
       store.getState().setActiveTool(null)
       music.working(false)
       sfx.duck(false)

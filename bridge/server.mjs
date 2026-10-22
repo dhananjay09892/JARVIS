@@ -29,6 +29,7 @@ import { createTaskManager } from './tasks.mjs'
 import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
+import { openTraces } from './traces.mjs'
 import { createSessionMemory } from './conversation.mjs'
 import { memoryServer, isMemoryTool } from './memory-tools.mjs'
 import { developmentServer } from './development.mjs'
@@ -58,6 +59,21 @@ if (process.env.JARVIS_MEMORY !== 'off') {
     memory = openMemory({ retentionDays: Number(process.env.JARVIS_MEMORY_RETENTION_DAYS ?? 0) })
   } catch (err) {
     console.error('[jarvis] memory unavailable — nothing will be saved:', err.message)
+  }
+}
+
+/**
+ * Turn traces: timings only, never what was said (see bridge/traces.mjs). On
+ * by default because a latency number is how every other change gets judged;
+ * JARVIS_TRACES=0 (or 'off') turns them off, and the store is then never opened.
+ */
+let traces = null
+const tracesSetting = setting('JARVIS_TRACES')
+if (tracesSetting !== '0' && tracesSetting !== 'off') {
+  try {
+    traces = openTraces({ retentionDays: Number(process.env.JARVIS_TRACE_RETENTION_DAYS ?? 14) })
+  } catch (err) {
+    console.error('[jarvis] trace store unavailable — latency will not be recorded:', err.message)
   }
 }
 
@@ -882,6 +898,47 @@ const handleRequest = async (req, res) => {
       res.writeHead(200, { ...cors, 'content-type': 'application/json' })
       return res.end(JSON.stringify({ ok: true, ...publicSettings() }))
     }
+  }
+
+  // ---- Turn traces (plans 16 + 05) ------------------------------------
+  // The page posts one trace per finished turn and Diagnostics reads the
+  // rolling numbers back. Same Origin rule as settings for the write.
+  if (requestUrl.pathname === '/traces/stats' && req.method === 'GET') {
+    const size = Number(requestUrl.searchParams.get('window') ?? 50)
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify(
+      traces
+        ? { enabled: true, ...traces.stats(Number.isFinite(size) ? Math.max(1, Math.min(500, size)) : 50) }
+        : { enabled: false },
+    ))
+  }
+  if (requestUrl.pathname === '/traces' && req.method === 'POST') {
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    let body = ''
+    for await (const chunk of req) {
+      body += chunk
+      if (body.length > 16 * 1024) {
+        req.destroy()
+        res.writeHead(400, cors)
+        return res.end('body too large')
+      }
+    }
+    if (!traces) {
+      res.writeHead(204, cors)
+      return res.end()
+    }
+    try {
+      const trace = JSON.parse(body || '{}')
+      traces.record(trace, { model: trace?.route === 'bridge' ? MODEL : null })
+    } catch (err) {
+      res.writeHead(400, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ ok: false, reason: String(err?.message ?? err) }))
+    }
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ ok: true }))
   }
 
   // Is Claude Code installed and signed in? The brain cannot work without it.

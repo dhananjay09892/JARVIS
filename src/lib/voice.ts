@@ -4,6 +4,7 @@ import { speakingNow, speakingSince } from './tts'
 import { startVad, type Vad } from './vad'
 import { caps } from './capabilities'
 import { languageOption, type Language } from './language'
+import { noteSpeechEnd, noteTranscribed } from './trace'
 
 /**
  * The voice loop.
@@ -493,6 +494,7 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
 
       diag.heard = said
       diag.heardAt = Date.now()
+      noteTranscribed()
 
       if (mode === 'wake') {
         if (WAKE.test(said) && Date.now() - lastWake > WAKE_DEBOUNCE) {
@@ -552,6 +554,11 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       }
     },
     onEnd: (blob) => {
+      // The clock for "how long did he take to answer" starts here. Only while
+      // the user is talking to him: a segment caught in guard mode is usually
+      // his own voice coming back, and must not move the start line.
+      const m = h.mode()
+      if (m === 'command' || m === 'wake') noteSpeechEnd()
       pendingAudio.push(blob)
       void drain()
     },
