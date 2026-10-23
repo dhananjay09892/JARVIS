@@ -583,6 +583,8 @@ planned. Provided "as is" with no warranty. Rights holders with a concern: pleas
 
 MIT.
 
-The boot sound and any tracks in `public/audio/` ship with the project for the
-demo. If you go on to monetise something built on this, clearing the rights to
-that audio is your responsibility.
+Third-party credits (music, models, fonts, software) are in [CREDITS.md](CREDITS.md);
+the full licence register, including open licence issues, is
+[plans/LICENCES.md](plans/LICENCES.md). The music in `public/audio/` is CC BY 4.0 and
+needs the attribution in [public/audio/CREDITS.md](public/audio/CREDITS.md) wherever
+it is used.
