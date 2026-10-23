@@ -72,7 +72,7 @@ this file decides *in what order*.
 - **Done when:** Diagnostics shows a real latency number from traces.
 
 ### Q07 · Plan 02 · Correct the wake-word disclosure
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** 02 phase 1. Make DISCLAIMER, the site and the Settings wording say accurately what audio leaves the machine today.
 - **Done when:** no user-facing text overstates on-device wake detection.
