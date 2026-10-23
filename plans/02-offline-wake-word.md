@@ -26,7 +26,7 @@ for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone bu
    from user behaviour) so follow-ups need no name; shorten if a different/unknown voice speaks.
 5. **Verified wake (with 01):** optional "only wake for enrolled voices" to reduce TV/guest wakes.
 6. **Alternate wakes:** hotkey, tray click, phone push-to-talk, gesture (already have hands.ts).
-7. **Multiple and custom wake words** (Q47, Q48, Q50, Q51): see the section below. Training recipe ✅ Q47 ([`scripts/wake/`](../scripts/wake/README.md)); embedding licence Q53; training and voice tests Q48.
+7. **Multiple and custom wake words** (Q47, Q48, Q50, Q51): see the section below. Training recipe ✅ Q47 ([`scripts/wake/`](../scripts/wake/README.md)); embedding licence Q53 (re-export and parity check built; run on Google's module pending, needs you); training and voice tests Q48.
 
 ## Multiple and custom wake words
 **Goal:** the assistant answers to several names at once, and each user can add their own.
@@ -157,3 +157,19 @@ Licence/keys (Picovoice free tier limits), model size on low-end laptops, mic pe
   (Q41). Recommendation: (a) for Q51, with (c) as a later "Improve accuracy" upgrade sharing
   one commercial-OK negative pack; not (b). `Decision:` is left for the owner; Q51 waits on
   it. Left: CPU and false-wake numbers are estimates to be measured in Q51.
+- **2026-10-23 · Q53 · Embedding front end: re-export and parity check (first slice).** Added
+  `scripts/wake/export_embedding.py`, which loads Google's `speech_embedding` TF1 Hub module
+  (Apache-2.0), cuts its graph at the input of the first convolution the embedding depends on,
+  feeds a [batch, 76, 32, 1] mel placeholder there, checks the cut gives [batch, 1, 1, 96] and
+  converts it with tf2onnx (`--inspect` lists the convolutions and the proposed cut;
+  `--input-tensor` / `--output-tensor` override it). Added `embedding_parity.py`, which runs a
+  candidate and the published `embedding_model.onnx` on the same mel windows (from our own mel
+  front end with the engine's `x / 10 + 2`, 76 frames every 8) and counts the published conv
+  kernels found unchanged; verdict match / differ / unusable. `prepare_frontend.py` now runs it
+  for any non-published `--embedding`. New `test_embedding.py` (12 checks: windows, self-match,
+  a copy with one kernel scaled by 5 % → "differ" with 19 of 20 kernels, a 1e-7 change → "match",
+  the mel model → "unusable", CLI exit codes, and the cut logic on a hand-made graph) passes,
+  as do `test_frontend.py` and `recipe.test.mjs`. TensorFlow and tf2onnx are listed as
+  build-time tools in `sources.json` and `plans/LICENCES.md`. Left: the sandbox could not reach
+  tfhub.dev/Kaggle or PyPI, so the export has not run on Google's module; Q53 is `needs-you`
+  with the three commands to run, and the verdict still has to be recorded in LICENCES.md.

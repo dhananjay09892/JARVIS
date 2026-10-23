@@ -1,0 +1,8 @@
+# Embedding re-export (export_embedding.py, task Q53). Build time only; nothing here is shipped.
+# Python 3.10 or 3.11, CPU is enough (a few minutes). Separate from requirements.txt so the
+# TensorFlow pins don't fight the training stack: use its own virtual environment.
+tensorflow==2.15.1           # Apache-2.0: loads Google's TF1 Hub module
+tensorflow-hub==0.16.1       # Apache-2.0
+tf2onnx==1.16.1              # Apache-2.0: tested up to TensorFlow 2.15
+onnxruntime>=1.18            # MIT: parity check
+numpy>=1.24,<2.0             # BSD-3-Clause (TensorFlow 2.15 needs numpy 1.x)

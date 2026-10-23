@@ -9,7 +9,10 @@ one, and as the numpy reference, on speech-like noise and a tone.
 
 --embedding is where licence risk B4 is closed for the embedding model
 (plans/LICENCES.md). Pass either:
-  - a model re-exported from Google's speech_embedding (Apache-2.0) — task Q53, or
+  - a model re-exported from Google's speech_embedding (Apache-2.0) with
+    export_embedding.py — task Q53. It is then compared with openWakeWord's
+    published file (embedding_parity.py): "match" means the published file is
+    Google's model; "differ" means train on the re-export; "unusable" stops here, or
   - public/models/wake/embedding_model.onnx, only once its licence is confirmed as
     Apache-2.0 (Q53 records how), with --published-embedding-confirmed.
 Classifiers must be trained and shipped on the same two files.
@@ -24,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
+import embedding_parity
 import frontend_mel
 from common import work_dir
 
@@ -75,6 +79,16 @@ def main() -> None:
     shutil.copyfile(args.embedding, out / "embedding_model.onnx")
     print(f"front end in {out}")
     parity(mel)
+    if args.embedding.resolve() != published:
+        result = embedding_parity.compare(args.embedding, published)
+        print("embedding parity against openWakeWord's published file:")
+        print("\n".join(result.lines()))
+        if result.verdict == "unusable":
+            sys.exit("the embedding model does not fit the front end; do not train on it")
+        if result.verdict == "match":
+            print("  the published embedding_model.onnx is Google's model: record this in plans/LICENCES.md (B4 step 3)")
+        else:
+            print("  the files differ: train and ship on this re-export, not the published file")
     print("OK")
 
 
