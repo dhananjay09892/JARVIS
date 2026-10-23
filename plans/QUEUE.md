@@ -128,6 +128,32 @@ this file decides *in what order*.
 - **Scope:** Name, branding and IP review; record the outcome in an ADR.
 - **Done when:** the outcome is recorded.
 
+### Q46 · Plan 40 · Claim the Tamelo name
+- **Status:** needs-you
+- **Needs you:** steps 2–6 of "Steps to claim the name" in [plan 40](40-name-and-brand.md): trademark searches for "Tamelo" (USPTO, UK IPO, IP India, classes 9 and 42), register tamelo.com / tamelo.ai / tamelo.in, and claim the social and app-store handles. Give the search results to the Q13 legal review. If the name is clear, tick the steps in plan 40 and set this to `done`; if not, switch plan 40 to the backup name (Kalemo) and redo this task.
+- **Depends on:** none
+- **Scope:** Plan 40 steps 2–6. The autopilot cannot buy domains or file trademarks.
+- **Done when:** the name is cleared and the domains and handles are ours.
+
+### Q47 · Plans 02 + 40 · "Hey Tamelo" wake model recipe
+- **Status:** todo
+- **Depends on:** Q09, Q12
+- **Scope:** Close licence risk B4 for the wake word. The shipped `hey_jarvis` model is CC BY-NC-SA 4.0 (non-commercial), so a commercial release needs our own model. Write a reproducible openWakeWord training recipe for the phrase "Hey Tamelo" under `scripts/wake/` (config, data download list, training and export steps, expected compute and time). Use **only** training inputs with licences that allow commercial use (synthetic speech from commercially usable TTS voices, negative/background audio with known licences) and add each one to `plans/LICENCES.md`. Include Hindi and Gujarati speech in the negatives, especially "tame lo" (તમે લો), to limit false wakes. Confirm the licence of the mel-spectrogram and embedding front-end models, or plan to re-export them from Apache-2.0 sources.
+- **Done when:** the recipe is merged, every training input has a commercial-OK licence entry, and B4 has a written path to "closed".
+
+### Q48 · Plans 02 + 40 · Train and test the "Hey Tamelo" model
+- **Status:** needs-you
+- **Needs you:** run the Q47 recipe on a machine with a GPU (the autopilot cannot train for hours). Then test it the same way as Q45: say "Hey Tamelo" about 20 times, plus a few minutes of normal talk and TV, including Hindi and Gujarati speech with "tame lo". Paste the numbers into plan 02's Autopilot log, commit the model with its licence note, then set this to `done`.
+- **Depends on:** Q47
+- **Scope:** Produce `hey_tamelo` ONNX model under `public/models/wake/`, our own licence; update `plans/LICENCES.md` (B4 closed for the wake word) and CREDITS.md.
+- **Done when:** the model wakes reliably for you, false wakes are acceptable, and B4 no longer blocks a commercial release.
+
+### Q49 · Plan 40 · Rename JARVIS to Tamelo in the product
+- **Status:** todo
+- **Depends on:** Q46, Q48
+- **Scope:** Plan 40 step 7. Change every user-facing name to Tamelo: page and window titles, greetings and the assistant persona in the system prompt, HUD (plan 18), Settings and first-run wizard, disclosure text with `bridge/disclosure.test.mjs`, README, DISCLAIMER, CREDITS, installer and launcher display names, and the site. Switch the wake phrase to "Hey Tamelo" with the Q48 model and remove the non-commercial `hey_jarvis` model. Keep internal identifiers (repo name, package name, `JARVIS_*` settings keys, file paths) unchanged so nothing breaks; list them in plan 40 as the internal codename. Add a test that fails if "JARVIS" appears in user-facing UI strings.
+- **Done when:** a user never sees or says "JARVIS", and the wake word is "Hey Tamelo".
+
 ### Q14 · Plan 38 · Shared data contracts
 - **Status:** done
 - **Depends on:** none
