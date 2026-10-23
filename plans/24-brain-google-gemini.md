@@ -11,6 +11,8 @@ if Google's current terms and products allow it.
 - A third-party post ([dev.to](https://dev.to/owen_fox/gemini-cli-free-tier-shut-down-6-fixes-that-work-2026-26hc)) says Gemini CLI stopped serving the free Google-login path on **2026-06-18**, moving to a closed-source **Antigravity CLI**; API-key use continues. Not confirmed from an official Google source.
 - Other tools (e.g. Roo Code) reuse the CLI's OAuth login; whether Google's terms permit third-party reuse is **unknown**.
 
+> **Update 2026-10-23 (Q15):** confirmed from Google's own pages: Gemini CLI stopped serving AI Pro/Ultra and free logins on 2026-06-18 (moved to Antigravity CLI), and both the Gemini CLI and Antigravity terms prohibit using their OAuth from third-party software, with enforcement. See [ADR 001](adr/001-subscription-brain-terms.md); the recommendation is API key only (Track A).
+
 ## Decision gate (week 0)
 Find out from Google's official docs:
 1. What is the current supported way to use a Google AI Pro/Ultra subscription programmatically (Antigravity CLI? SDK?), and does it allow third-party apps?

@@ -13,6 +13,8 @@ official **Copilot SDK**, with BYOK as an alternative.
 - Sources disagree on status (preview vs. GA on 2026-06-02) → verify before shipping.
 - Unlike the other subscription routes this is an **official, documented SDK for embedding**, so terms risk is lower; still confirm the Copilot terms for redistribution and for apps that serve other people.
 
+> **Update 2026-10-23 (Q15):** the Copilot SDK README now says it is generally available (MIT). Terms findings and risk (Low) are in [ADR 001](adr/001-subscription-brain-terms.md).
+
 ## Open questions (week 0)
 1. Which models are available to the user's plan, and can the user choose (including Claude/GPT models served by Copilot)?
 2. SDK hooks: permission requests per tool, custom tool registration (to expose JARVIS tools), MCP support, streaming deltas, cancellation, session resume.

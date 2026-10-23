@@ -20,6 +20,8 @@ thin in search; nothing below should be treated as fact until checked in the ven
 | **Devin and similar hosted agents** | Autonomous task agents | Only suitable as *mission* backends (13), not conversational brains |
 | **Perplexity / search-native assistants** | Strong web research | API only; best as a *tool*, not the brain |
 
+> **Update 2026-10-23 (Q15):** a first terms pass on Cursor, xAI and Mistral is in [ADR 001](adr/001-subscription-brain-terms.md); none documents third-party subscription use, so criterion 1 is a red flag for all three today.
+
 ## Evaluation rubric (score 0–2 each; adopt only if ≥ 12/16 and no red flags)
 1. **Terms:** third-party app use of the user's subscription explicitly allowed (red flag if prohibited or unclear).
 2. **Headless/SDK:** programmatic, non-interactive, streaming events.
