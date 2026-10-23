@@ -46,7 +46,7 @@ for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone bu
   a noisy phrase ("Hey Friend" during TV) can be tuned or switched off without touching the others.
 - **Which phrase woke it** is recorded in the turn trace (plan 16) and stripped from the command.
 
-**Custom name from Settings** (Q50 decides the engine, Q51 builds it):
+**Custom name from Settings** (Q50 decides the engine, Q51 builds it; options and recommendation in [ADR 003](adr/003-custom-wake-word.md), waiting for the owner):
 - In Settings → Voice and hearing → Wake words, the user types a name (e.g. "Max", "Didi",
   "Dost"). The wake phrase becomes "Hey <name>", and optionally the assistant uses that name for
   itself in greetings and replies (per person, plan 30). The product brand stays Tamelo.
@@ -146,3 +146,14 @@ Licence/keys (Picovoice free tier limits), model size on low-end laptops, mic pe
   Left: nothing has been trained (no GPU, and pip/npm were unreachable from the sandbox), so
   the download/generation/training scripts are untested; the commercial-only negative set is
   about 250 h against openWakeWord's much larger set, so watch false wakes in Q48.
+- **2026-10-23 · Q50 · Custom wake word decision record.** Wrote
+  [ADR 003](adr/003-custom-wake-word.md) comparing (a) few-shot enrolment on the openWakeWord
+  embeddings, (b) a local keyword spotter (Vosk grammar mode; sherpa-onnx keyword spotting) and
+  (c) on-device training with synthetic speech, on accuracy, false wakes, CPU, time to work,
+  privacy, licences, Windows and Hindi/Gujarati names. Key findings: openWakeWord's custom
+  verifier needs a base model for the same phrase, so (a) is our own extension; Vosk grammars
+  cannot spot names outside the model's lexicon; sherpa-onnx's English KWS model is trained on
+  GigaSpeech (non-commercial terms); on-device training with Kokoro is also blocked by B1
+  (Q41). Recommendation: (a) for Q51, with (c) as a later "Improve accuracy" upgrade sharing
+  one commercial-OK negative pack; not (b). `Decision:` is left for the owner; Q51 waits on
+  it. Left: CPU and false-wake numbers are estimates to be measured in Q51.

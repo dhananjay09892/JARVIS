@@ -161,7 +161,7 @@ this file decides *in what order*.
 - **Done when:** a user never sees or says "JARVIS", and "Hey Tamelo", "Hey Buddy" and "Hey Friend" all wake it.
 
 ### Q50 · Plan 02 · Custom wake word decision record
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q09
 - **Scope:** Write `plans/adr/003-custom-wake-word.md` comparing the three engines in plan 02 "Multiple and custom wake words" for a name the user types in Settings: few-shot enrolment on openWakeWord embeddings, a local keyword spotter (e.g. Vosk grammar mode), and on-device training with synthetic speech. Cover accuracy, false wakes, CPU on a low-end laptop, time until it works, privacy, licences (commercial use), Windows support, and Hindi/Gujarati names. Leave `Decision:` empty with a recommendation.
 - **Done when:** the ADR is ready for the owner to decide.
