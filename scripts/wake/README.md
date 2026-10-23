@@ -25,11 +25,13 @@ little CPU (plan 02, "Multiple and custom wake words").
 | `configs/` | Generated; `node scripts/wake/make-configs.mjs --check` fails if they are stale |
 | `frontend_mel.py`, `onnx_weights.py` | Rebuild the mel front end from MIT/ISC formulas and compare it with openWakeWord's file |
 | `prepare_frontend.py` | Step 2: write our front end and check it against the published one with onnxruntime |
+| `export_embedding.py` | Step 2a (Q53): re-export Google's `speech_embedding` (Apache-2.0) as an embedding model of the published shape. Needs `requirements-embedding.txt` |
+| `embedding_parity.py` | Step 2a (Q53): run a re-export and the published `embedding_model.onnx` on the same mel windows and compare outputs and kernels |
 | `download.py` | Step 1: fetch only what `sources.json` clears for commercial use |
 | `generate_clips.py` | Step 3: synthesise positives and negatives with Kokoro and Piper |
 | `build_features.py` | Step 4: negative features from real speech, music and noise (once, shared) |
 | `train.py` | Steps 5–6: openWakeWord's augmentation and trainer on our front end, plus a model card |
-| `recipe.test.mjs`, `test_frontend.py` | Checks that run without a GPU |
+| `recipe.test.mjs`, `test_frontend.py`, `test_embedding.py` | Checks that run without a GPU or TensorFlow |
 
 ## Training inputs (all commercial use OK)
 
@@ -85,8 +87,14 @@ the folder in `WAKE_WORK`.
    dataset's conditions). It refuses anything not cleared in `sources.json` and makes flat
    16 kHz folders for the background and RIR audio. Set `WAKE_RIRS=simulated` to use only the
    simulated impulse responses if the legal review prefers.
-2. **Front end.** `python prepare_frontend.py --embedding <file>` (see "Closing B4" below for
-   which file). It exports our mel model and stops unless it matches openWakeWord's within 1e-3
+2. **Front end.** First the embedding model (Q53, once; any machine, a few minutes on CPU):
+   download Google's module from https://tfhub.dev/google/speech_embedding/1?tf-hub-format=compressed
+   (it redirects to Kaggle), unpack it into `work/speech_embedding/`, then in a separate
+   virtual environment with `pip install -r requirements-embedding.txt` run
+   `python export_embedding.py work/speech_embedding --inspect` (check the cut it proposes)
+   and `python export_embedding.py work/speech_embedding`. It writes
+   `work/frontend/speech_embedding.onnx` and stops if the cut does not give [n, 1, 1, 96].
+   Then `python prepare_frontend.py --embedding work/frontend/speech_embedding.onnx`. It exports our mel model and stops unless it matches openWakeWord's within 1e-3
    on noise, a tone and a streaming frame.
 3. **Clips.** Smoke run first: `python generate_clips.py hey_tamelo --scale 0.01`, then the full
    run for each of `hey_tamelo`, `hey_buddy`, `hey_friend`.
@@ -112,6 +120,17 @@ B4 is closed for the wake word when all of these are true:
    (Apache-2.0) and show the parity check passes, or get written confirmation that
    openWakeWord's `embedding_model.onnx` is Apache-2.0 (its README says the backbone is
    Google's Apache-2.0 TFHub model), and record which in `plans/LICENCES.md`.
+   ✅ code (`export_embedding.py`, `embedding_parity.py`, `test_embedding.py`); the run on
+   Google's module is pending. `embedding_parity.py` (also run by `prepare_frontend.py`)
+   compares the two files on mel windows from noise, a tone, a chirp, near-silence and random
+   values, and counts the published conv kernels found unchanged in the re-export:
+   - **match**: the published file is Google's model. Record that in `plans/LICENCES.md`;
+     either file may then be used.
+   - **differ**: train and ship on the re-export. If Google's graph normalises the mel
+     differently from openWakeWord's `x / 10 + 2` before its first convolution, check that
+     `--inspect` cut after that normalisation, or the classifiers see differently scaled input.
+   - **unusable**: wrong shape or non-finite output; fix the cut (`--input-tensor`,
+     `--output-tensor`) before training.
 4. **Models trained and tested** (Q48) on the step-2 front end, committed with their model cards.
 5. **`hey_jarvis` removed** (Q49), together with openWakeWord's front-end files if Q53 replaced them.
 
