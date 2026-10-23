@@ -107,6 +107,41 @@ export function toolProblems(t) {
   if (!CAPABILITIES.includes(t.capability)) p.push(`tool ${String(t.name)} needs a capability (read, write or subscribe)`)
   if (typeof t.description !== 'string' || !t.description.trim()) p.push(`tool ${String(t.name)} needs a description`)
   if (!isFn(t.run)) p.push(`tool ${String(t.name)} needs run()`)
+  if (t.params !== undefined) p.push(...paramProblems(t.params).map((e) => `tool ${String(t.name)}: ${e}`))
+  return p
+}
+
+export const PARAM_TYPES = Object.freeze(['string', 'number', 'boolean'])
+
+/**
+ * A tool's inputs, as a small flat spec the MCP server turns into a schema
+ * (connectors/mcp.mjs), so this module stays free of dependencies:
+ *
+ *   params: { query: { type: 'string', min?: 2, max?: 200, optional?: true, description? }, … }
+ *
+ * Strings must have a `max`, so no tool takes unbounded input.
+ * @param {any} params
+ * @returns {string[]}
+ */
+export function paramProblems(params) {
+  if (!isObject(params)) return ['params must be an object']
+  const p = []
+  const names = Object.keys(params)
+  if (names.length > 16) p.push('at most 16 params')
+  for (const name of names) {
+    const s = params[name]
+    if (!TOOL_ID.test(name) || name.length > 40) p.push(`bad param name: ${name}`)
+    if (!isObject(s) || !PARAM_TYPES.includes(s.type)) {
+      p.push(`param ${name} needs a type (${PARAM_TYPES.join(', ')})`)
+      continue
+    }
+    for (const k of ['min', 'max']) {
+      if (s[k] !== undefined && !(typeof s[k] === 'number' && Number.isFinite(s[k]))) p.push(`param ${name}.${k} must be a number`)
+    }
+    if (s.type === 'string' && !(Number.isInteger(s.max) && s.max > 0 && s.max <= 20_000)) p.push(`param ${name} is a string and needs a max (1–20000)`)
+    if (s.optional !== undefined && typeof s.optional !== 'boolean') p.push(`param ${name}.optional must be a boolean`)
+    if (s.description !== undefined && typeof s.description !== 'string') p.push(`param ${name}.description must be a string`)
+  }
   return p
 }
 

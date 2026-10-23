@@ -51,7 +51,7 @@ for *what* to build; this file decides *in what order*. The main roadmap queue i
 - **Done when:** a fake connector registers, syncs fixture data as untrusted content, has its write capability denied by default, and passes the shared test pack; a throwing adapter does not break startup.
 
 ### C02 · connectors · Local connector document store
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C01
 - **Scope:** Where synced `Document`s live until plans 07/33 bring semantic search: a local SQLite table keyed by connector, with keyword search, a sensitivity class per document (e.g. `health`, `messages`), retention, and erase-per-connector. Exposed to brains as a read tool through the policy engine; results wrapped as untrusted.
 - **Done when:** fixture documents can be stored, searched and erased per connector, with tests.

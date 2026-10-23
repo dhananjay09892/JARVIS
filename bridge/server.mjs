@@ -16,7 +16,8 @@
  */
 
 import { WebSocketServer } from 'ws'
-import { query } from '@anthropic-ai/claude-agent-sdk'
+import { query, createSdkMcpServer, tool as sdkTool } from '@anthropic-ai/claude-agent-sdk'
+import { z } from 'zod'
 import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
 import { chromeAvailable, chromeServer } from './chrome.mjs'
@@ -50,6 +51,9 @@ import { createClaudeBrain } from './brains/claude.mjs'
 import { createBrainRegistry } from './brains/registry.mjs'
 import { createConnectorRegistry } from './connectors/registry.mjs'
 import { createCredentialStore, createUnavailableCredentialStore } from './connectors/credentials.mjs'
+import { openDocumentStore } from './connectors/store.mjs'
+import { documentsConnector } from './connectors/documents.mjs'
+import { connectorsServer } from './connectors/mcp.mjs'
 import { checkForUpdate } from './update.mjs'
 import { fileURLToPath } from 'node:url'
 
@@ -283,8 +287,8 @@ function configuredServers() {
 const MCP_SERVERS = configuredServers()
 
 /**
- * Connectors (plans/connectors, task C01). None is registered yet; each
- * connector task adds its adapter here, inside the registry's own try/catch,
+ * Connectors (plans/connectors, task C01). Only the built-in documents
+ * connector (C02) is registered so far; each connector task adds its adapter here, inside the registry's own try/catch,
  * so one that fails cannot stop the bridge. Credentials stay unavailable until
  * the OS keychain (Q20) unless a developer opts into the dev-only store.
  */
@@ -297,8 +301,50 @@ function connectorCredentials() {
     return createUnavailableCredentialStore()
   }
 }
-const connectors = createConnectorRegistry({ credentials: connectorCredentials() })
-connectors.registerAll([])
+/**
+ * Synced documents are kept in a local SQLite file (task C02). If it cannot be
+ * opened, connectors still register; there is just nowhere to keep documents,
+ * and the documents connector is not offered.
+ */
+function connectorDocuments() {
+  try {
+    return openDocumentStore()
+  } catch (err) {
+    console.error('[jarvis] connector document store unavailable:', err?.message ?? err)
+    return null
+  }
+}
+const connectorStore = connectorDocuments()
+const connectors = createConnectorRegistry({
+  credentials: connectorCredentials(),
+  // Disconnect → Erase data erases what the store kept for that connector.
+  onErase: connectorStore ? (id) => { connectorStore.erase(id) } : null,
+})
+connectors.registerAll([
+  ...(connectorStore
+    ? [{
+        id: 'documents',
+        // Only documents from connectors that are on and still granted read;
+        // health and finance stay out of a cloud brain's context.
+        create: () => documentsConnector({
+          store: connectorStore,
+          isActive: (id) => connectors.has(id) && !connectors.grants.isFrozen()
+            && !connectors.grants.isDisabled(id) && connectors.grants.has(id, 'read'),
+        }),
+      }]
+    : []),
+])
+
+/** `{ jarvis_connectors }` for a session, or nothing when no connector tool is available. */
+function connectorServerEntry() {
+  try {
+    const server = connectorsServer(connectors, { createSdkMcpServer, tool: sdkTool, z, allowWrites: ALLOW_WRITES })
+    return server ? { jarvis_connectors: server } : {}
+  } catch (err) {
+    console.error('[jarvis] connector tools unavailable:', err?.message ?? err)
+    return {}
+  }
+}
 
 /**
  * The policy engine lives in policy.mjs, where it is tested on its own.
@@ -1688,6 +1734,9 @@ wss.on('connection', (socket, req) => {
       // The camera, which unlike everything else here has to ask and wait.
       jarvis_eyes: visionServer(ask),
       jarvis_tasks: taskServer(taskManager),
+      // Connector tools (plans/connectors): only granted, active ones; each
+      // call is decided by the policy engine and again by the registry.
+      ...connectorServerEntry(),
       ...(workflows && { jarvis_workflows: workflowServer({ store: workflows, engine, approve }) }),
       ...(sm && {
         jarvis_memory: memoryServer(memory, {
