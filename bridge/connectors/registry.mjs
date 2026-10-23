@@ -363,6 +363,7 @@ export function createConnectorRegistry({
             description: `${c.name}: ${t.description}`,
             readOnly: t.capability !== 'write',
             risk: t.capability === 'write' ? (c.risk === 'R3' ? 'R3' : 'R2') : c.risk,
+            params: t.params ? structuredClone(t.params) : {},
           })
         }
       }
