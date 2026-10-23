@@ -60,7 +60,7 @@ this file decides *in what order*.
 - **Done when:** every tool decision goes through `policy.mjs` and the existing behaviour is pinned by tests.
 
 ### Q05 · Plan 15 · Audit log v1
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q04
 - **Scope:** 15 phase 5, storage only. Append-only local log of requests, decisions, approvals and results, with a tamper-evident hash chain. The search panel comes later.
 - **Done when:** each policy decision writes an entry and a test detects a tampered entry.

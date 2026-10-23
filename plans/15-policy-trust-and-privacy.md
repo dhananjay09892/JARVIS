@@ -24,7 +24,7 @@ Risk tiers: **R0** read local · **R1** read private/remote · **R2** reversible
 2. **Roles and identity (with 01):** owner/member/child/guest matrices.
 3. **Standing grants:** "for the next 30 minutes you may archive mail"; time-boxed, scoped, listed in UI, revocable.
 4. **Taint and egress control:** track untrusted content; egress allow-list; outbound URL approval after private reads.
-5. **Audit log:** append-only local log of requests, decisions, approvals, results; searchable in a panel ("what did you do yesterday?"); tamper-evident hash chain.
+5. **Audit log:** append-only local log of requests, decisions, approvals, results; searchable in a panel ("what did you do yesterday?"); tamper-evident hash chain. **Storage v1 done (autopilot, 2026-10-23, Q05, awaiting review); the search panel is still to do.**
 6. **Undo / rollback:** per-action inverse where possible (trash instead of delete, draft instead of send, snapshot before edit).
 7. **Kill switch & safe word:** "Jarvis, freeze" halts missions, devices commands and mic-to-cloud; physical/hotkey equivalent; panic mode locks to guest role.
 8. **Privacy centre:** one screen: connected sources, data stored, voiceprints, retention, what leaves the machine; export & delete-all buttons.
@@ -50,6 +50,26 @@ Risk tiers: **R0** read local · **R1** read private/remote · **R2** reversible
   `decide()` belongs with grants (phase 3) and taint/egress (phase 4). Add
   `bridge/policy.test.mjs` and `bridge/taint.test.mjs` to the CI test list in
   `.github/workflows/release.yml`.
+
+- **2026-10-23 — Phase 5, storage only (Q05, audit log v1).** New `bridge/audit.mjs`: an
+  append-only SQLite log (`%LOCALAPPDATA%\JARVIS\audit\audit.db`, beside traces) whose entries
+  are hash-chained (SHA-256 over canonical JSON including `seq` and `prevHash`); triggers refuse
+  UPDATE and DELETE, and `verify()` names the first entry that was edited, deleted or reordered.
+  `createPolicy({ audit })` writes one `decision` entry per PreToolUse hook and canUseTool call
+  (actor voice/worker, stage, tool name, verdict, rule, reason — including the new
+  `guard-refused` / `guard-failed` rules when the taint check refuses); `decide()` and
+  `decideTool()` stay pure so the HUD badge is not logged. `auditedApprove()` wraps every
+  approval function the bridge hands out (voice session, workers, workflow engine) and logs each
+  card's redacted title and its answer; PostToolUse logs a `result` entry (name and error flag).
+  Never logged: tool arguments, results, approval details, what was said. A failing log never
+  changes a decision. `JARVIS_AUDIT=0` (env or saved settings) turns it off; `GET /audit/status`
+  returns the count and chain check. Tests: `bridge/audit.test.mjs` (15), including a tampered
+  decision being detected.
+  **Left:** the search panel ("what did you do yesterday?") and an endpoint that serves entries;
+  an anchor outside the file (signed head hash) so a whole-chain rewrite or a cut tail is caught;
+  retention by checkpointing (nothing is pruned today); a PostToolUseFailure hook if the SDK's
+  error results are not flagged by `isError`; a Diagnostics line for `/audit/status`; and adding
+  `bridge/audit.test.mjs` with the policy/taint tests to the CI list in `.github/workflows/release.yml`.
 
 ## Metrics
 100 % of tool paths go through policy (test enforces via a registry); 0 R3 actions without approval/grant; audit completeness; time-to-freeze < 1 s.
