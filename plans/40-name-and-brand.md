@@ -88,6 +88,14 @@ A web search is **not** legal clearance. The steps below are what actually make 
 6. [ ] File trademark applications (India + US + UK first, then Madrid Protocol if needed).
 7. [ ] Rename in product: app title, wake word (plans 02, 29), HUD (18), installer and launcher, README.
 
+Queued as **Q46** (claim the name, you), **Q47** ("Hey Tamelo" wake model recipe), **Q48**
+(train and test it, you) and **Q49** (rename in the product) in [QUEUE.md](QUEUE.md).
+
+**Wake word licence:** the shipped openWakeWord `hey_jarvis` model is CC BY-NC-SA 4.0
+(non-commercial, `plans/LICENCES.md` B4). That is fine while the project is free, but a custom
+"Hey Tamelo" model trained on commercially licensed data is required before any commercial
+release, and the rename switches the wake phrase at the same time.
+
 ## Risks
 - Name collision found during legal search → fall back to Kalemo.
 - Wake-word false triggers on "tamelo" in Gujarati speech ("tame lo") → test with plan 02's
