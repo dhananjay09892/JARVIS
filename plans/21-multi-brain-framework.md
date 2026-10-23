@@ -52,7 +52,7 @@ Two integration modes:
 
 ## Phases
 1. ✅ **Refactor behind an interface (4–5 d):** extract the current Claude code from `server.mjs` into `bridge/brains/claude.mjs` with no behaviour change; add a registry; add tests that pin current behaviour.
-2. ✅ **Event schema and conformance suite (3 d):** *(events, adapter and suite done in Q17; the bridge moves onto the events in Q46)* normalise events; scripted scenarios every brain must pass (plain answer, one tool call, denied tool, cancel mid-stream, long answer, tool error, resume).
+2. ✅ **Event schema and conformance suite (3 d):** *(events, adapter and suite done in Q17; the bridge moves onto the events in Q52)* normalise events; scripted scenarios every brain must pass (plain answer, one tool call, denied tool, cancel mid-stream, long answer, tool error, resume).
 3. **Policy contract (2 d):** all tool calls flow through `policy.decide()` (15); brains without a pre-execution hook are forced to read-only or tool-loop mode; test that `disallowedTools`-equivalents hold on every brain.
 4. **Brain settings UI (2 d):** pick default brain, per-person brain (01), per-task rules (06), connection status, "test this brain" button, clear subscription-vs-API-key labels and a cost/limit meter.
 5. **Router and fallback (3 d):** extend plan 06 routing with brain choice (reflex → fast → deep) and failover on outage/429/timeouts, with a spoken notice; sticky per conversation so tool state isn't lost.
@@ -114,6 +114,6 @@ Conformance suite pass rate per brain; policy-bypass tests = 0 on all brains; fa
   the denied tool is checked on the audit trail. The suite is shown to fail broken brains (runs a
   refused tool, reports it as ok, speaks a cancelled tail, loses a turn boundary, invalid event,
   no streaming, never finishes). Left: `server.mjs` and `tasks.mjs` still read SDK message shapes
-  (`startSession`); moving them onto `converse()` is Q46. `resume` is tested as "a second turn in
+  (`startSession`); moving them onto `converse()` is Q52. `resume` is tested as "a second turn in
   the same session keeps to its own turn", because JARVIS owns history (`capabilities.resume:
   false`); a brain with vendor-side resume will need its own scenario.

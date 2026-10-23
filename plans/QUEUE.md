@@ -192,7 +192,7 @@ this file decides *in what order*.
 - **Scope:** 21 phase 2. Normalised events plus scripted scenarios every brain must pass: plain answer, one tool call, denied tool, cancel mid-stream, long answer, tool error, resume.
 - **Done when:** the Claude brain passes the suite.
 
-### Q46 · Plan 21 · Bridge reads BrainEvents
+### Q52 · Plan 21 · Bridge reads BrainEvents
 - **Status:** todo
 - **Depends on:** Q17
 - **Scope:** 21 phase 2, second half. Move the voice pump in `server.mjs` and the worker loop in `tasks.mjs` from the SDK's message shapes onto `brain.converse()` and BrainEvents, keeping today's behaviour: speech from the first text delta, the HUD tool badge held until a refused tool is settled, barge-in that drops the abandoned answer's tail, the `ready` server list and the spoken failure messages. Anything the events cannot carry yet (the early tool badge from the partial block start, the MCP server list) gets an optional event or a side channel, added to `shared/contracts.ts` and `events.mjs` together.
