@@ -255,6 +255,20 @@ function gateOptions({
 }
 
 /**
+ * Write one decision to the audit log (audit.mjs), if there is one. The log
+ * is told what was decided; it never takes part in deciding, so a sink that
+ * throws is reported and the decision stands.
+ */
+function recordDecision(audit, log, entry) {
+  if (typeof audit !== 'function') return
+  try {
+    audit({ type: 'decision', ...entry })
+  } catch (err) {
+    log?.error?.('[jarvis] audit failed:', err?.message ?? err)
+  }
+}
+
+/**
  * Build the bare gate.
  *
  * Everything that varies at runtime is passed in, so the gate itself is pure:
@@ -307,6 +321,10 @@ export const RULE_REASONS = Object.freeze({
   'no-read-verb': 'The tool name does not begin with a read verb, so it needs general writes.',
   'unknown-builtin': 'An unknown built-in tool needs general writes.',
   'unknown-action': 'Only tool calls are decided by policy so far; anything else is refused.',
+  // Not produced by decide(): the PreToolUse hook's verdict when the guard
+  // that runs after the gate (the taint check) refuses or cannot finish.
+  'guard-refused': 'The gate allowed it, but the safety check after it refused or held it.',
+  'guard-failed': 'The safety check after the gate could not finish, so the call was refused.',
 })
 
 /**
@@ -355,9 +373,17 @@ export const PRE_TOOL_USE_GUARD_TIMEOUT_S = 120
  *                       guard today. A guard that throws refuses the call.
  *   canUseTool(context, log)  — a canUseTool callback; context is 'voice' or
  *                               'worker' and picks the refusal message.
+ *
+ * `audit`, if given, is called with one entry per decision the hook or
+ * canUseTool takes (see audit.mjs) — the voice or worker that asked, where,
+ * the tool name and the verdict, rule and reason. `decide()` and
+ * `decideTool()` stay pure: the HUD asks them too, and that is not a call.
+ * preToolUse takes an `actor` ('voice' or 'worker') for its entries;
+ * canUseTool uses its context.
  */
 export function createPolicy(options) {
   const opts = gateOptions(options)
+  const audit = typeof options?.audit === 'function' ? options.audit : null
 
   const decide = (action) => {
     if (action?.kind !== 'tool') {
@@ -368,26 +394,32 @@ export function createPolicy(options) {
   }
 
   const decideTool = (name) => decide({ kind: 'tool', name }).verdict === 'allow'
+  const denyBy = (rule) => ({ verdict: 'deny', rule, reason: RULE_REASONS[rule] })
 
   return Object.freeze({
     allowWrites: opts.allowWrites,
     decide,
     decideTool,
     disallowedTools: () => (opts.allowWrites ? [] : [...GENERAL_WRITE_TOOLS]),
-    preToolUse: ({ reason = DENY_MESSAGES.hook, guard = null, log = console } = {}) => {
+    preToolUse: ({ reason = DENY_MESSAGES.hook, guard = null, log = console, actor = 'voice' } = {}) => {
       const hook = async (input) => {
         let refusal = null
-        if (!decideTool(input?.tool_name)) {
+        const request = { kind: 'tool', name: input?.tool_name }
+        let decision = decide(request)
+        if (decision.verdict !== 'allow') {
           refusal = reason
         } else if (guard) {
           try {
             refusal = await guard(input.tool_name, input.tool_input)
+            if (refusal !== null && refusal !== undefined) decision = denyBy('guard-refused')
           } catch (err) {
             // A check that cannot finish must refuse, never wave the call through.
             log?.error?.('[jarvis] taint check failed:', err)
             refusal = DENY_MESSAGES.guardFailed
+            decision = denyBy('guard-failed')
           }
         }
+        recordDecision(audit, log, { actor, stage: 'pre-tool-use', request, decision })
         return refusal === null || refusal === undefined ? {} : {
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
@@ -406,7 +438,10 @@ export function createPolicy(options) {
     canUseTool: (context = 'voice', log = null) => {
       const message = DENY_MESSAGES[context] ?? DENY_MESSAGES.voice
       return async (toolName) => {
-        const ok = decideTool(toolName)
+        const request = { kind: 'tool', name: toolName }
+        const decision = decide(request)
+        const ok = decision.verdict === 'allow'
+        recordDecision(audit, console, { actor: context === 'worker' ? 'worker' : 'voice', stage: 'can-use-tool', request, decision })
         log?.(`[jarvis] tool ${toolName} -> ${ok ? 'allow' : 'deny'}`)
         return ok ? { behavior: 'allow' } : { behavior: 'deny', message }
       }

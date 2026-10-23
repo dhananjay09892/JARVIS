@@ -31,6 +31,7 @@ const FIELDS = {
   JARVIS_VOICE_ID: { check: (v) => /^[\w-]{8,64}$/.test(v) },
   JARVIS_ALLOW_WRITES: { check: (v) => v === '1' || v === '0' },
   JARVIS_TRACES: { check: (v) => v === '1' || v === '0' },
+  JARVIS_AUDIT: { check: (v) => v === '1' || v === '0' },
   setupDone: { check: (v) => v === '1' || v === '0' },
 }
 

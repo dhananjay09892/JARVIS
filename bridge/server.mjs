@@ -30,6 +30,7 @@ import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
 import { openTraces } from './traces.mjs'
+import { auditSink, auditedApprove, openAudit } from './audit.mjs'
 import { createSessionMemory } from './conversation.mjs'
 import { memoryServer, isMemoryTool } from './memory-tools.mjs'
 import { developmentServer } from './development.mjs'
@@ -80,6 +81,25 @@ if (tracesSetting !== '0' && tracesSetting !== 'off') {
 }
 
 /**
+ * The audit log (plan 15 phase 5; see bridge/audit.mjs): every policy
+ * decision, approval card and tool result, hash-chained so an edit shows.
+ * Tool names, rules and approval titles only — never arguments or results.
+ * On by default; JARVIS_AUDIT=0 (or 'off') turns it off and the file is then
+ * never opened. The log only records: if it cannot be opened or written, every
+ * call is still decided exactly as it would be without it.
+ */
+let auditStore = null
+const auditSetting = setting('JARVIS_AUDIT')
+if (auditSetting !== '0' && auditSetting !== 'off') {
+  try {
+    auditStore = openAudit()
+  } catch (err) {
+    console.error('[jarvis] audit log unavailable — decisions will not be recorded:', err.message)
+  }
+}
+const audit = auditStore ? auditSink(auditStore) : null
+
+/**
  * Workflows (see bridge/workflows.mjs). Their approval cards go through a hub
  * that keeps requests pending when no browser is open; nothing here is
  * pre-approved, and a workflow only ever runs the structured steps it stores.
@@ -90,7 +110,7 @@ let engine = null
 if (process.env.JARVIS_WORKFLOWS !== 'off') {
   try {
     workflows = openWorkflows()
-    engine = createEngine({ store: workflows, files: workspaceFiles(), approve: approvalHub.request })
+    engine = createEngine({ store: workflows, files: workspaceFiles(), approve: auditedApprove(approvalHub.request, audit, 'system') })
     engine.start()
   } catch (err) {
     console.error('[jarvis] workflows unavailable:', err.message)
@@ -268,6 +288,7 @@ const policy = createPolicy({
   isMemoryTool,
   isWorkflowTool,
   isTaskTool,
+  audit,
 })
 const { decideTool } = policy
 
@@ -287,9 +308,18 @@ const seenUrls = createSeenUrls()
 const taintGuard = (taint, approve) => (toolName, toolInput) =>
   guardOutbound(taint, approve, toolName, toolInput)
 
-/** PostToolUse: note what was read for taint, then label it as untrusted. */
-const postToolUse = (taint) => ({
+/**
+ * PostToolUse: log that the call came back (name and error flag only), note
+ * what was read for taint, then label it as untrusted.
+ */
+const postToolUse = (taint, actor) => ({
   hooks: [async (input) => {
+    audit?.({
+      type: 'result',
+      actor,
+      request: { kind: 'tool', name: input?.tool_name },
+      result: { error: input?.tool_response?.isError === true },
+    })
     try {
       taint.noteResult(input.tool_name, input.tool_response)
     } catch (err) {
@@ -955,6 +985,22 @@ const handleRequest = async (req, res) => {
         : { enabled: false },
     ))
   }
+  // ---- Audit log (plan 15 phase 5) ------------------------------------
+  // Counts and the chain check only; entries themselves are not served yet
+  // (the search panel is a later step).
+  if (requestUrl.pathname === '/audit/status' && req.method === 'GET') {
+    let body = { enabled: false }
+    if (auditStore) {
+      try {
+        const { ok, count, brokenAt = null, problem = null } = auditStore.verify()
+        body = { enabled: true, ok, count, brokenAt, problem }
+      } catch (err) {
+        body = { enabled: true, ok: false, problem: String(err?.message ?? err) }
+      }
+    }
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify(body))
+  }
   if (requestUrl.pathname === '/traces' && req.method === 'POST') {
     if (!origin) {
       res.writeHead(403, cors)
@@ -1342,7 +1388,7 @@ try {
 const taskManager = createTaskManager({
   store: taskStore,
   runAgent: ({ task, signal, report, ask, wrapApprove }) => {
-    const approve = wrapApprove(approvalHub.request)
+    const approve = auditedApprove(wrapApprove(approvalHub.request), audit, 'worker')
     // A brief is written by a model that may have read private content, so a
     // worker starts tainted; the links in its brief count as named (taint.mjs).
     const taint = createTaintTracker({ seen: seenUrls, isEffectful: isVetoed, tainted: true })
@@ -1371,10 +1417,10 @@ ${task.goal}`,
         disallowedTools: policy.disallowedTools(),
         hooks: {
           // The gate, then the taint check (plan 08, phase 2). See taint.mjs.
-          PreToolUse: [policy.preToolUse({ guard: taintGuard(taint, approve) })],
+          PreToolUse: [policy.preToolUse({ guard: taintGuard(taint, approve), actor: 'worker' })],
           // Results the bridge does not build itself are labelled as untrusted
           // data as they come back, and private reads taint the worker.
-          PostToolUse: [postToolUse(taint)],
+          PostToolUse: [postToolUse(taint, 'worker')],
         },
         includePartialMessages: true,
         canUseTool: policy.canUseTool('worker'),
@@ -1474,6 +1520,8 @@ wss.on('connection', (socket, req) => {
     send,
     connected: () => !closed && socket.readyState === socket.OPEN,
   })
+  // Every card this session shows, and its answer, goes to the audit log.
+  const approve = auditedApprove(approvals.request, audit, 'voice')
 
   // What this session has read, and which destinations the owner has named
   // (plan 08, phase 2). Sticky for the session: private text stays in context.
@@ -1580,12 +1628,12 @@ wss.on('connection', (socket, req) => {
         // the write gate is read once, at the same point as everything else.
         jarvis_chrome: chromeServer({ allowWrites: policy.allowWrites }),
         jarvis_apps: appsServer(),
-        jarvis_workspace: workspaceServer(approvals.request),
-        jarvis_development: developmentServer(approvals.request),
+        jarvis_workspace: workspaceServer(approve),
+        jarvis_development: developmentServer(approve),
         // The camera, which unlike everything else here has to ask and wait.
         jarvis_eyes: visionServer(ask),
         jarvis_tasks: taskServer(taskManager),
-        ...(workflows && { jarvis_workflows: workflowServer({ store: workflows, engine, approve: approvals.request }) }),
+        ...(workflows && { jarvis_workflows: workflowServer({ store: workflows, engine, approve }) }),
         ...(sm && {
           jarvis_memory: memoryServer(memory, {
             conversation: () => sm.id,
@@ -1631,13 +1679,13 @@ wss.on('connection', (socket, req) => {
         // The gate, then the taint check: once this session has read private
         // content, opening, fetching or sending to a destination the owner did
         // not name waits for an approval card (plan 08, phase 2; taint.mjs).
-        PreToolUse: [policy.preToolUse({ guard: taintGuard(taint, approvals.request) })],
+        PreToolUse: [policy.preToolUse({ guard: taintGuard(taint, approve), actor: 'voice' })],
         // Results the bridge does not build itself — built-in tools such as
         // WebFetch, and other people's MCP servers — come back with a note that
         // they are untrusted data (plan 08, phase 2). JARVIS's own browser and
         // page tools wrap their results where they are built. See untrusted.mjs.
         // Every result is also noted for taint and for the media proxy.
-        PostToolUse: [postToolUse(taint)],
+        PostToolUse: [postToolUse(taint, 'voice')],
       },
       // Without this the SDK only emits whole assistant messages, and JARVIS
       // would sit silent until the entire answer was written. Partial events
