@@ -26,7 +26,7 @@ must reach users are in [`CREDITS.md`](../CREDITS.md).
 | B1 | **`phonemizer` 1.2.1** (pulled in by `kokoro-js`) | Its npm licence says Apache-2.0, but it is a WebAssembly build of **eSpeak NG**, which is **GPL-3.0-or-later**. Vite bundles it into `dist/` as part of the lazy Kokoro chunk even though Kokoro is off by default (`VITE_TTS_ENGINE=system`), so the **installer redistributes GPL code inside an MIT product** without GPL notices or a source offer. | **Blocker for the installer** (until checked) | Pick one (owner decision, **Q41**): (a) exclude the Kokoro chunk from installer builds while it stays off by default; (b) swap the G2P step for a permissively licensed one (a dictionary-based English G2P, or plan 04's local speech stack choice); (c) accept GPL-3.0 for that component: ship the eSpeak NG licence and a source link, and have the legal review (Q13) confirm the combination is acceptable. |
 | B2 | **Claude Code binary** inside `@anthropic-ai/claude-agent-sdk` platform packages | Proprietary, "SEE LICENSE IN LICENSE.md". Anthropic allows running Claude Code in your product **only** under the Commercial Terms and these conditions: the binary must be unmodified; each end user signs in with their **own** API key, subscription or cloud-provider credential; the product must not pay for, resell or intermediate usage. Anthropic also says third-party developers may not offer Claude.ai login in their own apps or route requests through Free/Pro/Max credentials on users' behalf, while an end user signing in to the **unmodified** Claude Code binary with their own subscription is allowed. JARVIS's design (user's own login, stock binary) appears to fit, but this is exactly the subscription-terms question. | **Decided** (2026-10-23) | [ADR 001](adr/001-subscription-brain-terms.md) accepted: the user's own subscription login stays the default, with an API-key fallback (Q42), and Anthropic is asked for written confirmation (Q44). Keep the binary unmodified and never store or proxy Claude.ai credentials. Product wording: "Powered by Claude" is allowed; never "Claude Code" as part of the product name. |
 | B3 | **Picovoice Porcupine** (`@picovoice/porcupine-web`, `@picovoice/web-voice-processor`) | The SDK code is Apache-2.0 but will not run without a Picovoice AccessKey, and Picovoice ended its Free Tier on 30 June 2026 (ADR 002). | **Resolved** (Q09, 2026-10-23) | ADR 002 chose openWakeWord. Both packages, their lockfile entries and the `VITE_PICOVOICE_ACCESS_KEY` / `WAKE_ENGINE` code were removed in Q09. |
-| B4 | **openWakeWord pre-trained models** (shipped in Q09, `public/models/wake/`) | CC BY-NC-SA 4.0: **non-commercial only**, share-alike. Shipped unmodified with attribution in `public/models/wake/LICENSE.md` and CREDITS.md. | Risk (non-commercial) | Fine for a free MIT project. Before any commercial distribution, train a custom model on data with known licences (ADR 002). |
+| B4 | **openWakeWord pre-trained models** (shipped in Q09, `public/models/wake/`) | CC BY-NC-SA 4.0: **non-commercial only**, share-alike. Shipped unmodified with attribution in `public/models/wake/LICENSE.md` and CREDITS.md. | Risk (non-commercial) | Fine for a free MIT project. Before any commercial distribution, train our own models on data with known licences (ADR 002). **Path to closed** (Q47, [`scripts/wake/README.md`](../scripts/wake/README.md#closing-b4)): (1) the commercial-only training recipe and its input register below ✅ Q47; (2) the mel front end rebuilt from MIT/ISC formulas, weights matching openWakeWord's to within 4e-9 ✅ Q47 (code; the file is exported when the recipe runs); (3) the embedding front end cleared: re-export Google's Apache-2.0 `speech_embedding` or get written confirmation (Q53); (4) `hey_tamelo`, `hey_buddy`, `hey_friend` trained and tested (Q48); (5) `hey_jarvis` removed (Q49). |
 | B5 | **ElevenLabs** voice and Scribe STT (optional, user's own key) | A cloud service under ElevenLabs' terms, not a licence we redistribute. On the ElevenLabs **free plan, output may not be used commercially and must credit ElevenLabs**. The default voice ID `JBFqnCBsd6RMkjVDRZzb` is a stock ElevenLabs library voice, not a clone of anyone. | Note for users | Say in Settings / README that the user's own ElevenLabs plan decides whether they may use the audio commercially. Never ship an ElevenLabs key. |
 | B6 | **Inno Setup** (builds the installer) | Not redistributed (the installer runtime is covered by Inno's permissive licence), but jrsoftware **asks commercial users** (for-profit organisations or individuals with more than USD 5,000 annual revenue) to buy a commercial licence. Donations for open-source/freeware count towards that threshold. | Note | No action while JARVIS is free and unfunded. Revisit with the sustainability decision (plan 36 phase 6). |
 | B7 | **Node.js runtime** (`node.exe` in the installer) | MIT plus the third-party licences bundled into Node (OpenSSL, ICU, V8 and others), which must travel with the binary. `scripts/package.mjs` copies `node.exe` but **not Node's LICENSE file**. | Fix (small) | Copy Node's `LICENSE` next to `node.exe` in the installer stage (follow-up; needs a Windows build to verify). |
@@ -90,8 +90,49 @@ optional) 14, Anthropic proprietary 9 (Agent SDK and its platform packages), uns
 | Kokoro-82M v1.0 (`onnx-community/Kokoro-82M-v1.0-ONNX`, q8), by hexgrad | Optional local TTS (`VITE_TTS_ENGINE=kokoro`) | Apache-2.0 | Yes. Trained on public-domain, Apache/MIT-licensed and synthetic audio per its model card | Downloaded from Hugging Face on first use, cached by the browser | Credit Kokoro / hexgrad (CREDITS.md) | 2026-10-23 |
 | MediaPipe Hand Landmarker (`hand_landmarker.task`, float16 v1) | Hand-gesture control | Apache-2.0 like the rest of MediaPipe (to confirm against Google's model card) | Yes, assuming Apache-2.0 | Downloaded from `storage.googleapis.com` at run time | Keep licence notice | 2026-10-23 |
 | openWakeWord `hey_jarvis_v0.1.onnx` (release v0.5.1) | Offline wake word (Q09) | CC BY-NC-SA 4.0 | **No** (B4) | Committed in `public/models/wake/`, bundled into the UI build | Credit openWakeWord / David Scripka (CREDITS.md, `public/models/wake/LICENSE.md`) | 2026-10-23 |
-| openWakeWord `melspectrogram.onnx` and `embedding_model.onnx` (release v0.5.1) | Wake-word feature front end | Distributed by openWakeWord with its CC BY-NC-SA 4.0 models; the embedding model re-implements Google's `speech_embedding` (Apache-2.0). Treated as CC BY-NC-SA 4.0 until confirmed | Treat as **No** (B4) | Same as above | Same as above | 2026-10-23 |
+| openWakeWord `melspectrogram.onnx` and `embedding_model.onnx` (release v0.5.1) | Wake-word feature front end | Distributed by openWakeWord with its CC BY-NC-SA 4.0 models. Q47 found the mel file is a PyTorch 1.11 export of torchlibrosa (MIT) with librosa's Slaney filters (ISC), and rebuilt it (`scripts/wake/frontend_mel.py`); the embedding file is a tf2onnx export of a Keras re-implementation of Google's `speech_embedding` (Apache-2.0). Treated as CC BY-NC-SA 4.0 until replaced (mel: Q48/Q49) or confirmed (embedding: Q53) | Treat as **No** (B4) | Same as above | Same as above | 2026-10-23 |
 | Speaker embedding (planned, Q27/Q28) | Speaker ID | To be recorded with ADR 003 | — | — | — | — |
+
+## Wake-model training inputs (Q47 recipe)
+
+Everything the recipe in [`scripts/wake/`](../scripts/wake/README.md) may use to train our own
+wake models ("Hey Tamelo", "Hey Buddy", "Hey Friend"). The machine-readable list is
+`scripts/wake/sources.json`; `scripts/wake/recipe.test.mjs` fails if an input there has no row
+here, or if the recipe uses anything not cleared for commercial use. Nothing below is shipped
+except the trained models and the front end, which carry our licence and a model card crediting
+these inputs.
+
+| Recipe id | Input | Used for | Licence | Commercial use | Attribution | Last reviewed |
+|---|---|---|---|---|---|---|
+| `kokoro-82m` | Kokoro-82M, 28 English + 4 Hindi voices | Synthetic positives and negatives (Japanese/French voices not used) | Apache-2.0 | Yes | Kokoro-82M by hexgrad | 2026-10-23 |
+| `piper-libritts-r` | Piper voice `en_US-libritts_r-medium` | Synthetic positives and negatives, 904 speakers | MIT (rhasspy/piper-voices); trained on LibriTTS-R (CC BY 4.0) | Yes | Piper / Rhasspy; LibriTTS-R | 2026-10-23 |
+| `libritts-r` | LibriTTS-R train-clean-100, test-clean | English speech negatives and validation | CC BY 4.0 | Yes, with attribution | Koizumi et al., 2023 | 2026-10-23 |
+| `fleurs` | Google FLEURS `en_us`, `hi_in`, `gu_in` | Real English, Hindi, Gujarati speech negatives and validation | CC BY 4.0 | Yes, with attribution | Conneau et al., 2022 (Google) | 2026-10-23 |
+| `kathbath` | AI4Bharat Kathbath, Hindi and Gujarati (optional, gated) | More Hindi/Gujarati negatives | CC BY 4.0 per the card metadata (the card text says CC0 packaging; the stricter one is assumed) | Yes, with attribution | AI4Bharat | 2026-10-23 |
+| `musan` | MUSAN | Background noise and music; speech/music negatives | CC BY 4.0 | Yes, with attribution | Snyder, Chen and Povey, 2015 | 2026-10-23 |
+| `rirs-noises` | OpenSLR 28 Room Impulse Response and Noise Database | Reverb and point-source noise | Apache-2.0 for the package (real RIRs come from RWCP, REVERB, AIR; `WAKE_RIRS=simulated` uses only the simulated ones) | Yes | Ko et al., 2017 | 2026-10-23 |
+| `frontend-mel` | Mel front end rebuilt by `scripts/wake/frontend_mel.py` | Feature front end | Our own export of torchlibrosa (MIT) / librosa (ISC) formulas | Yes | torchlibrosa, librosa | 2026-10-23 |
+| `frontend-embedding` | Google `speech_embedding` | Feature front end | Apache-2.0 (as stated by openWakeWord); Q53 confirms or re-exports | Yes, once Q53 is done | Google; openWakeWord re-implementation | 2026-10-23 |
+
+**Excluded** (listed so the test can block them):
+
+| Recipe id | Input | Why not | Last reviewed |
+|---|---|---|---|
+| `acav100m-features` | openWakeWord's ACAV100M negative features | YouTube-derived audio with no licence | 2026-10-23 |
+| `openwakeword-validation-features` | openWakeWord `validation_set_features.npy` | Unknown licence | 2026-10-23 |
+| `audioset` | AudioSet | Labels CC BY 4.0, audio is YouTube content | 2026-10-23 |
+| `fma` | Free Music Archive | Mixed per-track licences, including NC and ND | 2026-10-23 |
+| `mit-ir-survey` | MIT impulse response survey | No licence stated | 2026-10-23 |
+| `openwakeword-pretrained` | openWakeWord pre-trained models | CC BY-NC-SA 4.0 | 2026-10-23 |
+| `common-voice` | Mozilla Common Voice | CC0 historically, but its current access terms (Mozilla Data Collective) could not be read; add after checking | 2026-10-23 |
+
+**Build-time tools** (not shipped; only the audio they produce is used):
+
+| Recipe id | Tool | Licence | Note |
+|---|---|---|---|
+| `openwakeword` | openWakeWord 0.6.0 training code | Apache-2.0 | Its bundled models are not used |
+| `piper-sample-generator` | piper-sample-generator v3.1.0 | Not read in this run: check its `LICENSE.md` at recipe step 0 | Phonemises with eSpeak NG (GPL-3.0) via piper-phonemize |
+| `kokoro` | `kokoro` Python package | Apache-2.0 | Its G2P may fall back to eSpeak NG (GPL-3.0) |
 
 ## Voices and likeness
 
@@ -144,6 +185,8 @@ actor or any person without documented consent.
 - ElevenLabs free-plan output rights (summary of the ElevenLabs terms): https://terms.law/ai-output-rights/elevenlabs/
 - Inno Setup licence text (permits commercial use): https://feed.nuget.org/packages/Tools.InnoSetup/6.7.0/License and commercial licence request: https://jrsoftware.org/isorder.php
 - openWakeWord model licence: see sources in [ADR 002](adr/002-wake-engine.md).
+
+- Wake-model training inputs (Q47): openWakeWord licences and training summary https://pypi.org/project/openwakeword ; piper-sample-generator https://github.com/dscripka/piper-sample-generator and releases https://github.com/rhasspy/piper-sample-generator/releases ; Piper LibriTTS-R voice https://huggingface.co/rhasspy/piper-voices/tree/9df7583dc899c8f5ecaaebf1120a9fd1911e8009/en/en_US/libritts_r ; LibriTTS-R https://www.openslr.org/141/ and LibriTTS https://www.openslr.org/60 ; FLEURS https://huggingface.co/datasets/google/fleurs ; Kathbath https://huggingface.co/datasets/ai4bharat/Kathbath ; MUSAN https://openslr.org/17/ ; OpenSLR 28 https://openslr.org/28/ ; MIT IR survey (no licence stated) https://mcdermottlab.mit.edu/Reverb/IR_Survey.html ; Kokoro voices https://replicate.com/alphanumericuser/kokoro-82m/readme ; what openWakeWord's notebook downloads https://github.com/alfiedennen/openwakeword-colab-2026
 
 Not verified in this run: the MediaPipe hand model's licence on its model card (the guide page does not state one), the `webgl-constants` repository licence (B8), the exact files inside the
 `phonemizer` package (npm was unreachable from the autopilot's sandbox, so `node_modules` could not

@@ -1,0 +1,130 @@
+{
+  "model_name": "hey_buddy",
+  "target_phrase": [
+    "hey buddy",
+    "hey buddie",
+    "hey budd-y"
+  ],
+  "custom_negative_phrases": [
+    "buddy",
+    "thanks buddy",
+    "my buddy is coming over",
+    "hi buddy",
+    "come on buddy",
+    "good job buddy",
+    "hey body",
+    "hey bud",
+    "hey daddy",
+    "hey birdie",
+    "hey baby",
+    "hey betty",
+    "hey bobby",
+    "hey buddha",
+    "hey study",
+    "hey muddy",
+    "hey nobody",
+    "anybody",
+    "somebody",
+    "hey bunny",
+    "hey money",
+    "hey honey",
+    "buddies",
+    "study buddy",
+    "badi",
+    "buddha",
+    "badhi",
+    "hey tamelo",
+    "hey friend",
+    "hey siri",
+    "alexa",
+    "ok google",
+    "hey google",
+    "hey cortana",
+    "hey jarvis",
+    "hey meta"
+  ],
+  "n_samples": 20000,
+  "n_samples_val": 2000,
+  "tts_batch_size": 50,
+  "augmentation_batch_size": 16,
+  "piper_sample_generator_path": "./tools/piper-sample-generator",
+  "output_dir": "./models",
+  "rir_paths": [
+    "./data16k/rirs-noises/rirs"
+  ],
+  "background_paths": [
+    "./data16k/musan/noise",
+    "./data16k/musan/music",
+    "./data16k/rirs-noises/pointsource_noises"
+  ],
+  "background_paths_duplication_rate": [
+    1,
+    1,
+    1
+  ],
+  "false_positive_validation_data_path": "./features/validation_stream.npy",
+  "augmentation_rounds": 2,
+  "feature_data_files": {
+    "commercial_negatives": "./features/negatives_train.npy"
+  },
+  "batch_n_per_class": {
+    "commercial_negatives": 1024,
+    "adversarial_negative": 70,
+    "positive": 70
+  },
+  "model_type": "dnn",
+  "layer_size": 32,
+  "steps": 50000,
+  "max_negative_weight": 1500,
+  "target_false_positives_per_hour": 0.2,
+  "recipe": {
+    "phrase": "Hey Buddy",
+    "pronunciation": "hay BUD-ee",
+    "say_hindi": [
+      "हे बडी",
+      "हेय बडी"
+    ],
+    "negatives_hindi": [
+      "बड़ी बात है",
+      "बहुत बड़ी गाड़ी",
+      "बुड्ढा आदमी",
+      "बुद्धि लगाओ",
+      "हे भगवान",
+      "बधी वात",
+      "बधा लोको आव्या",
+      "बडी बहन"
+    ],
+    "voice_mix": {
+      "piper": 0.7,
+      "kokoroEnglish": 0.2,
+      "kokoroHindi": 0.1
+    },
+    "sources": {
+      "tts": [
+        "kokoro-82m",
+        "piper-libritts-r"
+      ],
+      "negatives": [
+        "libritts-r",
+        "fleurs",
+        "kathbath",
+        "musan"
+      ],
+      "background": [
+        "musan",
+        "rirs-noises"
+      ],
+      "reverb": [
+        "rirs-noises"
+      ],
+      "frontend": [
+        "frontend-mel",
+        "frontend-embedding"
+      ]
+    },
+    "frontend": {
+      "melspec": "./frontend/melspectrogram.onnx",
+      "embedding": "./frontend/embedding_model.onnx"
+    }
+  }
+}

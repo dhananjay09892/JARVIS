@@ -37,3 +37,7 @@ jarvis-memory*
 
 installer/stage/
 dist-installer/
+
+# Wake-model recipe work directory (datasets, clips, features; tens of GB)
+scripts/wake/work/
+__pycache__/

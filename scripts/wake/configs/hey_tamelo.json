@@ -1,0 +1,140 @@
+{
+  "model_name": "hey_tamelo",
+  "target_phrase": [
+    "hey tamelo",
+    "hey tah meh lo",
+    "hey tameloh",
+    "hey ta-melo"
+  ],
+  "custom_negative_phrases": [
+    "tamelo",
+    "hey tamale",
+    "tamale",
+    "hey tomato",
+    "tomorrow",
+    "hey camelot",
+    "hey melo",
+    "tell me low",
+    "hey tell me",
+    "hey tim",
+    "hey tamil",
+    "hey amelia",
+    "hey pamela",
+    "hey carmelo",
+    "hey there hello",
+    "tame low",
+    "hey jello",
+    "hey cello",
+    "hey mellow",
+    "hey ta",
+    "may tell oh",
+    "hey tamer",
+    "hey tom",
+    "tame lo",
+    "tame lo ne",
+    "tame loko",
+    "tame lot lo",
+    "tamatar lo",
+    "tum le lo",
+    "tamam log",
+    "hey tum lo",
+    "hey buddy",
+    "hey friend",
+    "hey siri",
+    "alexa",
+    "ok google",
+    "hey google",
+    "hey cortana",
+    "hey jarvis",
+    "hey meta"
+  ],
+  "n_samples": 20000,
+  "n_samples_val": 2000,
+  "tts_batch_size": 50,
+  "augmentation_batch_size": 16,
+  "piper_sample_generator_path": "./tools/piper-sample-generator",
+  "output_dir": "./models",
+  "rir_paths": [
+    "./data16k/rirs-noises/rirs"
+  ],
+  "background_paths": [
+    "./data16k/musan/noise",
+    "./data16k/musan/music",
+    "./data16k/rirs-noises/pointsource_noises"
+  ],
+  "background_paths_duplication_rate": [
+    1,
+    1,
+    1
+  ],
+  "false_positive_validation_data_path": "./features/validation_stream.npy",
+  "augmentation_rounds": 2,
+  "feature_data_files": {
+    "commercial_negatives": "./features/negatives_train.npy"
+  },
+  "batch_n_per_class": {
+    "commercial_negatives": 1024,
+    "adversarial_negative": 70,
+    "positive": 70
+  },
+  "model_type": "dnn",
+  "layer_size": 32,
+  "steps": 50000,
+  "max_negative_weight": 1500,
+  "target_false_positives_per_hour": 0.2,
+  "recipe": {
+    "phrase": "Hey Tamelo",
+    "pronunciation": "hay tah-MEH-loh",
+    "say_hindi": [
+      "हे तमेलो",
+      "हेय तमेलो"
+    ],
+    "negatives_hindi": [
+      "तमे लो",
+      "तमे लो ने",
+      "आ तमे लो",
+      "तमे लोको क्यां जाओ छो",
+      "तमे लोट लो",
+      "तमे लई लो",
+      "तुम ले लो",
+      "टमाटर लो",
+      "तमाम लोग आए हैं",
+      "हे भगवान",
+      "तमाशा मत करो",
+      "तुम लोग कहाँ हो",
+      "मेलो लगा है"
+    ],
+    "voice_mix": {
+      "piper": 0.7,
+      "kokoroEnglish": 0.2,
+      "kokoroHindi": 0.1
+    },
+    "sources": {
+      "tts": [
+        "kokoro-82m",
+        "piper-libritts-r"
+      ],
+      "negatives": [
+        "libritts-r",
+        "fleurs",
+        "kathbath",
+        "musan"
+      ],
+      "background": [
+        "musan",
+        "rirs-noises"
+      ],
+      "reverb": [
+        "rirs-noises"
+      ],
+      "frontend": [
+        "frontend-mel",
+        "frontend-embedding"
+      ]
+    },
+    "frontend": {
+      "melspec": "./frontend/melspectrogram.onnx",
+      "embedding": "./frontend/embedding_model.onnx"
+    }
+  }
+}
