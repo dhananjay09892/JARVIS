@@ -21,7 +21,7 @@ and a wordmark. "JARVIS" stays only as an internal codename.
 | Pronunciation | tah-MEH-loh (stress on the middle syllable) |
 | Hindi (Devanagari) | तमेलो |
 | Gujarati | તમેલો |
-| Wake word | "Hey Tamelo" (3 syllables, distinct from "Hey Siri", "Alexa", "OK Google") |
+| Wake words | "Hey Tamelo" (brand, 3 syllables, distinct from "Hey Siri", "Alexa", "OK Google"), plus "Hey Buddy" and "Hey Friend"; users can add their own name in Settings ([plan 02](02-offline-wake-word.md#multiple-and-custom-wake-words)) |
 
 ### Why it works in every language
 - **Only stable sounds:** t, m, l and the plain vowels a, e, o. No "ai", "ou", "th", "j" or
@@ -94,7 +94,8 @@ Queued as **Q46** (claim the name, you), **Q47** ("Hey Tamelo" wake model recipe
 **Wake word licence:** the shipped openWakeWord `hey_jarvis` model is CC BY-NC-SA 4.0
 (non-commercial, `plans/LICENCES.md` B4). That is fine while the project is free, but a custom
 "Hey Tamelo" model trained on commercially licensed data is required before any commercial
-release, and the rename switches the wake phrase at the same time.
+release, and the rename switches the wake phrase at the same time. The same recipe also trains
+"Hey Buddy" and "Hey Friend", and users can add a custom name from Settings (Q50, Q51).
 
 ## Risks
 - Name collision found during legal search → fall back to Kalemo.

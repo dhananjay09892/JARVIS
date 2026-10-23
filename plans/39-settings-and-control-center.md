@@ -20,7 +20,7 @@ Left rail with search, status dot per section, and a **Simple / Advanced** toggl
 | # | Section | Main controls | Owner plans |
 |---|---|---|---|
 | 1 | Brains | default brain, sign-in/status, subscription vs API key, fast/deep model, effort, fallback order, test button | 21–27, 06 |
-| 2 | Voice and hearing | STT/TTS engine, voice picker + preview, speed, whisper mode, wake engine/sensitivity/phrase, conversation window, mic/speaker test, calibration | 02, 04, 05, 29 |
+| 2 | Voice and hearing | STT/TTS engine, voice picker + preview, speed, whisper mode, wake words (built-in Tamelo/Buddy/Friend on/off, custom name, per-phrase sensitivity, test button), conversation window, mic/speaker test, calibration | 02, 04, 05, 29 |
 | 3 | Languages | spoken languages, reply language, script, pronunciation dictionary, per-language voice | 28 |
 | 4 | People and voices | members and roles, enroll/forget voice, per-person language/brain/permissions, guest mode, presence | 01, 30 |
 | 5 | Safety and permissions | read-only/write switch, risk-tier table, standing grants, PIN/safe word, freeze phrase and hotkey, spend caps, never-list viewer | 15, 08, 35 |
