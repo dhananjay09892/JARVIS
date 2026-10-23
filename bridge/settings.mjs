@@ -14,6 +14,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { REGISTRY, isValid, normalise } from './settings-registry.mjs'
 
 export function settingsDir(env = process.env) {
   if (env.JARVIS_HOME) return env.JARVIS_HOME
@@ -23,17 +24,8 @@ export function settingsDir(env = process.env) {
 
 const file = () => join(settingsDir(), 'settings.db')
 
-/** Every key the Settings page may change, with how to validate it. */
-const FIELDS = {
-  ELEVENLABS_API_KEY: { secret: true, check: (v) => /^[\w-]{8,200}$/.test(v) },
-  JARVIS_MODEL: { check: (v) => /^[\w.-]{1,80}$/.test(v) },
-  JARVIS_EFFORT: { check: (v) => ['low', 'medium', 'high', 'xhigh'].includes(v) },
-  JARVIS_VOICE_ID: { check: (v) => /^[\w-]{8,64}$/.test(v) },
-  JARVIS_ALLOW_WRITES: { check: (v) => v === '1' || v === '0' },
-  JARVIS_TRACES: { check: (v) => v === '1' || v === '0' },
-  JARVIS_AUDIT: { check: (v) => v === '1' || v === '0' },
-  setupDone: { check: (v) => v === '1' || v === '0' },
-}
+/** Every key the Settings page may change, from the registry (plan 39). */
+const FIELDS = Object.fromEntries(REGISTRY.map((d) => [d.id, d]))
 
 let db = null
 let cache = null
@@ -55,7 +47,7 @@ function open() {
       const old = JSON.parse(readFileSync(legacy, 'utf8'))
       const put = db.prepare('INSERT OR IGNORE INTO settings VALUES (?, ?, ?)')
       for (const [k, def] of Object.entries(FIELDS)) {
-        if (typeof old[k] === 'string' && def.check(old[k])) put.run(k, old[k], new Date().toISOString())
+        if (isValid(def, old[k])) put.run(k, old[k], new Date().toISOString())
       }
       renameSync(legacy, `${legacy}.migrated`)
     } catch {
@@ -71,7 +63,7 @@ export function readSettings() {
   try {
     for (const row of open().prepare('SELECT key, value FROM settings').all()) {
       const def = FIELDS[row.key]
-      if (def && def.check(row.value)) cache[row.key] = row.value
+      if (def && isValid(def, row.value)) cache[row.key] = row.value
     }
   } catch (err) {
     console.error('[jarvis] settings database unavailable:', err.message)
@@ -85,18 +77,26 @@ export function setting(key) {
 }
 
 /**
- * Apply a patch. A value of '' clears a field. Unknown keys and values that
- * fail validation are rejected as a whole — nothing is half-saved.
+ * Apply a patch. A value of '' (or null) clears a field; booleans may be sent
+ * as true/false. Unknown keys and values that fail validation are rejected as
+ * a whole — nothing is half-saved.
+ *
+ * Returns which settings actually changed, split by when they take effect
+ * (the registry's `apply`), and which of them an environment variable
+ * overrides, so the change is saved but not in force.
  */
 export function updateSettings(patch) {
+  if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('settings patch must be an object')
   const changes = []
-  for (const [k, raw] of Object.entries(patch ?? {})) {
-    const def = FIELDS[k]
+  for (const [k, raw] of Object.entries(patch)) {
+    const def = Object.hasOwn(FIELDS, k) ? FIELDS[k] : undefined
     if (!def) throw new Error(`unknown setting: ${k}`)
-    const v = typeof raw === 'string' ? raw.trim() : raw
-    if (v !== '' && !(typeof v === 'string' && def.check(v))) throw new Error(`invalid value for ${k}`)
+    const v = normalise(def, raw)
+    if (v === undefined || (v !== '' && !isValid(def, v))) throw new Error(`invalid value for ${k}`)
     changes.push([k, v])
   }
+  const before = readSettings()
+  const changed = changes.filter(([k, v]) => (before[k] ?? '') !== v).map(([k]) => k)
   const d = open()
   const del = d.prepare('DELETE FROM settings WHERE key = ?')
   const put = d.prepare(
@@ -114,6 +114,12 @@ export function updateSettings(patch) {
     throw err
   }
   cache = null
+  return {
+    changed,
+    appliedLive: changed.filter((k) => FIELDS[k].apply === 'live'),
+    needsRestart: changed.filter((k) => FIELDS[k].apply !== 'live'),
+    overridden: changed.filter((k) => Boolean(process.env[k])),
+  }
 }
 
 /** What the browser may see: secrets reduced to a yes/no. */

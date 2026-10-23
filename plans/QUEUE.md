@@ -155,7 +155,7 @@ this file decides *in what order*.
 - **Done when:** no brain can run a tool without a policy decision.
 
 ### Q19 · Plan 39 · Settings registry and API
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q14
 - **Scope:** 39 phase 1. Move today's six settings into a registry with schema, `GET /settings/schema` and validated `PATCH /settings`; keep the current UI working through the schema.
 - **Done when:** settings are declared once and the existing UI still works.

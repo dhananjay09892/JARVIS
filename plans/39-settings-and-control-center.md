@@ -1,6 +1,6 @@
 # 39 · Settings and control center
 
-**Status:** Partial (basic Settings + 3-step wizard exist) · **Priority:** P1 (grows with every plan) · **Effort:** 3–5 weeks for the framework and first sections, then incremental · **Depends on:** 15 (secrets, policy), 21 (brains), 38 (contracts), 29 (onboarding)
+**Status:** Partial (basic Settings + 3-step wizard exist; phase 1 done) · **Priority:** P1 (grows with every plan) · **Effort:** 3–5 weeks for the framework and first sections, then incremental · **Depends on:** 15 (secrets, policy), 21 (brains), 38 (contracts), 29 (onboarding)
 
 ## End state
 One place to see and control everything JARVIS is and does: which brain, which voice, who
@@ -58,7 +58,7 @@ Not in Settings (live in the HUD, Settings only configures them): approvals inbo
 - Mobile/remote: sensitive sections require biometrics or PIN.
 
 ## Phases
-1. **Registry and API (1 w):** extract today's 6 settings into the registry; schema endpoint; PATCH with validation; keep current UI working through the schema.
+1. **Registry and API (1 w):** ✅ done (Q19). Extract today's 6 settings into the registry; schema endpoint; PATCH with validation; keep current UI working through the schema.
 2. **New shell (1 w):** left rail, search, Simple/Advanced, status dots; migrate Claude/Voice/Brain/Actions into Brains, Voice, Safety.
 3. **Secrets to keychain (3 d):** move the ElevenLabs key and future provider keys; migration with backup (17).
 4. **Live apply + restart banner (3 d):** event on settings change; remove restart where possible.
@@ -86,6 +86,26 @@ Not in Settings (live in the HUD, Settings only configures them): approvals inbo
 
 ## Done when
 All current settings live in the registry; the new shell ships with search and status; secrets are in the keychain; a settings change audit entry exists for every write; and adding a new setting for a future plan takes one registry entry, with the UI, API and tests following automatically.
+
+## Autopilot log
+- **2026-10-23 — Phase 1 (Q19).** `bridge/settings-registry.mjs` declares all eight current
+  settings (the six above plus `JARVIS_TRACES` and `JARVIS_AUDIT`, added by Q05/Q06) with
+  `id, section, label, help, type, options/pattern, default, scope, risk, apply, visibleIn,
+  secret`, and the 15 sections from the information architecture. `checkRegistry` enforces the
+  "every setting needs a section, a default, help text" rule at boot. `bridge/settings.mjs`
+  validates through it; `updateSettings` now also accepts `true/false` for booleans and `null`
+  to clear, and returns `changed / appliedLive / needsRestart / overridden`. The bridge serves
+  `GET /settings/schema` and a validated, all-or-nothing `PATCH /settings` (POST kept for older
+  pages; same Origin rule; the CORS preflight now names PATCH). Model, effort and voice defaults
+  come from the registry. The Settings dialog reads the schema for the effort options, defaults
+  and help text, saves with PATCH, and says "Restart to apply" only when the bridge reports it.
+  Tests are generated from the registry (`bridge/settings-registry.test.mjs`: one save/read/
+  clear/reject test per setting, schema has no values, secrets never public).
+  **Left:** phases 2–12. Values are still flat strings in one global scope; `person`/`device`
+  scope, the settings-change audit entry and confirmation for `dangerous` settings come with
+  phases 5 and 7. Restart-only settings are unchanged (phase 4, Q23). The registry is plain
+  `.mjs`, not a `shared/contracts.ts` schema, for the same reason as plan 38 phase 3: the bridge
+  cannot import `.ts` on Node 22.13.
 
 ## Related plans
 [15](15-policy-trust-and-privacy.md) · [17](17-deployment-and-resilience.md) · [21](21-multi-brain-framework.md) · [29](29-onboarding-and-first-run.md) · [35](35-ethics-limits-and-governance.md) · [36](36-economics-and-licensing.md) · [38](38-shared-data-contracts.md)
