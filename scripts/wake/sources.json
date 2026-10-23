@@ -1,0 +1,241 @@
+{
+  "$comment": "Every input the wake-model recipe may use (Q47). download.py and make-configs.mjs read this file; recipe.test.mjs checks that every entry has a row in plans/LICENCES.md and that nothing with commercialUse false is used. Licences checked 2026-10-23; re-check at download time and update 'checked' when you do.",
+  "inputs": [
+    {
+      "id": "kokoro-82m",
+      "name": "Kokoro-82M TTS (model and voices)",
+      "role": "tts",
+      "use": "Positives and spoken negatives: 28 English voices (American and British) and the 4 Hindi voices (hf_alpha, hf_beta, hm_omega, hm_psi), which also say the English phrases with an Indian accent. The Japanese and French voices (extra CC BY training data) are not used.",
+      "url": "https://huggingface.co/hexgrad/Kokoro-82M",
+      "licence": "Apache-2.0",
+      "commercialUse": true,
+      "attribution": "Kokoro-82M by hexgrad (Apache-2.0)",
+      "languages": ["en", "hi"],
+      "required": true,
+      "checked": "2026-10-23",
+      "sources": ["https://huggingface.co/hexgrad/Kokoro-82M", "https://replicate.com/alphanumericuser/kokoro-82m/readme"]
+    },
+    {
+      "id": "piper-libritts-r",
+      "name": "Piper voice en_US-libritts_r-medium",
+      "role": "tts",
+      "use": "Positives and spoken negatives in many voices: a multi-speaker Piper voice trained on LibriTTS-R (904 speakers), driven by piper-sample-generator with random speaker mixing.",
+      "url": "https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/libritts_r/medium",
+      "download": [
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json"
+      ],
+      "licence": "MIT (rhasspy/piper-voices repository); trained on LibriTTS-R, CC BY 4.0",
+      "commercialUse": true,
+      "attribution": "Piper voices by Michael Hansen / Rhasspy (MIT); LibriTTS-R by Koizumi et al. (CC BY 4.0)",
+      "languages": ["en"],
+      "required": true,
+      "checked": "2026-10-23",
+      "sources": ["https://huggingface.co/rhasspy/piper-voices/tree/9df7583dc899c8f5ecaaebf1120a9fd1911e8009/en/en_US/libritts_r", "https://www.openslr.org/141/"]
+    },
+    {
+      "id": "libritts-r",
+      "name": "LibriTTS-R corpus",
+      "role": "negative-speech",
+      "use": "English read speech for the negative feature set (train-clean-100) and the false-wake validation stream (test-clean).",
+      "url": "https://www.openslr.org/141/",
+      "download": [
+        "https://www.openslr.org/resources/141/train_clean_100.tar.gz",
+        "https://www.openslr.org/resources/141/test_clean.tar.gz"
+      ],
+      "licence": "CC BY 4.0",
+      "commercialUse": true,
+      "attribution": "LibriTTS-R: Koizumi et al., 2023 (CC BY 4.0), derived from LibriTTS / LibriVox",
+      "languages": ["en"],
+      "required": true,
+      "checked": "2026-10-23",
+      "sources": ["https://www.openslr.org/141/", "https://www.openslr.org/60"]
+    },
+    {
+      "id": "fleurs",
+      "name": "Google FLEURS (en_us, hi_in, gu_in)",
+      "role": "negative-speech",
+      "use": "Real English, Hindi and Gujarati speech (about 10 h per language) for the negatives and the validation stream; the only required source of real Gujarati speech.",
+      "url": "https://huggingface.co/datasets/google/fleurs",
+      "download": [
+        "https://huggingface.co/datasets/google/fleurs/resolve/main/data/en_us/audio/train.tar.gz",
+        "https://huggingface.co/datasets/google/fleurs/resolve/main/data/en_us/audio/test.tar.gz",
+        "https://huggingface.co/datasets/google/fleurs/resolve/main/data/hi_in/audio/train.tar.gz",
+        "https://huggingface.co/datasets/google/fleurs/resolve/main/data/hi_in/audio/test.tar.gz",
+        "https://huggingface.co/datasets/google/fleurs/resolve/main/data/gu_in/audio/train.tar.gz",
+        "https://huggingface.co/datasets/google/fleurs/resolve/main/data/gu_in/audio/test.tar.gz"
+      ],
+      "licence": "CC BY 4.0",
+      "commercialUse": true,
+      "attribution": "FLEURS: Conneau et al., 2022, Google (CC BY 4.0)",
+      "languages": ["en", "hi", "gu"],
+      "required": true,
+      "checked": "2026-10-23",
+      "notes": "The per-language folder names were not listed in this run; download.py stops with a clear error if a URL is missing.",
+      "sources": ["https://huggingface.co/datasets/google/fleurs", "https://voxkitchen.readthedocs.io/en/latest/datasets/fleurs/"]
+    },
+    {
+      "id": "kathbath",
+      "name": "AI4Bharat Kathbath (Hindi and Gujarati)",
+      "role": "negative-speech",
+      "use": "More real Hindi and Gujarati read speech for the negatives. Optional: improves 'tame lo' coverage beyond FLEURS.",
+      "url": "https://huggingface.co/datasets/ai4bharat/Kathbath",
+      "licence": "CC BY 4.0 (dataset card metadata; the card text says the packaging is CC0, so the stricter CC BY 4.0 is assumed)",
+      "commercialUse": true,
+      "attribution": "Kathbath, AI4Bharat (CC BY 4.0)",
+      "languages": ["hi", "gu"],
+      "required": false,
+      "gated": "Hugging Face login and accepting the dataset conditions; set HF_TOKEN",
+      "checked": "2026-10-23",
+      "sources": ["https://huggingface.co/datasets/ai4bharat/Kathbath"]
+    },
+    {
+      "id": "musan",
+      "name": "MUSAN (music, speech, noise)",
+      "role": "background",
+      "use": "Background noise and music mixed under positives and negatives during augmentation; its speech and music also go into the negative feature set.",
+      "url": "https://openslr.org/17/",
+      "download": ["https://www.openslr.org/resources/17/musan.tar.gz"],
+      "licence": "CC BY 4.0",
+      "commercialUse": true,
+      "attribution": "MUSAN: Snyder, Chen and Povey, 2015 (CC BY 4.0)",
+      "languages": ["en", "multi"],
+      "required": true,
+      "checked": "2026-10-23",
+      "sources": ["https://openslr.org/17/", "https://arxiv.org/abs/1510.08484"]
+    },
+    {
+      "id": "rirs-noises",
+      "name": "Room Impulse Response and Noise Database (OpenSLR 28)",
+      "role": "reverb",
+      "use": "Real and simulated room impulse responses for reverberation augmentation, plus its isotropic noises.",
+      "url": "https://openslr.org/28/",
+      "download": ["https://www.openslr.org/resources/28/rirs_noises.zip"],
+      "licence": "Apache-2.0 (as published on OpenSLR for the whole package)",
+      "commercialUse": true,
+      "attribution": "Room Impulse Response and Noise Database, Ko et al., 2017 (Apache-2.0); real RIRs from RWCP, REVERB 2014 and AIR",
+      "languages": [],
+      "required": true,
+      "checked": "2026-10-23",
+      "notes": "OpenSLR licenses the package as Apache-2.0 but the real RIRs come from RWCP, REVERB and AIR. If the legal review (Q13) wants more certainty, train with only its simulated_rirs folder (set WAKE_RIRS=simulated).",
+      "sources": ["https://openslr.org/28/"]
+    },
+    {
+      "id": "frontend-mel",
+      "name": "Wake front end: mel spectrogram (rebuilt)",
+      "role": "frontend",
+      "use": "The mel-spectrogram model every classifier sits on. Rebuilt by scripts/wake/frontend_mel.py from torchlibrosa (MIT) and librosa (ISC) formulas; its weights match openWakeWord's melspectrogram.onnx to within 4e-9.",
+      "url": "https://github.com/qiuqiangkong/torchlibrosa",
+      "licence": "Our own export (project licence) of MIT/ISC formulas",
+      "commercialUse": true,
+      "attribution": "torchlibrosa by Qiuqiang Kong (MIT); librosa (ISC)",
+      "languages": [],
+      "required": true,
+      "checked": "2026-10-23",
+      "sources": ["scripts/wake/frontend_mel.py", "scripts/wake/test_frontend.py"]
+    },
+    {
+      "id": "frontend-embedding",
+      "name": "Wake front end: Google speech_embedding",
+      "role": "frontend",
+      "use": "The 96-number embedding model every classifier sits on. openWakeWord's embedding_model.onnx is a tf2onnx export of a Keras re-implementation of Google's speech_embedding (TFHub, Apache-2.0); the recipe's step 2 confirms the weights come from Google's model (or re-exports it) before training.",
+      "url": "https://tfhub.dev/google/speech_embedding/1",
+      "licence": "Apache-2.0 (Google speech_embedding, as stated by openWakeWord)",
+      "commercialUse": true,
+      "attribution": "speech_embedding by Google (Apache-2.0); openWakeWord re-implementation by David Scripka (Apache-2.0 code)",
+      "languages": [],
+      "required": true,
+      "checked": "2026-10-23",
+      "notes": "Until step 2 is done, the shipped embedding_model.onnx stays 'treated as CC BY-NC-SA' in LICENCES.md.",
+      "sources": ["https://pypi.org/project/openwakeword"]
+    },
+    {
+      "id": "acav100m-features",
+      "name": "openWakeWord ACAV100M negative features",
+      "role": "excluded",
+      "use": "Not used. openWakeWord's standard 2,000-hour negative set; ACAV100M is YouTube-derived with no licence for the audio.",
+      "licence": "Unknown (YouTube uploaders' rights)",
+      "commercialUse": false,
+      "checked": "2026-10-23"
+    },
+    {
+      "id": "openwakeword-validation-features",
+      "name": "openWakeWord validation_set_features.npy",
+      "role": "excluded",
+      "use": "Not used; replaced by our own validation stream from LibriTTS-R, FLEURS and MUSAN.",
+      "licence": "Unknown",
+      "commercialUse": false,
+      "checked": "2026-10-23"
+    },
+    {
+      "id": "audioset",
+      "name": "AudioSet clips",
+      "role": "excluded",
+      "use": "Not used. The labels are CC BY 4.0 but the audio is YouTube content.",
+      "licence": "Labels CC BY 4.0; audio unlicensed",
+      "commercialUse": false,
+      "checked": "2026-10-23"
+    },
+    {
+      "id": "fma",
+      "name": "Free Music Archive (FMA)",
+      "role": "excluded",
+      "use": "Not used. Tracks carry mixed Creative Commons licences, including NonCommercial and NoDerivatives; MUSAN's music replaces it.",
+      "licence": "Mixed per track",
+      "commercialUse": false,
+      "checked": "2026-10-23"
+    },
+    {
+      "id": "mit-ir-survey",
+      "name": "MIT Acoustical Reverberation Scene Statistics Survey",
+      "role": "excluded",
+      "use": "Not used. The project page states no licence; OpenSLR 28 replaces it.",
+      "licence": "None stated",
+      "commercialUse": false,
+      "checked": "2026-10-23",
+      "sources": ["https://mcdermottlab.mit.edu/Reverb/IR_Survey.html"]
+    },
+    {
+      "id": "openwakeword-pretrained",
+      "name": "openWakeWord pre-trained phrase models (hey_jarvis and others)",
+      "role": "excluded",
+      "use": "Not used for training or as a starting point.",
+      "licence": "CC BY-NC-SA 4.0",
+      "commercialUse": false,
+      "checked": "2026-10-23",
+      "sources": ["https://pypi.org/project/openwakeword"]
+    },
+    {
+      "id": "common-voice",
+      "name": "Mozilla Common Voice",
+      "role": "excluded",
+      "use": "Not used for now. Historically CC0, but it is now distributed through the Mozilla Data Collective with its own access terms, which could not be read in this run. Add it (Hindi, and Gujarati if available) after checking those terms.",
+      "licence": "CC0 historically; current access terms not checked",
+      "commercialUse": false,
+      "checked": "2026-10-23"
+    }
+  ],
+  "tools": [
+    {
+      "id": "openwakeword",
+      "name": "openWakeWord training code",
+      "version": "0.6.0",
+      "licence": "Apache-2.0",
+      "note": "Augmentation, feature extraction and the classifier trainer. Only its code is used; its bundled models are not."
+    },
+    {
+      "id": "piper-sample-generator",
+      "name": "piper-sample-generator",
+      "version": "v3.1.0",
+      "licence": "See its LICENSE.md (not read in this run; check before use)",
+      "note": "Build-time tool that drives the Piper voice. It phonemises with eSpeak NG (GPL-3.0) through piper-phonemize; nothing from it is shipped, only the audio it produces."
+    },
+    {
+      "id": "kokoro",
+      "name": "kokoro Python package",
+      "version": "0.9.4",
+      "licence": "Apache-2.0",
+      "note": "Runs Kokoro-82M. Its G2P (misaki) may fall back to eSpeak NG (GPL-3.0) at build time; nothing from it is shipped."
+    }
+  ]
+}

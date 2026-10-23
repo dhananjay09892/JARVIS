@@ -1,0 +1,66 @@
+{
+  "$comment": "What each wake model listens for and what it must ignore (Q47, plan 02 'Multiple and custom wake words'). make-configs.mjs turns this into configs/<model>.json. 'say' = spellings fed to the English TTS voices so they pronounce the phrase the way we do; 'sayHindi' = Devanagari for the Hindi voices. Negatives in Latin script are spoken by every voice; 'negativesHindi' are spoken by the Hindi voices only (Gujarati is written in Devanagari for them, original in 'gujaratiOriginals'). Real Gujarati and Hindi speech comes from FLEURS and Kathbath.",
+  "shared": {
+    "otherAssistants": ["hey siri", "alexa", "ok google", "hey google", "hey cortana", "hey jarvis", "hey meta"],
+    "nSamples": 20000,
+    "nSamplesVal": 2000,
+    "voiceMix": { "piper": 0.7, "kokoroEnglish": 0.2, "kokoroHindi": 0.1 }
+  },
+  "models": [
+    {
+      "model": "hey_tamelo",
+      "phrase": "Hey Tamelo",
+      "pronunciation": "hay tah-MEH-loh",
+      "say": ["hey tamelo", "hey tah meh lo", "hey tameloh", "hey ta-melo"],
+      "sayHindi": ["हे तमेलो", "हेय तमेलो"],
+      "negatives": [
+        "tamelo", "hey tamale", "tamale", "hey tomato", "tomorrow", "hey camelot", "hey melo", "tell me low",
+        "hey tell me", "hey tim", "hey tamil", "hey amelia", "hey pamela", "hey carmelo", "hey there hello",
+        "tame low", "hey jello", "hey cello", "hey mellow", "hey ta", "may tell oh", "hey tamer", "hey tom",
+        "tame lo", "tame lo ne", "tame loko", "tame lot lo", "tamatar lo", "tum le lo", "tamam log", "hey tum lo"
+      ],
+      "negativesHindi": [
+        "तमे लो", "तमे लो ने", "आ तमे लो", "तमे लोको क्यां जाओ छो", "तमे लोट लो", "तमे लई लो",
+        "तुम ले लो", "टमाटर लो", "तमाम लोग आए हैं", "हे भगवान", "तमाशा मत करो", "तुम लोग कहाँ हो", "मेलो लगा है"
+      ],
+      "gujaratiOriginals": ["તમે લો", "તમે લો ને", "આ તમે લો", "તમે લોકો ક્યાં જાઓ છો", "તમે લોટ લો", "તમે લઈ લો"],
+      "notes": "'Tame lo' (Gujarati 'you take it') is the closest everyday phrase; it is in the negatives in Latin script (English voices), in Devanagari (Hindi voices) and in real Gujarati speech."
+    },
+    {
+      "model": "hey_buddy",
+      "phrase": "Hey Buddy",
+      "pronunciation": "hay BUD-ee",
+      "say": ["hey buddy", "hey buddie", "hey budd-y"],
+      "sayHindi": ["हे बडी", "हेय बडी"],
+      "negatives": [
+        "buddy", "thanks buddy", "my buddy is coming over", "hi buddy", "come on buddy", "good job buddy",
+        "hey body", "hey bud", "hey daddy", "hey birdie", "hey baby", "hey betty", "hey bobby", "hey buddha",
+        "hey study", "hey muddy", "hey nobody", "anybody", "somebody",
+        "hey bunny", "hey money", "hey honey", "buddies", "study buddy", "badi", "buddha", "badhi"
+      ],
+      "negativesHindi": [
+        "बड़ी बात है", "बहुत बड़ी गाड़ी", "बुड्ढा आदमी", "बुद्धि लगाओ", "हे भगवान", "बधी वात", "बधा लोको आव्या", "बडी बहन"
+      ],
+      "gujaratiOriginals": ["બધી વાત", "બધા લોકો આવ્યા"],
+      "notes": "'Buddy' is common on its own ('thanks buddy'), so those sentences without 'hey' are negatives; 'badi' (Hindi बड़ी) and 'badhi' (Gujarati બધી, 'all') are close sounds."
+    },
+    {
+      "model": "hey_friend",
+      "phrase": "Hey Friend",
+      "pronunciation": "hay FREND",
+      "say": ["hey friend", "hey frend", "hey, friend"],
+      "sayHindi": ["हे फ्रेंड", "हेय फ्रेंड"],
+      "negatives": [
+        "friend", "my friend", "a friend of mine", "my best friend is here", "hello my friend", "thank you friend",
+        "friendly", "friends", "boyfriend", "girlfriend", "befriend", "hey fred", "hey french", "hey frank",
+        "hey fran", "hey trend", "hey friday", "hey ben", "hey end", "a friend in need",
+        "mera friend", "friendship", "hey freedom"
+      ],
+      "negativesHindi": [
+        "मेरा फ्रेंड आया है", "फ्रेंड के साथ जाना है", "फ्रेंडशिप डे", "मारो फ्रेंड आव्यो छे", "दोस्त आया है", "फ्रेंड्स के साथ"
+      ],
+      "gujaratiOriginals": ["મારો ફ્રેન્ડ આવ્યો છે"],
+      "notes": "'Friend' is very common in talk and TV, including Hinglish and Gujarati-English ('mera friend'), so this model gets its own sensitivity (plan 02)."
+    }
+  ]
+}

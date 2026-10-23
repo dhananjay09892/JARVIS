@@ -136,10 +136,16 @@ this file decides *in what order*.
 - **Done when:** the name is cleared and the domains and handles are ours.
 
 ### Q47 · Plans 02 + 40 · Wake model recipe: Tamelo, Buddy, Friend
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q09, Q12
 - **Scope:** Close licence risk B4 for the wake word. The shipped `hey_jarvis` model is CC BY-NC-SA 4.0 (non-commercial), so a commercial release needs our own model. Write a reproducible openWakeWord training recipe for the phrases "Hey Tamelo", "Hey Buddy" and "Hey Friend" under `scripts/wake/` (one classifier per phrase on the shared front end, plan 02 "Multiple and custom wake words") (config, data download list, training and export steps, expected compute and time). Use **only** training inputs with licences that allow commercial use (synthetic speech from commercially usable TTS voices, negative/background audio with known licences) and add each one to `plans/LICENCES.md`. Include Hindi and Gujarati speech in the negatives, especially "tame lo" (તમે લો), and everyday English uses of "buddy" and "friend" without "hey", to limit false wakes. Confirm the licence of the mel-spectrogram and embedding front-end models, or plan to re-export them from Apache-2.0 sources.
 - **Done when:** the recipe is merged, every training input has a commercial-OK licence entry, and B4 has a written path to "closed".
+
+### Q53 · Plans 02 + 36 · Clear the wake embedding front end
+- **Status:** todo
+- **Depends on:** Q47
+- **Scope:** Step 3 of "Closing B4" in `scripts/wake/README.md`. Re-export Google's `speech_embedding` (TFHub, Apache-2.0) with the input/output shape of openWakeWord's `embedding_model.onnx` (mel windows [batch, 76, 32, 1] → [batch, 1, 1, 96]), and add an embedding parity check to `scripts/wake/prepare_frontend.py` that runs both files on the same mel windows. If the weights match, record in `plans/LICENCES.md` that the published file is Google's Apache-2.0 model; if they don't, the recipe trains on our re-export. If TensorFlow cannot be installed in the run, deliver the script and its test with a small fixture and set this to `needs-you` with what to run.
+- **Done when:** the embedding model the recipe trains on has its Apache-2.0 provenance recorded in `plans/LICENCES.md`, backed by a parity check.
 
 ### Q48 · Plans 02 + 40 · Train and test the three wake models
 - **Status:** needs-you

@@ -26,7 +26,7 @@ for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone bu
    from user behaviour) so follow-ups need no name; shorten if a different/unknown voice speaks.
 5. **Verified wake (with 01):** optional "only wake for enrolled voices" to reduce TV/guest wakes.
 6. **Alternate wakes:** hotkey, tray click, phone push-to-talk, gesture (already have hands.ts).
-7. **Multiple and custom wake words** (Q47, Q48, Q50, Q51): see the section below.
+7. **Multiple and custom wake words** (Q47, Q48, Q50, Q51): see the section below. Training recipe ✅ Q47 ([`scripts/wake/`](../scripts/wake/README.md)); embedding licence Q53; training and voice tests Q48.
 
 ## Multiple and custom wake words
 **Goal:** the assistant answers to several names at once, and each user can add their own.
@@ -126,3 +126,23 @@ Licence/keys (Picovoice free tier limits), model size on low-end laptops, mic pe
   on silence, 0.04 on noise, 0.003 on a tone. Left: a live check with a real voice (Q45);
   the "hey jarvis" greeting still plays when the command follows in one breath; inference
   runs on the main thread (move to a Worker if Q45 shows a cost); phase 3 tuning (TV mode).
+- **2026-10-23 · Q47 · Wake model recipe (phase 7, first part).** Added `scripts/wake/`: a
+  commercial-only openWakeWord training recipe for "Hey Tamelo", "Hey Buddy" and "Hey Friend"
+  (one classifier each on the shared front end). `sources.json` registers every input with its
+  licence (Kokoro-82M and Piper LibriTTS-R voices for synthetic speech; LibriTTS-R, FLEURS
+  en/hi/gu, Kathbath, MUSAN and OpenSLR 28 for real speech, noise and reverb) and lists what is
+  excluded and why (ACAV100M features, AudioSet, FMA, MIT IRs, openWakeWord's models, Common
+  Voice until its terms are read); all of it is mirrored in `plans/LICENCES.md`. `phrases.json`
+  holds the TTS spellings and the negatives: English near-misses, "buddy"/"friend" without
+  "hey", each other's phrases, other assistants, and Hindi/Gujarati sentences with "tame lo"
+  (તમે લો) spoken by Kokoro's Hindi voices, plus real Gujarati and Hindi speech from FLEURS.
+  `make-configs.mjs` generates the openWakeWord configs; Python steps download (refusing
+  anything not cleared), generate clips, build negative features, and train on our own front end.
+  Front end: reading `melspectrogram.onnx` showed it is torchlibrosa (MIT) with librosa Slaney
+  filters (ISC); `frontend_mel.py` rebuilds it, and its weights match the published file to
+  within 4e-9 (`test_frontend.py`). The embedding model is a re-implementation of Google's
+  Apache-2.0 `speech_embedding`; confirming or re-exporting it is the new task Q53. Tests:
+  `scripts/wake/recipe.test.mjs` (9 checks, added to CI) and `test_frontend.py` (4 checks).
+  Left: nothing has been trained (no GPU, and pip/npm were unreachable from the sandbox), so
+  the download/generation/training scripts are untested; the commercial-only negative set is
+  about 250 h against openWakeWord's much larger set, so watch false wakes in Q48.
