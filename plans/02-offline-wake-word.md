@@ -4,7 +4,7 @@
 
 ## End state
 A tiny on-device model listens continuously and **nothing leaves the machine until it hears
-"Jarvis"**. Wake is reliable across rooms and TV noise, adapts to your voice (optionally only
+one of its wake words** ("Hey Tamelo", "Hey Buddy", "Hey Friend", or a name the user chooses). Wake is reliable across rooms and TV noise, adapts to your voice (optionally only
 wakes for recognised speakers), supports a conversational window (no need to repeat the name
 for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone button).
 
@@ -26,7 +26,43 @@ for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone bu
    from user behaviour) so follow-ups need no name; shorten if a different/unknown voice speaks.
 5. **Verified wake (with 01):** optional "only wake for enrolled voices" to reduce TV/guest wakes.
 6. **Alternate wakes:** hotkey, tray click, phone push-to-talk, gesture (already have hands.ts).
-7. **Custom phrase:** let users pick their own name/phrase (Porcupine custom keyword or openWakeWord training).
+7. **Multiple and custom wake words** (Q47, Q48, Q50, Q51): see the section below.
+
+## Multiple and custom wake words
+**Goal:** the assistant answers to several names at once, and each user can add their own.
+
+**Built-in phrases** (all trained by us on commercially licensed data, Q47/Q48):
+| Phrase | Default | Notes |
+|---|---|---|
+| "Hey Tamelo" | On | The brand name ([plan 40](40-name-and-brand.md)); most distinctive, fewest false wakes |
+| "Hey Buddy" | On | Friendly and easy for kids and guests; common in speech, so watch false wakes |
+| "Hey Friend" | On | Same; "friend" is common in normal talk and TV, so it gets its own sensitivity |
+| "Hey Jarvis" | Off, removed for commercial builds | Current CC BY-NC-SA model (LICENCES.md B4); kept only until Q49 |
+
+- **One front end, many classifiers:** openWakeWord computes the mel-spectrogram and embedding
+  once per 80 ms frame; each phrase is a tiny classifier on top, so every extra phrase adds very
+  little CPU. All enabled phrases run in parallel and any one of them wakes the assistant.
+- **Per-phrase controls:** on/off, sensitivity, and its own false-wake counter in Diagnostics, so
+  a noisy phrase ("Hey Friend" during TV) can be tuned or switched off without touching the others.
+- **Which phrase woke it** is recorded in the turn trace (plan 16) and stripped from the command.
+
+**Custom name from Settings** (Q50 decides the engine, Q51 builds it):
+- In Settings → Voice and hearing → Wake words, the user types a name (e.g. "Max", "Didi",
+  "Dost"). The wake phrase becomes "Hey <name>", and optionally the assistant uses that name for
+  itself in greetings and replies (per person, plan 30). The product brand stays Tamelo.
+- Engine options for ADR 003 (any phrase, no cloud):
+  (a) **few-shot enrolment:** the user says the name 5–10 times; match against openWakeWord
+  embeddings. Instant and private, but tuned to that user's voice;
+  (b) **local keyword spotter:** a small offline recogniser (e.g. Vosk in grammar mode) runs only
+  when VAD hears speech and checks for the phrase. Works for anyone at once, costs more CPU and
+  is less accurate;
+  (c) **on-device training:** synthesise the phrase with commercially licensed TTS voices and
+  train a real classifier in the background (minutes to hours). Best accuracy, slowest.
+  A likely answer is (a) or (b) immediately, with (c) as an optional "improve accuracy" upgrade.
+- **Name checks before saving:** 2–4 syllables after "Hey"; warn if the name is a very common
+  word, the name of a household member, or close to another enabled phrase; block other
+  assistants' wake words ("Alexa", "Siri", "OK Google") to avoid cross-triggering devices.
+- A "Test my wake word" button: say it 5 times, show the hit rate, suggest a sensitivity.
 
 ## Fallback matrix
 | Situation | Behaviour |

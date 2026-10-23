@@ -135,24 +135,36 @@ this file decides *in what order*.
 - **Scope:** Plan 40 steps 2–6. The autopilot cannot buy domains or file trademarks.
 - **Done when:** the name is cleared and the domains and handles are ours.
 
-### Q47 · Plans 02 + 40 · "Hey Tamelo" wake model recipe
+### Q47 · Plans 02 + 40 · Wake model recipe: Tamelo, Buddy, Friend
 - **Status:** todo
 - **Depends on:** Q09, Q12
-- **Scope:** Close licence risk B4 for the wake word. The shipped `hey_jarvis` model is CC BY-NC-SA 4.0 (non-commercial), so a commercial release needs our own model. Write a reproducible openWakeWord training recipe for the phrase "Hey Tamelo" under `scripts/wake/` (config, data download list, training and export steps, expected compute and time). Use **only** training inputs with licences that allow commercial use (synthetic speech from commercially usable TTS voices, negative/background audio with known licences) and add each one to `plans/LICENCES.md`. Include Hindi and Gujarati speech in the negatives, especially "tame lo" (તમે લો), to limit false wakes. Confirm the licence of the mel-spectrogram and embedding front-end models, or plan to re-export them from Apache-2.0 sources.
+- **Scope:** Close licence risk B4 for the wake word. The shipped `hey_jarvis` model is CC BY-NC-SA 4.0 (non-commercial), so a commercial release needs our own model. Write a reproducible openWakeWord training recipe for the phrases "Hey Tamelo", "Hey Buddy" and "Hey Friend" under `scripts/wake/` (one classifier per phrase on the shared front end, plan 02 "Multiple and custom wake words") (config, data download list, training and export steps, expected compute and time). Use **only** training inputs with licences that allow commercial use (synthetic speech from commercially usable TTS voices, negative/background audio with known licences) and add each one to `plans/LICENCES.md`. Include Hindi and Gujarati speech in the negatives, especially "tame lo" (તમે લો), and everyday English uses of "buddy" and "friend" without "hey", to limit false wakes. Confirm the licence of the mel-spectrogram and embedding front-end models, or plan to re-export them from Apache-2.0 sources.
 - **Done when:** the recipe is merged, every training input has a commercial-OK licence entry, and B4 has a written path to "closed".
 
-### Q48 · Plans 02 + 40 · Train and test the "Hey Tamelo" model
+### Q48 · Plans 02 + 40 · Train and test the three wake models
 - **Status:** needs-you
-- **Needs you:** run the Q47 recipe on a machine with a GPU (the autopilot cannot train for hours). Then test it the same way as Q45: say "Hey Tamelo" about 20 times, plus a few minutes of normal talk and TV, including Hindi and Gujarati speech with "tame lo". Paste the numbers into plan 02's Autopilot log, commit the model with its licence note, then set this to `done`.
+- **Needs you:** run the Q47 recipe on a machine with a GPU (the autopilot cannot train for hours). Then test each phrase the same way as Q45: say "Hey Tamelo", "Hey Buddy" and "Hey Friend" about 20 times each, plus a few minutes of normal talk and TV, including Hindi and Gujarati speech with "tame lo" and sentences with "buddy" and "friend". Paste the numbers into plan 02's Autopilot log, commit the models with their licence note, then set this to `done`.
 - **Depends on:** Q47
-- **Scope:** Produce `hey_tamelo` ONNX model under `public/models/wake/`, our own licence; update `plans/LICENCES.md` (B4 closed for the wake word) and CREDITS.md.
-- **Done when:** the model wakes reliably for you, false wakes are acceptable, and B4 no longer blocks a commercial release.
+- **Scope:** Produce `hey_tamelo`, `hey_buddy` and `hey_friend` ONNX models under `public/models/wake/`, our own licence; update `plans/LICENCES.md` (B4 closed for the wake word) and CREDITS.md.
+- **Done when:** each model wakes reliably for you, false wakes are acceptable per phrase, and B4 no longer blocks a commercial release.
 
 ### Q49 · Plan 40 · Rename JARVIS to Tamelo in the product
 - **Status:** todo
 - **Depends on:** Q46, Q48
-- **Scope:** Plan 40 step 7. Change every user-facing name to Tamelo: page and window titles, greetings and the assistant persona in the system prompt, HUD (plan 18), Settings and first-run wizard, disclosure text with `bridge/disclosure.test.mjs`, README, DISCLAIMER, CREDITS, installer and launcher display names, and the site. Switch the wake phrase to "Hey Tamelo" with the Q48 model and remove the non-commercial `hey_jarvis` model. Keep internal identifiers (repo name, package name, `JARVIS_*` settings keys, file paths) unchanged so nothing breaks; list them in plan 40 as the internal codename. Add a test that fails if "JARVIS" appears in user-facing UI strings.
-- **Done when:** a user never sees or says "JARVIS", and the wake word is "Hey Tamelo".
+- **Scope:** Plan 40 step 7. Change every user-facing name to Tamelo: page and window titles, greetings and the assistant persona in the system prompt, HUD (plan 18), Settings and first-run wizard, disclosure text with `bridge/disclosure.test.mjs`, README, DISCLAIMER, CREDITS, installer and launcher display names, and the site. Switch the default wake phrases to "Hey Tamelo", "Hey Buddy" and "Hey Friend" with the Q48 models (all running at once, any one wakes it, each with its own on/off and sensitivity) and remove the non-commercial `hey_jarvis` model. Keep internal identifiers (repo name, package name, `JARVIS_*` settings keys, file paths) unchanged so nothing breaks; list them in plan 40 as the internal codename. Add a test that fails if "JARVIS" appears in user-facing UI strings.
+- **Done when:** a user never sees or says "JARVIS", and "Hey Tamelo", "Hey Buddy" and "Hey Friend" all wake it.
+
+### Q50 · Plan 02 · Custom wake word decision record
+- **Status:** todo
+- **Depends on:** Q09
+- **Scope:** Write `plans/adr/003-custom-wake-word.md` comparing the three engines in plan 02 "Multiple and custom wake words" for a name the user types in Settings: few-shot enrolment on openWakeWord embeddings, a local keyword spotter (e.g. Vosk grammar mode), and on-device training with synthetic speech. Cover accuracy, false wakes, CPU on a low-end laptop, time until it works, privacy, licences (commercial use), Windows support, and Hindi/Gujarati names. Leave `Decision:` empty with a recommendation.
+- **Done when:** the ADR is ready for the owner to decide.
+
+### Q51 · Plans 02 + 39 · Wake words in Settings, including a custom name
+- **Status:** todo
+- **Depends on:** Q50, Q49
+- **Scope:** Only start once ADR 003's `Decision:` line is filled. Settings → Voice and hearing → Wake words: on/off and sensitivity per built-in phrase; "Add your own name" with the name checks from plan 02 (length, common words, household names, other assistants' wake words); per-person option to use the custom name in greetings and replies (brand stays Tamelo); "Test my wake word" button; per-phrase false-wake counter in Diagnostics; record which phrase woke it in the turn trace. Build the custom-name engine chosen in ADR 003, fully offline.
+- **Done when:** a user can add "Hey <their name>", it wakes the assistant offline alongside the built-in phrases, and tests cover the name checks.
 
 ### Q14 · Plan 38 · Shared data contracts
 - **Status:** done
