@@ -1,0 +1,67 @@
+{
+  "scenario": "Morning briefing: at 07:30 the scheduler builds a briefing from calendar and weather slices; the notification policy delivers it to the kitchen speaker because the owner is there alone; the owner says 'skip' and the rest is suppressed.",
+  "steps": [
+    {
+      "contract": "ContextSlice",
+      "value": { "name": "calendar.today", "source": "calendar", "fetchedAt": 1792812600000, "ttlMs": 900000, "sensitivity": "private", "text": "10:00 stand-up; 16:30 dentist.", "tokens": 12, "untrusted": false }
+    },
+    {
+      "contract": "ContextSlice",
+      "value": { "name": "weather.today", "source": "weather", "fetchedAt": 1792812600000, "ttlMs": 3600000, "sensitivity": "public", "text": "Ahmedabad: 31°C, clear.", "untrusted": true }
+    },
+    {
+      "contract": "Notification",
+      "value": {
+        "v": 1, "id": "ntf-0003", "ts": 1792812600100,
+        "source": "briefing", "urgency": "normal", "audience": ["dhananjay"], "privacy": "private",
+        "title": "Good morning", "body": "31 degrees and clear. Stand-up at 10, dentist at 16:30.",
+        "actions": [ { "id": "skip", "label": "Skip" }, { "id": "more", "label": "Tell me more" } ],
+        "expiresAt": 1792816200000
+      }
+    },
+    {
+      "contract": "BusEvent",
+      "value": {
+        "v": 1, "id": "evt-0004", "ts": 1792812600101, "topic": "notification.created",
+        "payload": {
+          "v": 1, "id": "ntf-0003", "ts": 1792812600100,
+          "source": "briefing", "urgency": "normal", "audience": ["dhananjay"], "privacy": "private",
+          "title": "Good morning", "body": "31 degrees and clear. Stand-up at 10, dentist at 16:30."
+        }
+      }
+    },
+    {
+      "contract": "DeviceEvent",
+      "value": { "v": 1, "id": "dev-0003", "ts": 1792812600050, "deviceId": "kitchen-sat", "room": "kitchen", "kind": "sensor", "payload": { "presence": 1 } }
+    },
+    {
+      "contract": "BusEvent",
+      "value": {
+        "v": 1, "id": "evt-0005", "ts": 1792812600200, "topic": "notification.delivered",
+        "payload": {
+          "v": 1, "id": "ntf-0003", "ts": 1792812600100,
+          "source": "briefing", "urgency": "normal", "audience": ["dhananjay"], "privacy": "private",
+          "title": "Good morning", "body": "31 degrees and clear. Stand-up at 10, dentist at 16:30."
+        }
+      }
+    },
+    {
+      "contract": "Utterance",
+      "value": {
+        "v": 1, "id": "utt-0003", "ts": 1792812604000,
+        "traceId": "a1b2c3d4e5f60718", "deviceId": "kitchen-sat", "room": "kitchen",
+        "modality": "voice", "text": "skip", "language": "en-IN", "langConfidence": 0.9,
+        "identity": { "personId": "dhananjay", "role": "owner", "confidence": 0.84, "sources": ["voice"] },
+        "wake": null,
+        "timings": { "speechEnd": 1792812603900, "sttDone": 1792812603990 }
+      }
+    },
+    {
+      "contract": "BusEvent",
+      "value": {
+        "v": 1, "id": "evt-0006", "ts": 1792812604010, "topic": "turn.finished", "traceId": "a1b2c3d4e5f60718",
+        "payload": { "route": "reflex", "action": "notification.skip", "notificationId": "ntf-0003" }
+      }
+    }
+  ]
+}

@@ -116,7 +116,7 @@ this file decides *in what order*.
 - **Done when:** the outcome is recorded.
 
 ### Q14 · Plan 38 · Shared data contracts
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** 38 phases 1–2. Walk the three scenarios (voice command with tool call, Telegram approval, morning briefing) against the core objects, then create `shared/contracts.ts` with runtime validation, fixtures and tests. Adopt nothing yet.
 - **Done when:** the contracts compile, validate the fixtures and are tested.
