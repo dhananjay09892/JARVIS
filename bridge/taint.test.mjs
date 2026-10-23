@@ -4,7 +4,7 @@ import {
   createTaintTracker, createSeenUrls, guardOutbound, extractUrls, extractEmails, extractHosts,
   normaliseUrl, targetsOf, readsPrivate, resultIsExternal, outboundKind, proxiedMediaIn, unspeak,
 } from './taint.mjs'
-import { isVetoed } from './tool-gate.mjs'
+import { isVetoed } from './policy.mjs'
 
 const tracker = (opts = {}) => createTaintTracker({ isEffectful: isVetoed, ...opts })
 const mcpText = (text) => ({ content: [{ type: 'text', text }] })

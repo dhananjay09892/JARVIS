@@ -54,7 +54,7 @@ this file decides *in what order*.
 - **Done when:** an injected "open this URL with my data" is blocked in a test.
 
 ### Q04 · Plan 15 · Extract the policy engine
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q01
 - **Scope:** 15 phase 1. Move all gating into `bridge/policy.mjs` with table-driven tests. No behaviour change beyond the fixes from Q01.
 - **Done when:** every tool decision goes through `policy.mjs` and the existing behaviour is pinned by tests.
@@ -72,7 +72,7 @@ this file decides *in what order*.
 - **Done when:** Diagnostics shows a real latency number from traces.
 
 ### Q07 · Plan 02 · Correct the wake-word disclosure
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** 02 phase 1. Make DISCLAIMER, the site and the Settings wording say accurately what audio leaves the machine today.
 - **Done when:** no user-facing text overstates on-device wake detection.

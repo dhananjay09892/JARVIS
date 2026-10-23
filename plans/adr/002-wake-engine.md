@@ -22,6 +22,9 @@ What the code already has:
 - `onnxruntime-web` and `onnxruntime-node` are already in `package-lock.json` as transitive
   dependencies of `kokoro-js` (via `@huggingface/transformers`). An ONNX-based detector would
   add model files, not a new runtime.
+- Q07 (merged) made DISCLAIMER, README and Settings say plainly that wake detection is not
+  on-device yet; `bridge/disclosure.test.mjs` pins that wording, so Q09 must update the
+  disclosure and that test together when the offline engine ships.
 - The microphone is captured in the page (`src/lib/audio.ts`), so the page is where the audio
   already is.
 
