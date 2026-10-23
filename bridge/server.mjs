@@ -45,6 +45,7 @@ import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
 import { setting, updateSettings, publicSettings, readSettings } from './settings.mjs'
+import { settingDefault, settingsSchema } from './settings-registry.mjs'
 import { claudeStatus, startClaudeLogin } from './claude-cli.mjs'
 import { checkForUpdate } from './update.mjs'
 import { fileURLToPath } from 'node:url'
@@ -225,7 +226,7 @@ const ALLOW_WRITES = writesEnabled({ env: process.env, settings: readSettings() 
  * The orchestrator model. Override with JARVIS_MODEL to trade quality for pace
  * — claude-sonnet-5 is noticeably snappier on camera if Opus feels slow.
  */
-const MODEL = setting('JARVIS_MODEL') ?? 'claude-opus-5'
+const MODEL = setting('JARVIS_MODEL') ?? settingDefault('JARVIS_MODEL')
 
 /**
  * How hard the model thinks before answering.
@@ -242,7 +243,7 @@ const MODEL = setting('JARVIS_MODEL') ?? 'claude-opus-5'
  * matters more than pace; drop back to 'low' when filming and every second of
  * dead air shows.
  */
-const EFFORT = setting('JARVIS_EFFORT') ?? 'high'
+const EFFORT = setting('JARVIS_EFFORT') ?? settingDefault('JARVIS_EFFORT')
 
 /**
  * Every MCP server Claude Code has configured, read out of its own config.
@@ -570,7 +571,7 @@ function elevenKey() {
   }
 }
 
-const VOICE_ID = setting('JARVIS_VOICE_ID') ?? 'JBFqnCBsd6RMkjVDRZzb'
+const VOICE_ID = setting('JARVIS_VOICE_ID') ?? settingDefault('JARVIS_VOICE_ID')
 const HINDI_VOICE_ID = process.env.JARVIS_HINDI_VOICE_ID ?? VOICE_ID
 
 /**
@@ -811,7 +812,9 @@ const handleRequest = async (req, res) => {
   const cors = corsFor(req)
 
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, cors)
+    // PATCH is not a CORS-safelisted method, so the preflight must name it
+    // (PATCH /settings). The Origin check above still applies to every request.
+    res.writeHead(204, origin ? { ...cors, 'access-control-allow-methods': 'GET, POST, PATCH' } : cors)
     return res.end()
   }
 
@@ -953,12 +956,20 @@ const handleRequest = async (req, res) => {
   // Secrets never leave this process: the page learns only "set / not set".
   // Writes need a real, allowed Origin (a browser page of ours) — curl and
   // scripts are refused even if JARVIS_ALLOW_NO_ORIGIN is on.
+  // The registry (plan 39) describes every setting; the page draws its
+  // controls from it. Labels, types and defaults only — never a value.
+  if (requestUrl.pathname === '/settings/schema' && req.method === 'GET') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify(settingsSchema()))
+  }
   if (requestUrl.pathname === '/settings') {
     if (req.method === 'GET') {
       res.writeHead(200, { ...cors, 'content-type': 'application/json' })
       return res.end(JSON.stringify(publicSettings()))
     }
-    if (req.method === 'POST') {
+    // PATCH is the plan 39 API; POST stays for older pages. Both are one
+    // validated, all-or-nothing batch.
+    if (req.method === 'PATCH' || req.method === 'POST') {
       if (!origin) {
         res.writeHead(403, cors)
         return res.end('forbidden')
@@ -972,14 +983,21 @@ const handleRequest = async (req, res) => {
           return res.end('body too large')
         }
       }
+      let result
       try {
-        updateSettings(JSON.parse(body || '{}'))
+        result = updateSettings(JSON.parse(body || '{}'))
       } catch (err) {
         res.writeHead(400, { ...cors, 'content-type': 'application/json' })
         return res.end(JSON.stringify({ ok: false, reason: String(err?.message ?? err) }))
       }
       res.writeHead(200, { ...cors, 'content-type': 'application/json' })
-      return res.end(JSON.stringify({ ok: true, ...publicSettings() }))
+      return res.end(JSON.stringify({
+        ok: true,
+        ...publicSettings(),
+        appliedLive: result.appliedLive,
+        needsRestart: result.needsRestart,
+        overridden: result.overridden,
+      }))
     }
   }
 

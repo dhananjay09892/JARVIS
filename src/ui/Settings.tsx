@@ -3,11 +3,15 @@ import { createPortal } from 'react-dom'
 import { BACKEND } from '../config'
 import {
   getSettings,
+  getSettingsSchema,
   getSetupStatus,
   saveSettings,
   startClaudeLogin,
   testElevenLabs,
   type PublicSettings,
+  type SaveResult,
+  type SettingDef,
+  type SettingsSchema,
   type SetupStatus,
 } from '../lib/settings'
 
@@ -42,14 +46,38 @@ const listeningNote = (
   </>
 )
 
-const EFFORTS = ['low', 'medium', 'high', 'xhigh']
-const RESTART = 'Saved. Restart JARVIS to apply.'
+/**
+ * What the dialog falls back to if the bridge's settings registry
+ * (GET /settings/schema, plan 39) cannot be read. The bridge validates every
+ * save either way; the schema only decides what the controls offer.
+ */
+const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>> = {
+  JARVIS_MODEL: { default: 'claude-opus-5', help: '' },
+  JARVIS_EFFORT: { default: 'high', options: ['low', 'medium', 'high', 'xhigh'], help: '' },
+  JARVIS_ALLOW_WRITES: {
+    default: '0',
+    help: 'Off by default: JARVIS can look at things but changes nothing.',
+  },
+}
+
+/** The registry entry for a setting, or the built-in fallback. */
+function def(schema: SettingsSchema | null, id: string) {
+  return schema?.settings.find((d) => d.id === id) ?? FALLBACK[id]
+}
+
+/** Status line after a save, from what the bridge says took effect. */
+function savedNote(r: SaveResult) {
+  if (r.overridden.length) return `Saved, but an environment variable overrides ${r.overridden.join(', ')}.`
+  if (r.needsRestart.length) return 'Saved. Restart JARVIS to apply.'
+  return 'Saved.'
+}
 
 export function Settings() {
   const [open, setOpen] = useState(false)
   const [wizard, setWizard] = useState(false)
   const [step, setStep] = useState(0)
   const [s, setS] = useState<PublicSettings | null>(null)
+  const [schema, setSchema] = useState<SettingsSchema | null>(null)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [keyDraft, setKeyDraft] = useState('')
   const [note, setNote] = useState('')
@@ -68,6 +96,7 @@ export function Settings() {
 
   useEffect(() => {
     if (BACKEND !== 'bridge') return
+    getSettingsSchema().then(setSchema, () => setSchema(null))
     void load().then((next) => {
       if (next && next.setupDone !== '1') {
         setWizard(true)
@@ -95,8 +124,8 @@ export function Settings() {
     setBusy(true)
     setNote('')
     try {
-      await fn()
-      setNote(done)
+      const out = await fn()
+      setNote(typeof out === 'string' ? out : done)
       return true
     } catch (err) {
       setNote(err instanceof Error ? err.message : 'That did not work.')
@@ -108,6 +137,18 @@ export function Settings() {
 
   const patch = (change: Record<string, string>, done: string) =>
     run(async () => setS(await saveSettings(change)), done)
+
+  /** Save a Brain or Actions control and say whether it is already in force. */
+  const patchSetting = (change: Record<string, string>) =>
+    run(async () => {
+      const result = await saveSettings(change)
+      setS(result)
+      return savedNote(result)
+    })
+
+  const model = def(schema, 'JARVIS_MODEL')
+  const effort = def(schema, 'JARVIS_EFFORT')
+  const writes = def(schema, 'JARVIS_ALLOW_WRITES')
 
   const saveKey = async () => {
     if (!(await patch({ ELEVENLABS_API_KEY: keyDraft }, 'Key saved.'))) return
@@ -263,10 +304,11 @@ export function Settings() {
                 Model{' '}
                 <input
                   defaultValue={s.JARVIS_MODEL}
-                  placeholder="claude-opus-5"
+                  placeholder={model.default}
                   aria-label="Model"
+                  title={model.help || undefined}
                   onBlur={(e) =>
-                    e.target.value !== s.JARVIS_MODEL && patch({ JARVIS_MODEL: e.target.value }, RESTART)
+                    e.target.value !== s.JARVIS_MODEL && patchSetting({ JARVIS_MODEL: e.target.value })
                   }
                 />
               </label>
@@ -274,11 +316,12 @@ export function Settings() {
                 Effort{' '}
                 <select
                   aria-label="Effort"
+                  title={effort.help || undefined}
                   value={s.JARVIS_EFFORT}
-                  onChange={(e) => patch({ JARVIS_EFFORT: e.target.value }, RESTART)}
+                  onChange={(e) => patchSetting({ JARVIS_EFFORT: e.target.value })}
                 >
-                  <option value="">default (high)</option>
-                  {EFFORTS.map((x) => (
+                  <option value="">default ({effort.default})</option>
+                  {(effort.options ?? []).map((x) => (
                     <option key={x}>{x}</option>
                   ))}
                 </select>
@@ -290,11 +333,11 @@ export function Settings() {
               <input
                 type="checkbox"
                 checked={s.JARVIS_ALLOW_WRITES === '1'}
-                onChange={(e) => patch({ JARVIS_ALLOW_WRITES: e.target.checked ? '1' : '0' }, RESTART)}
+                onChange={(e) => patchSetting({ JARVIS_ALLOW_WRITES: e.target.checked ? '1' : '0' })}
               />{' '}
               Let JARVIS take real actions (run commands, change files, click and type in the browser)
             </label>
-            <p className="mem-note">Off by default: JARVIS can look at things but changes nothing. Applies after a restart.</p>
+            <p className="mem-note">{writes.help} Applies after a restart.</p>
 
             <p className="mem-note">Saved in {s.storage}</p>
             <button
