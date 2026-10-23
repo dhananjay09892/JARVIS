@@ -9,7 +9,9 @@
  * A brain is an object with:
  *   id, label, capabilities
  *   status()             → { installed, version, authenticated, authMode, … }
- *   startSession(params) → a running session (async iterable of events)
+ *   startSession(params) → the provider's own running session
+ *   converse(params)     → { events, cancel, close }: the session as normalised
+ *                          BrainEvents (events.mjs); what conformance.mjs tests
  */
 
 const ID = /^[a-z][a-z0-9-]{0,31}$/
@@ -26,7 +28,7 @@ export function createBrainRegistry({ defaultId = 'claude' } = {}) {
       if (!brain.capabilities || typeof brain.capabilities !== 'object') {
         throw new Error(`Brain ${brain.id} needs capabilities.`)
       }
-      for (const method of ['status', 'startSession']) {
+      for (const method of ['status', 'startSession', 'converse']) {
         if (typeof brain[method] !== 'function') throw new Error(`Brain ${brain.id} needs ${method}().`)
       }
       if (brains.has(brain.id)) throw new Error(`Brain ${brain.id} is already registered.`)
