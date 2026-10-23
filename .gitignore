@@ -25,6 +25,8 @@ dist-ssr
 
 # Copied out of node_modules by scripts/start.mjs — 34MB of build output.
 public/mediapipe/
+# Copied out of node_modules by scripts/start.mjs and scripts/package.mjs (wake-word runtime).
+public/ort/
 
 # JARVIS local memory (normally stored outside the repo; ignored in case JARVIS_MEMORY_DIR points here)
 jarvis-memory*

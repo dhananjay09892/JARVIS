@@ -34,6 +34,7 @@ import {
 } from './lib/brain'
 import { startAnalyser, micLevel } from './lib/audio'
 import { probeCapabilities } from './lib/capabilities'
+import { getSettings } from './lib/settings'
 import { env } from './config'
 
 /**
@@ -594,9 +595,15 @@ export default function App() {
     // fallback when it is not — no flag, no reload.
     await probeCapabilities()
 
+    // Offline wake word on or off, and how easily it wakes (Settings, plan 02).
+    // An unreachable bridge leaves both at their defaults: offline, medium.
+    const wakeSettings = await getSettings().catch(() => null)
+
     // One voice loop, started once, running until the page closes.
     voice.current = await startVoice({
       mode,
+      wakeEngine: wakeSettings?.JARVIS_WAKE_WORD || undefined,
+      wakeSensitivity: wakeSettings?.JARVIS_WAKE_SENSITIVITY || undefined,
       language: () => store.getState().language,
       onWake,
       onSpeechStart,
@@ -605,6 +612,7 @@ export default function App() {
       onUtterance,
       onError: onVoiceError,
     })
+    store.getState().setWakeListening(voice.current.wakeEngine())
 
     store.getState().setPhase('dormant')
   }

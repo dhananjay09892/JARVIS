@@ -20,6 +20,11 @@ More detail, and a ready-to-paste block for video descriptions: [public/audio/CR
 - **Kokoro-82M** by hexgrad (Apache-2.0), run in the browser with **kokoro-js** and
   **Transformers.js** by Hugging Face (Apache-2.0) on **ONNX Runtime Web** by Microsoft (MIT).
   Used only when the Kokoro voice is turned on; the model is downloaded on first use.
+- **openWakeWord** by David Scripka (code Apache-2.0; pre-trained models CC BY-NC-SA 4.0,
+  https://creativecommons.org/licenses/by-nc-sa/4.0/): the "hey jarvis", mel-spectrogram and
+  speech-embedding models in `public/models/wake/`, shipped unmodified, run on **ONNX Runtime
+  Web** for the offline wake word. Non-commercial; see `public/models/wake/LICENSE.md`.
+  https://github.com/dscripka/openWakeWord
 - **MediaPipe** Tasks Vision and the Hand Landmarker model by Google (Apache-2.0), for hand gestures.
 - Text-to-phoneme conversion for Kokoro uses **eSpeak NG** (GPL-3.0-or-later) through the
   `phonemizer` package. See issue B1 in the licence register.

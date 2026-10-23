@@ -11,7 +11,7 @@
  * Run:  node scripts/package.mjs
  */
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
 
@@ -29,6 +29,15 @@ if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Node 22+ 
 // Hand tracking needs MediaPipe's WASM next to the page (see scripts/start.mjs).
 if (!existsSync(join(root, 'public/mediapipe/vision_wasm_internal.wasm'))) {
   cpSync(join(root, 'node_modules/@mediapipe/tasks-vision/wasm'), join(root, 'public/mediapipe'), { recursive: true })
+}
+
+// The offline wake word's ONNX runtime, served from /ort/ (see scripts/start.mjs).
+{
+  const from = join(root, 'node_modules/onnxruntime-web/dist')
+  mkdirSync(join(root, 'public/ort'), { recursive: true })
+  for (const f of readdirSync(from).filter((f) => f.startsWith('ort-wasm'))) {
+    cpSync(join(from, f), join(root, 'public/ort', f))
+  }
 }
 
 console.log('building the UI…')

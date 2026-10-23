@@ -163,6 +163,7 @@ export function Hud() {
   const voice = useStore((s) => s.voice)
   const language = useStore((s) => s.language)
   const bootNote = useStore((s) => s.bootNote)
+  const wakeListening = useStore((s) => s.wakeListening)
   const gestures = useStore((s) => s.gestures)
   const looking = useStore((s) => s.looking)
   const ui = useStore((s) => s.ui)
@@ -222,6 +223,17 @@ export function Hud() {
               ))}
             </select>
           </label>
+          {/* Plan 02: when the offline wake word is off or failed to start,
+              asleep audio is being transcribed by a cloud service. Never silent. */}
+          {wakeListening === 'cloud' && (
+            <span
+              className="cloud-listening"
+              role="status"
+              title="The offline wake word is not running, so what the microphone hears while JARVIS is asleep is sent to a speech service to find his name. See SETTINGS and Diagnostics (D)."
+            >
+              CLOUD LISTENING
+            </span>
+          )}
           <span className="dot" />
           <span className="status-text">
             {/* bootNote is the voice-model download readout. It is only ever

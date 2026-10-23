@@ -26,14 +26,13 @@ import {
 
 /**
  * What happens to microphone audio while JARVIS waits for his name. Keep this
- * in step with DISCLAIMER.txt and voice.ts: the wake word is matched on a cloud
- * transcript today, so this must not claim on-device wake detection until plan
- * 02's offline engine ships. bridge/disclosure.test.mjs checks the wording.
+ * in step with DISCLAIMER.txt, the README and src/lib/wake/router.ts (the code
+ * that keeps asleep audio here). bridge/disclosure.test.mjs checks the wording.
  */
 const LISTENING_NOTE = [
-  'The wake word is not detected on this computer yet. After you click INITIALISE, JARVIS keeps the microphone open until you close it, and sends what it hears to a speech service to listen for “Hey Jarvis”, even while asleep.',
-  'With an ElevenLabs key, sound loud enough to be speech is sent to ElevenLabs. Without one, your browser streams the microphone to its own speech service (Google in Chrome, Microsoft in Edge).',
-  'Close JARVIS when you do not want it listening. An offline wake word is planned.',
+  'After you click INITIALISE, JARVIS keeps the microphone open until you close it. The offline wake word listens for “Hey Jarvis” on this computer, so while he is asleep what the microphone hears stays here.',
+  'Once he hears his name, what you say is sent to be turned into text: to ElevenLabs if you added a key, otherwise to your browser’s own speech service (Google in Chrome, Microsoft in Edge).',
+  'If you turn the offline wake word off, or it cannot start, JARVIS falls back to cloud listening and shows a CLOUD LISTENING badge: sound heard while he is asleep is then sent to that same speech service to find his name. Close JARVIS when you do not want it listening.',
 ]
 
 const listeningNote = (
@@ -52,6 +51,8 @@ const listeningNote = (
  * save either way; the schema only decides what the controls offer.
  */
 const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>> = {
+  JARVIS_WAKE_WORD: { default: 'offline', options: ['offline', 'cloud'], help: '' },
+  JARVIS_WAKE_SENSITIVITY: { default: 'medium', options: ['low', 'medium', 'high'], help: '' },
   JARVIS_MODEL: { default: 'claude-opus-5', help: '' },
   JARVIS_EFFORT: { default: 'high', options: ['low', 'medium', 'high', 'xhigh'], help: '' },
   JARVIS_ALLOW_WRITES: {
@@ -149,6 +150,8 @@ export function Settings() {
   const model = def(schema, 'JARVIS_MODEL')
   const effort = def(schema, 'JARVIS_EFFORT')
   const writes = def(schema, 'JARVIS_ALLOW_WRITES')
+  const wakeWord = def(schema, 'JARVIS_WAKE_WORD')
+  const wakeSensitivity = def(schema, 'JARVIS_WAKE_SENSITIVITY')
 
   const saveKey = async () => {
     if (!(await patch({ ELEVENLABS_API_KEY: keyDraft }, 'Key saved.'))) return
@@ -297,6 +300,35 @@ export function Settings() {
 
             <h3>Listening</h3>
             {listeningNote}
+            <div className="mem-add">
+              <label>
+                Offline wake word{' '}
+                <select
+                  aria-label="Offline wake word"
+                  title={wakeWord.help || undefined}
+                  value={s.JARVIS_WAKE_WORD || wakeWord.default}
+                  onChange={(e) => patchSetting({ JARVIS_WAKE_WORD: e.target.value })}
+                >
+                  <option value="offline">on — asleep audio stays on this computer</option>
+                  <option value="cloud">off — cloud listening</option>
+                </select>
+              </label>
+              <label>
+                Sensitivity{' '}
+                <select
+                  aria-label="Wake sensitivity"
+                  title={wakeSensitivity.help || undefined}
+                  value={s.JARVIS_WAKE_SENSITIVITY || wakeSensitivity.default}
+                  disabled={(s.JARVIS_WAKE_WORD || wakeWord.default) !== 'offline'}
+                  onChange={(e) => patchSetting({ JARVIS_WAKE_SENSITIVITY: e.target.value })}
+                >
+                  {(wakeSensitivity.options ?? []).map((x) => (
+                    <option key={x}>{x}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="mem-note">Wake word changes apply the next time you start JARVIS.</p>
 
             <h3>Brain</h3>
             <div className="mem-add">

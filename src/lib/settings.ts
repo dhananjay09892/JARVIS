@@ -9,6 +9,10 @@ export type PublicSettings = {
   JARVIS_ALLOW_WRITES: string
   JARVIS_TRACES: string
   JARVIS_AUDIT: string
+  /** 'offline' | 'cloud' — plan 02. '' means the default (offline). */
+  JARVIS_WAKE_WORD: string
+  /** 'low' | 'medium' | 'high' — plan 02. '' means the default (medium). */
+  JARVIS_WAKE_SENSITIVITY: string
   setupDone: string
   storage: string
 }

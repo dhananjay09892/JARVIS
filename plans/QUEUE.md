@@ -84,10 +84,17 @@ this file decides *in what order*.
 - **Done when:** the ADR is ready for the owner to decide.
 
 ### Q09 · Plan 02 · Offline wake engine
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q08, Q06
 - **Scope:** 02 phase 2, with the engine chosen in ADR 002 (openWakeWord in the page, decided 2026-10-23). Follow the ADR's "Recommendation" steps 1–5: `WakeDetector` interface and `hey_jarvis` model, drop VAD audio locally while asleep, Settings toggle and sensitivity, false-wake counter, remove the `@picovoice/*` packages, record the model licence. Update the disclosure wording and `bridge/disclosure.test.mjs` together. If the model files cannot be fetched in the run, deliver the interface and pipeline with a test model and note what is missing.
 - **Done when:** no audio leaves the machine while JARVIS is asleep, verified by a test.
+
+### Q45 · Plan 02 · Try the offline wake word with your voice
+- **Status:** needs-you
+- **Needs you:** after merging Q09, run `npm start` (it copies the ONNX runtime into `public/ort`), click INITIALISE and say "Hey Jarvis" about 20 times from where you usually sit, then a few minutes of normal talk or TV. Press D and note "listening for his name", "wakes", "false wakes", "score / best / bar" and "ms per 80 ms frame". If it misses or false-wakes, try the Sensitivity setting. Paste the numbers into plan 02's Autopilot log, then set this to `done`. The autopilot has no microphone, so it could only check the models against silence, noise and a tone.
+- **Depends on:** Q09
+- **Scope:** 02 phase 2 acceptance on real hardware; input for phase 3 tuning.
+- **Done when:** the numbers are recorded in plan 02.
 
 ### Q10 · Plan 35 · Draft the never-list page
 - **Status:** done

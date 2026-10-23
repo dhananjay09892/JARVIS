@@ -133,7 +133,6 @@ export const env = {
   elevenKey: str(import.meta.env.VITE_ELEVENLABS_API_KEY) ?? '',
   elevenVoiceId:
     str(import.meta.env.VITE_ELEVENLABS_VOICE_ID) ?? 'JBFqnCBsd6RMkjVDRZzb',
-  porcupineKey: str(import.meta.env.VITE_PICOVOICE_ACCESS_KEY) ?? '',
 }
 
 /** `claude-opus-5` is the strongest model; `claude-sonnet-5` trades a little
@@ -148,20 +147,12 @@ export const MODEL = 'claude-opus-5'
 export const FAST_MODE = true
 
 /**
- * Wake-word engine — NOT WIRED UP YET. Nothing reads this value today: the wake
- * word is always found by matching transcripts in `voice.ts`, so asleep audio
- * goes to whichever transcriber is active (ElevenLabs Scribe or the browser's
- * SpeechRecognition). Setting VITE_PICOVOICE_ACCESS_KEY changes nothing yet.
- * The offline engine is plan 02 phase 2; do not describe it to users as
- * shipped until it is.
- *   'speech'    — browser SpeechRecognition. Chrome/Edge only; audio goes to
- *                 Google (Chrome) or Microsoft (Edge).
- *   'porcupine' — planned. Would run offline in WASM ("Jarvis" is a built-in
- *                 keyword). Needs a free AccessKey from console.picovoice.ai.
+ * The wake word is not configured here. It is a user setting
+ * (JARVIS_WAKE_WORD / JARVIS_WAKE_SENSITIVITY in bridge/settings-registry.mjs)
+ * and runs offline in the page: see src/lib/wake/ and ADR 002. The Porcupine
+ * option and VITE_PICOVOICE_ACCESS_KEY were removed (Q09): Picovoice keys can
+ * no longer be obtained for free.
  */
-export const WAKE_ENGINE: 'speech' | 'porcupine' = env.porcupineKey
-  ? 'porcupine'
-  : 'speech'
 
 // ---------------------------------------------------------------------------
 // MCP servers

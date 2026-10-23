@@ -32,8 +32,19 @@ test('every setting that existed before the registry is declared', () => {
   const ids = REGISTRY.map((d) => d.id).sort()
   assert.deepEqual(ids, [
     'ELEVENLABS_API_KEY', 'JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_EFFORT',
-    'JARVIS_MODEL', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone',
+    'JARVIS_MODEL', 'JARVIS_TRACES', 'JARVIS_VOICE_ID',
+    'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD', 'setupDone',
   ])
+})
+
+test('the offline wake word is on by default and can be turned off (plan 02)', () => {
+  const wake = settingDef('JARVIS_WAKE_WORD')
+  assert.equal(wake.default, 'offline')
+  assert.deepEqual([...wake.options], ['offline', 'cloud'])
+  assert.equal(wake.section, 'voice')
+  const sens = settingDef('JARVIS_WAKE_SENSITIVITY')
+  assert.equal(sens.default, 'medium')
+  assert.deepEqual([...sens.options], ['low', 'medium', 'high'])
 })
 
 test('checkRegistry catches broken entries', () => {
