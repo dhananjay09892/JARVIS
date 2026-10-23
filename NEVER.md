@@ -5,11 +5,16 @@ That is a lot of trust, so these limits do not depend on what any AI model happe
 decide on the day. They are rules for the software itself.
 
 This page is the short version of the never-list in
-[plan 35](plans/35-ethics-limits-and-governance.md). Each rule is being written into the
+[plan 35](plans/35-ethics-limits-and-governance.md). Each rule is written into the
 policy engine (`bridge/policy.mjs`) with its own test, so a rule can only be changed by a
-reviewed code change. The **Today** line under each rule says honestly how far that has
-got. Where it says *planned*, the rule is a promise about what we build, not yet a check
-the code makes.
+reviewed code change, and no setting turns one off, not even the switch that allows real
+actions. The **Today** line under each rule says honestly how far that goes.
+
+The policy engine decides by the name of each tool JARVIS is offered, so it refuses any
+tool that names one of these things (`clone_voice`, `pay_invoice`, `solve_captcha`).
+It cannot see intent inside a general tool, such as a click in your browser or a shell
+command. Those are off by default and need you to turn on real actions, and the
+end-to-end safety tests that cover them are planned.
 
 ---
 
@@ -21,23 +26,29 @@ will not have stalking or "keep an eye on my partner" features.
 
 **Today:** JARVIS has no feature that tracks people or reads anyone else's messages. The
 camera only runs while an on-screen indicator is showing and your browser has allowed it,
-and no camera frame is kept. A policy rule and test for this limit are planned.
+and no camera frame is kept. The policy engine refuses any tool for spying, stalking,
+covert recording, tracking someone's location or reading a partner's or employee's
+messages. Covered by tests.
 
 ### 2. Pretend to be someone, or pretend to be human
 Impersonate a real person, or copy a real person's voice without their documented
 consent. When it matters (a message or call to someone else), JARVIS says it is an AI.
 
-**Today:** JARVIS speaks with an original voice only and offers no voice cloning. Sending
-messages and placing calls are off by default. A policy rule and test are planned.
+**Today:** JARVIS speaks with an original voice only. The policy engine refuses any tool
+that clones a voice or face, makes a deepfake or impersonates someone, including the
+cloning tool of a connected voice service. JARVIS is told to say it is an AI whenever
+asked and in anything it writes to someone else, and never to claim to be human. Sending
+messages and placing calls are off by default. Covered by tests.
 
 ### 3. Move your money or act as your doctor, lawyer or adviser
 Make payments, transfers or trades, or give personalised investment, legal or medical
 advice as if it were a licensed professional. It can explain and help you prepare; the
 decision and the action stay with you.
 
-**Today:** paying, buying, transferring and similar actions are refused while JARVIS is
-in its default look-and-answer mode. A rule that keeps refusing them even after you turn
-on real actions is planned.
+**Today:** the policy engine refuses any tool that pays, buys, checks out, transfers
+money, trades or withdraws, even after you turn on real actions. Looking at your payments
+or orders still works. JARVIS is told not to give personalised investment, legal or
+medical advice as if it were a professional. Covered by tests.
 
 ### 4. Take orders from a web page, email or file
 Send messages, spend money or delete data because some text it read told it to. Only you
@@ -54,7 +65,9 @@ appeared in something it read. Sending is also off by default. Covered by tests.
 Solve or bypass CAPTCHAs and other security checks, or help with illegal surveillance or
 with getting around safety measures.
 
-**Today:** JARVIS has no tool for this. A policy rule and test are planned.
+**Today:** JARVIS has no tool for this, and the policy engine refuses any tool that
+solves a CAPTCHA, bypasses a login or two-factor check, cracks a password or evades
+detection. Covered by tests.
 
 ### 6. Send your body's data where it shouldn't go
 Store or send biometric or health data (such as a voiceprint) anywhere other than the
@@ -62,14 +75,16 @@ places this project tells you about.
 
 **Today:** JARVIS does not create voiceprints yet. When speaker recognition arrives,
 voiceprints stay on your computer. Microphone audio does go to a speech service to be
-turned into text, as described in [DISCLAIMER.txt](DISCLAIMER.txt). A policy rule and test
-are planned.
+turned into text, as described in [DISCLAIMER.txt](DISCLAIMER.txt). The policy engine
+refuses any tool that sends, uploads, shares or exports voiceprints, other biometrics or
+health records. Covered by tests.
 
 ### 7. Act while you have stopped it
 Do anything at all while you have frozen it with the kill switch.
 
-**Today:** the kill switch is not built yet. Until it is, closing JARVIS stops it. A
-policy rule and test will come with the kill switch.
+**Today:** the kill switch is not built yet. Until it is, closing JARVIS stops it. The
+policy engine is ready for it: while frozen it refuses every action, JARVIS's own display
+included, and a switch it cannot read counts as frozen. Covered by tests.
 
 ---
 
