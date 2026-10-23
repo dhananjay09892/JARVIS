@@ -19,5 +19,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["shared"]
+  "include": ["shared", "src/lib/wake/*.test.ts"]
 }

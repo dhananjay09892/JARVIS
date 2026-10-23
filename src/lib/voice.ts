@@ -5,6 +5,8 @@ import { startVad, type Vad } from './vad'
 import { caps } from './capabilities'
 import { languageOption, type Language } from './language'
 import { noteSpeechEnd, noteTranscribed } from './trace'
+import { cloudMayListen, makeAudioRouter, type UploadMeta } from './wake/router.ts'
+import type { WakeEngine } from './wake/engine.ts'
 
 /**
  * The voice loop.
@@ -58,6 +60,13 @@ export type VoiceHandlers = {
   onUtterance: (text: string) => void
   /** The recogniser is unusable. Distinct from the user saying nothing. */
   onError: (message: string) => void
+  /**
+   * Settings for the offline wake word (plan 02, ADR 002), read once at start.
+   * 'offline' (the default) listens for "hey jarvis" on this computer and keeps
+   * asleep audio here; 'cloud' is the old transcript matching.
+   */
+  wakeEngine?: string
+  wakeSensitivity?: string
 }
 
 export type Voice = {
@@ -65,7 +74,12 @@ export type Voice = {
   /** True while a recogniser is actually running. */
   live: () => boolean
   setLanguage: (language: Language) => void
+  /** 'offline' when asleep audio stays on this computer; 'cloud' when it is sent to be transcribed. */
+  wakeEngine: () => WakeListening
 }
+
+/** Where the wake word is being listened for. 'cloud' is shown to the user as a badge. */
+export type WakeListening = 'offline' | 'cloud'
 
 // ---------------------------------------------------------------------------
 // Endpointing
@@ -98,6 +112,17 @@ function afterWake(text: string): string {
     .slice(m.index + m[0].length)
     .replace(/^[\s,.:;!?-]+/, '')
     .trim()
+}
+
+/**
+ * A segment that began before an offline wake usually opens with the wake
+ * phrase itself ("hey jarvis, what's the time"). Drop it, keep the command.
+ * Text that does not start with his name is returned unchanged.
+ */
+function stripWake(text: string): string {
+  const m = WAKE.exec(text)
+  if (!m || m.index > 12) return text
+  return afterWake(text)
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +396,22 @@ export const diag = {
   restarts: 0,
   /** Milliseconds the last transcription round-trip took. */
   idleMs: 0,
+  /** 'offline' = asleep audio stays on this computer; 'cloud' = it is transcribed to find his name. */
+  wakeEngine: 'cloud' as WakeListening,
+  /** Why the offline wake word is not in use, when it is not. */
+  wakeReason: '',
+  /** Offline detector: last score, best score since the last wake, and the bar to clear. */
+  wakeScore: 0,
+  wakePeak: 0,
+  wakeThreshold: 0,
+  /** Mean ms to score an 80 ms frame. */
+  wakeFrameMs: 0,
+  /** Wakes that led to no command before he went back to sleep (plan 02 phase 3 tunes this). */
+  falseWakes: 0,
+  /** Asleep speech segments dropped on this computer instead of being sent anywhere. */
+  droppedAsleep: 0,
+  /** Bytes of audio sent off this computer while asleep with no wake. 0 with the offline engine. */
+  uploadedAsleepBytes: 0,
 }
 
 /** Record why a transcript went nowhere. Silence always has a reason; this is
@@ -406,10 +447,51 @@ export async function startVoice(h: VoiceHandlers): Promise<Voice> {
         ? 'Microphone access denied — voice input is unavailable.'
         : 'No microphone available.',
     )
-    return { stop: () => {}, live: () => false, setLanguage: () => {} }
+    return { stop: () => {}, live: () => false, setLanguage: () => {}, wakeEngine: () => 'cloud' }
   }
   diag.engine = caps().stt ? 'elevenlabs' : 'browser'
-  return caps().stt ? startElevenVoice(h) : startBrowserVoice(h)
+  return caps().stt ? startElevenVoice(h) : await startBrowserVoice(h)
+}
+
+/**
+ * Start the offline wake engine if Settings allow it. Returns null — and
+ * records why — when it is turned off or cannot start, in which case the
+ * caller falls back to cloud listening and the HUD says so.
+ *
+ * `fire` is called on each detection; it runs only while JARVIS is asleep.
+ */
+async function tryOfflineWake(h: VoiceHandlers, fire: () => void): Promise<WakeEngine | null> {
+  diag.wakeEngine = 'cloud'
+  if ((h.wakeEngine ?? 'offline') !== 'offline') {
+    diag.wakeReason = 'offline wake word turned off in Settings'
+    return null
+  }
+  try {
+    // Loaded on demand so the ONNX runtime is not in the main bundle.
+    const { startWakeEngine } = await import('./wake/engine.ts')
+    const engine = await startWakeEngine({
+      sensitivity: h.wakeSensitivity ?? 'medium',
+      active: () => h.mode() === 'wake',
+      onWake: fire,
+    })
+    diag.wakeEngine = 'offline'
+    diag.wakeReason = ''
+    return engine
+  } catch (err) {
+    diag.wakeReason = `offline wake word could not start: ${err instanceof Error ? err.message : String(err)}`
+    console.warn(`[jarvis] ${diag.wakeReason} — falling back to cloud listening.`)
+    return null
+  }
+}
+
+/** Copy the offline engine's live numbers into the diagnostics object. */
+function meterWake(engine: WakeEngine | null) {
+  if (!engine) return
+  const m = engine.meter()
+  diag.wakeScore = m.score
+  diag.wakePeak = m.peak
+  diag.wakeThreshold = m.threshold
+  diag.wakeFrameMs = Math.round(m.frameMs * 10) / 10
 }
 
 /** VAD + ElevenLabs Scribe. */
@@ -430,8 +512,23 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
    * Order is preserved because the drain is single-flight, which matters —
    * "London" arriving before "what's the weather in" is worse than either.
    */
-  const pendingAudio: Blob[] = []
+  const pendingAudio: { audio: Blob; meta: UploadMeta }[] = []
   let draining = false
+
+  /**
+   * The offline wake word, when it is on. With it, asleep audio is decided by
+   * the router below and never reaches `transcribe`; without it (turned off,
+   * or failed to start) every segment is transcribed and the transcript is
+   * searched for his name, as before, and the HUD shows "cloud listening".
+   */
+  let engine: WakeEngine | null = null
+  const router = makeAudioRouter({
+    offline: () => engine !== null,
+    upload: (audio, meta) => {
+      pendingAudio.push({ audio, meta })
+      void drain()
+    },
+  })
 
   /**
    * Transcripts become turns here rather than one-per-segment.
@@ -442,6 +539,7 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       diag.dropped = ''
       diag.accepted++
       diag.holding = ''
+      router.accepted()
       h.onUtterance(text)
     },
     partial: (text) => h.onPartial(text),
@@ -455,9 +553,16 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
    * transcript arriving — and the transcript belongs to the mode the user is in
    * now, not the one they interrupted.
    */
-  const transcribe = async (blob: Blob) => {
+  const transcribe = async (blob: Blob, meta: UploadMeta) => {
     const mode = h.mode()
     if (mode === 'deaf') return
+    // He went back to sleep while this was queued. With the offline engine
+    // the wake word is never looked for in a transcript, so there is nothing
+    // to send it for.
+    if (engine && mode === 'wake') {
+      drop('back asleep before it was sent')
+      return
+    }
     const t0 = performance.now()
     try {
       const language = languageOption(h.language())
@@ -477,8 +582,15 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
         return
       }
       const { text } = (await res.json()) as { text?: string }
-      const said = (text ?? '').trim()
+      const heard = (text ?? '').trim()
+      // Recorded across an offline wake: "hey jarvis" is in here, and is not the command.
+      const said = meta.afterWake ? stripWake(heard) : heard
       diag.lastError = ''
+
+      if (heard && !said) {
+        drop('only his name in the segment')
+        return
+      }
 
       if (!said) {
         drop('nothing intelligible in the segment')
@@ -525,18 +637,32 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
     draining = true
     try {
       while (pendingAudio.length) {
-        await transcribe(pendingAudio.shift()!)
+        const next = pendingAudio.shift()!
+        await transcribe(next.audio, next.meta)
       }
     } finally {
       draining = false
     }
   }
 
+  engine = await tryOfflineWake(h, () => {
+    if (h.mode() !== 'wake' || Date.now() - lastWake < WAKE_DEBOUNCE) return
+    lastWake = Date.now()
+    diag.wakes++
+    diag.dropped = ''
+    // Releases the segment that held the wake phrase, if it already ended.
+    router.wake()
+    // The words after the name arrive as their own transcript once the segment
+    // ends, so the app is woken with nothing trailing.
+    h.onWake('')
+  })
+
   vad = await startVad({
     onStart: () => {
       const mode = h.mode()
       diag.mode = mode
       diag.sessions++
+      router.segmentStart(mode)
       if (mode === 'deaf') return
       // Standing down mid-thought throws the thought away with it. Otherwise
       // held text would surface as the opening of the *next* conversation.
@@ -558,9 +684,9 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       // the user is talking to him: a segment caught in guard mode is usually
       // his own voice coming back, and must not move the start line.
       const m = h.mode()
-      if (m === 'command' || m === 'wake') noteSpeechEnd()
-      pendingAudio.push(blob)
-      void drain()
+      if (m === 'command' || (m === 'wake' && !engine)) noteSpeechEnd()
+      // The privacy rule lives in the router: asleep segments stay here.
+      router.segmentEnd(blob, m)
     },
     onLevel: (v) => {
       // Only paint the live level while actually listening for a command, so a
@@ -587,6 +713,12 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
   const guardPoll = setInterval(() => {
     const mode = h.mode()
     vad?.setGuard(mode === 'guard')
+    router.tick(mode)
+    const rs = router.stats()
+    diag.falseWakes = rs.falseWakes
+    diag.droppedAsleep = rs.droppedAsleep
+    diag.uploadedAsleepBytes = rs.uploadedAsleepBytes
+    meterWake(engine)
     // He has stood down — by Escape, by the idle timeout, or by dropping back
     // to the wake word. Anything half-said belonged to a conversation that is
     // over, and letting the hold expire later would open the next one with a
@@ -607,10 +739,13 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       clearInterval(guardPoll)
       assemble.cancel()
       vad?.stop()
+      engine?.stop()
+      engine = null
       diag.running = false
     },
     live: () => vad?.live() ?? false,
     setLanguage: () => {},
+    wakeEngine: () => (engine ? 'offline' : 'cloud'),
   }
 }
 
@@ -628,12 +763,12 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
  * between "the wake word stopped working halfway through the lesson" and an
  * assistant that keeps listening.
  */
-function startBrowserVoice(h: VoiceHandlers): Voice {
+async function startBrowserVoice(h: VoiceHandlers): Promise<Voice> {
   const Ctor =
     (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition
   if (!Ctor) {
     h.onError('This browser has no speech recognition — use Chrome or Edge, or add an ElevenLabs key.')
-    return { stop: () => {}, live: () => false, setLanguage: () => {} }
+    return { stop: () => {}, live: () => false, setLanguage: () => {}, wakeEngine: () => 'cloud' }
   }
 
   let stopped = false
@@ -647,12 +782,22 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
   let lastAlive = Date.now()
   let silenceTimer: ReturnType<typeof setTimeout> | null = null
 
+  /**
+   * With the offline wake word on, the browser's recogniser — which streams
+   * the microphone to Google or Microsoft — is not running at all while he is
+   * asleep. It is started by a wake and stopped again when he stands down.
+   */
+  let engine: WakeEngine | null = null
+  const cloudAllowed = () => cloudMayListen(h.mode(), engine !== null)
+  const router = makeAudioRouter({ offline: () => engine !== null, upload: () => {} })
+
   /** Same assembly rules as the premium path — a pause is not a full stop. */
   const assemble = makeAssembler({
     emit: (text) => {
       diag.dropped = ''
       diag.accepted++
       diag.holding = ''
+      router.accepted()
       h.onUtterance(text)
     },
     partial: (text) => h.onPartial(text),
@@ -680,6 +825,11 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
     const mode = h.mode()
     reset()
     if (!text || mode === 'deaf') return
+    // A late result from just before he stood down; nothing to look for in it.
+    if (engine && mode === 'wake') {
+      drop('back asleep before it was transcribed')
+      return
+    }
     if (isEcho(text, speakingNow())) {
       drop('echo of his own voice')
       return
@@ -716,7 +866,7 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
     touch()
     const mode = h.mode()
     diag.mode = mode
-    if (mode === 'deaf') {
+    if (mode === 'deaf' || (engine && mode === 'wake')) {
       interim = ''
       return
     }
@@ -785,12 +935,16 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
   }
 
   const spin = () => {
-    if (stopped || running) return
-    rec = new Ctor()
+    if (stopped || running || rec) return
+    // Asleep with the offline engine: stay off. The wake handler spins it up.
+    if (!cloudAllowed()) return
+    const self = new Ctor()
+    rec = self
     rec.continuous = true
     rec.interimResults = true
     rec.lang = languageOption(h.language()).locale
     rec.onstart = () => {
+      if (rec !== self) return // parked for sleep before it got going
       running = true
       diag.running = true
       diag.sessions++
@@ -806,9 +960,11 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
       }
     }
     rec.onend = () => {
+      touch()
+      // A recogniser parked for sleep ends after a newer one may have started.
+      if (rec !== self) return
       running = false
       diag.running = false
-      touch()
       rec = null
       if (!stopped) setTimeout(spin, 80)
     }
@@ -816,9 +972,54 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
       rec.start()
     } catch {
       running = false
+      rec = null
       setTimeout(spin, 250)
     }
   }
+
+  engine = await tryOfflineWake(h, () => {
+    if (h.mode() !== 'wake' || Date.now() - lastWake < WAKE_DEBOUNCE) return
+    lastWake = Date.now()
+    diag.wakes++
+    diag.dropped = ''
+    reset()
+    router.wake()
+    h.onWake('')
+    // Now awake: start transcribing straight away rather than at the next poll.
+    spin()
+  })
+
+  /**
+   * Keeps the cloud recogniser in step with the mode: stopped while asleep
+   * (offline engine on), running otherwise. The router has no segments to
+   * route on this path; it is used for its false-wake count.
+   */
+  const sleepGate = setInterval(() => {
+    if (stopped) return
+    router.tick(h.mode())
+    diag.falseWakes = router.stats().falseWakes
+    meterWake(engine)
+    if (!engine) return
+    if (!cloudAllowed()) {
+      if (rec) {
+        const r = rec
+        rec = null
+        running = false
+        reset()
+        assemble.cancel()
+        try {
+          r.abort()
+        } catch {
+          /* already gone */
+        }
+      }
+      // The pipeline is live (the offline detector is listening); only the cloud half is parked.
+      diag.running = true
+      touch()
+      return
+    }
+    if (!rec) spin()
+  }, 200)
 
   spin()
 
@@ -846,8 +1047,11 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
     stop: () => {
       stopped = true
       clearInterval(health)
+      clearInterval(sleepGate)
       clearSilence()
       assemble.cancel()
+      engine?.stop()
+      engine = null
       diag.running = false
       try {
         rec?.abort()
@@ -855,7 +1059,9 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
         /* noop */
       }
     },
-    live: () => running,
+    // Parked for sleep still counts as live: the offline detector is listening.
+    live: () => running || (!stopped && engine !== null && !cloudAllowed()),
+    wakeEngine: () => (engine ? 'offline' : 'cloud'),
     setLanguage: (language) => {
       if (!rec || rec.lang === languageOption(language).locale) return
       rec.lang = languageOption(language).locale

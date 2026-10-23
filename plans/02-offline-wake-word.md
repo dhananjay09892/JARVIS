@@ -9,13 +9,15 @@ wakes for recognised speakers), supports a conversational window (no need to rep
 for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone button).
 
 ## Today (verified)
-- Wake = regex over transcripts (`WAKE` in `voice.ts`); asleep audio is transcribed by Scribe/Google.
-- `WAKE_ENGINE` in `config.ts` unused; Porcupine is installed.
+- Wake = openWakeWord "hey jarvis" in the page (`src/lib/wake/`), on by default (Q09). Asleep
+  VAD segments are kept or dropped locally by `src/lib/wake/router.ts`; the browser recogniser
+  is stopped while asleep. Off or failed → the old transcript regex, with a CLOUD LISTENING badge.
+- Porcupine and `WAKE_ENGINE` removed (ADR 002).
 - Clap trigger exists (`clap.ts`).
 
 ## Phases
 1. **Disclose (30 min):** fix DISCLAIMER, site, Settings wording. ✅ Done (Q07, 2026-10-23).
-2. **Engine (1–2 d):** *(Decision record ready: [ADR 002](adr/002-wake-engine.md), waiting for the owner.)* Porcupine ("Jarvis" built in) *or* openWakeWord ("hey jarvis"), run in
+2. **Engine (1–2 d):** ✅ Done (Q09, 2026-10-23) with openWakeWord in the page ([ADR 002](adr/002-wake-engine.md)); live voice check is Q45. Porcupine ("Jarvis" built in) *or* openWakeWord ("hey jarvis"), run in
    the page (WASM) or bridge. Keep a 2–3 s ring buffer so the words after the name are not lost.
    In `wake` mode the VAD blobs are **dropped locally**; only a wake event starts STT.
 3. **Tuning (1 d):** sensitivity slider; false-wake log; a "TV mode" (raise threshold when media
@@ -29,9 +31,10 @@ for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone bu
 ## Fallback matrix
 | Situation | Behaviour |
 |---|---|
-| Engine + key present | Offline wake, cloud only after wake |
-| No key | openWakeWord (free) |
-| Neither works | Today's transcript matching, UI shows a "cloud listening" badge |
+| Offline wake word on (default) and it starts | openWakeWord in the page; cloud only after a wake |
+| Turned off in Settings, or the models/runtime fail to load | Transcript matching, HUD shows a CLOUD LISTENING badge, Diagnostics says why |
+
+(Updated in Q09: Picovoice keys are no longer free, so there is no "engine + key" row.)
 
 ## Metrics
 - Wake recall ≥ 95 % at 3 m in a quiet room; ≥ 85 % with TV at conversational level.
@@ -62,3 +65,28 @@ Licence/keys (Picovoice free tier limits), model size on low-end laptops, mic pe
   row of the fallback matrix above no longer has a free path. Recommendation: openWakeWord in
   the page via onnxruntime-web (already a transitive dependency). `Decision:` is left for the
   owner; Q09 (phase 2) waits on it.
+- **2026-10-23 · Q09 · Phase 2 (offline engine) done.** Following ADR 002's steps 1–5:
+  `src/lib/wake/` adds a `WakeDetector` interface, a TypeScript port of openWakeWord's streaming
+  pipeline (mel → embedding → `hey_jarvis` classifier, 80 ms frames), a score gate with
+  low/medium/high sensitivity, a 48/44.1 → 16 kHz resampler, and the engine that taps the mic
+  through an AudioWorklet and runs the three ONNX models with onnxruntime-web, loaded lazily
+  and served from our own origin (`public/models/wake/`, committed with a LICENSE note;
+  `public/ort/`, vendored by `scripts/start.mjs` and `scripts/package.mjs`). `router.ts`
+  enforces "a segment that ends while asleep never leaves the machine": held in memory for
+  1.2 s in case the wake phrase was in it, otherwise dropped; segments that span a wake are
+  sent marked `afterWake` and the leading "hey jarvis" is stripped. The browser
+  SpeechRecognition path is stopped while asleep and started by a wake. Settings: "Offline
+  wake word" (on by default) and "Wake sensitivity" in the registry and the Settings dialog.
+  Diagnostics: a WAKE WORD section (engine, score/peak/bar, ms per frame, false wakes,
+  segments kept here, bytes sent while asleep); the HUD shows CLOUD LISTENING when the
+  engine is off or failed. `@picovoice/*`, `VITE_PICOVOICE_ACCESS_KEY` and `WAKE_ENGINE`
+  removed; model licences in `plans/LICENCES.md` (B3 resolved, B4 shipped) and CREDITS.md.
+  DISCLAIMER, README and Settings wording updated with `bridge/disclosure.test.mjs`, which now
+  also checks the claim is backed by the shipped code and models. Tests:
+  `src/lib/wake/router.test.ts` (an hour of asleep speech uploads 0 bytes; wake releases only
+  the wake segment; cloud fallback counts what it sends; false wakes) and
+  `openwakeword.test.ts` (model shapes, buffering, gate, resampler). The port was also run
+  once against the real ONNX files (via Python onnxruntime): shapes accepted, max score 0.00
+  on silence, 0.04 on noise, 0.003 on a tone. Left: a live check with a real voice (Q45);
+  the "hey jarvis" greeting still plays when the command follows in one breath; inference
+  runs on the main thread (move to a Worker if Q45 shows a cost); phase 3 tuning (TV mode).

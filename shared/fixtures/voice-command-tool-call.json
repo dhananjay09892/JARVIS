@@ -9,7 +9,7 @@
         "modality": "voice", "text": "What's on my calendar today?",
         "language": "en-IN", "langConfidence": 0.97, "audioMs": 1800,
         "identity": { "personId": "dhananjay", "role": "owner", "confidence": 0.91, "sources": ["voice", "device"] },
-        "wake": { "engine": "porcupine", "score": 0.88 },
+        "wake": { "engine": "openwakeword", "score": 0.88 },
         "timings": { "speechEnd": 1792800001000, "sttDone": 1792800001180 }
       }
     },
@@ -23,7 +23,7 @@
           "modality": "voice", "text": "What's on my calendar today?",
           "language": "en-IN", "langConfidence": 0.97,
           "identity": { "personId": "dhananjay", "role": "owner", "confidence": 0.91, "sources": ["voice", "device"] },
-          "wake": { "engine": "porcupine", "score": 0.88 },
+          "wake": { "engine": "openwakeword", "score": 0.88 },
           "timings": { "speechEnd": 1792800001000, "sttDone": 1792800001180 }
         }
       }
@@ -38,7 +38,7 @@
           "modality": "voice", "text": "What's on my calendar today?",
           "language": "en-IN", "langConfidence": 0.97,
           "identity": { "personId": "dhananjay", "role": "owner", "confidence": 0.91, "sources": ["voice", "device"] },
-          "wake": { "engine": "porcupine", "score": 0.88 },
+          "wake": { "engine": "openwakeword", "score": 0.88 },
           "timings": { "speechEnd": 1792800001000, "sttDone": 1792800001180 }
         },
         "persona": { "id": "jarvis", "mode": "normal" },

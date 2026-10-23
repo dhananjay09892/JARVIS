@@ -173,13 +173,17 @@ prints its choice, e.g. `[jarvis] model claude-opus-5 · effort medium`.
 
 The loop is designed so that nothing silently dies and barge-in feels natural.
 
-- **Speech detection is local; wake-word detection is not (yet).** An
-  energy-based voice-activity detector (`src/lib/vad.ts`) decides when you are
-  speaking. It is instant, cannot quietly fail, and is what makes **barge-in**
-  work — speak while JARVIS is talking and he stops. The wake word itself is
-  found by matching the *transcript*, so while JARVIS is asleep the audio still
-  goes to the transcription service below (see [DISCLAIMER.txt](DISCLAIMER.txt)).
-  An offline wake-word engine is planned (plan 02).
+- **Speech detection and the wake word are local.** An energy-based
+  voice-activity detector (`src/lib/vad.ts`) decides when you are speaking. It
+  is instant, cannot quietly fail, and is what makes **barge-in** work — speak
+  while JARVIS is talking and he stops. The offline wake word
+  ([openWakeWord](https://github.com/dscripka/openWakeWord)'s "hey jarvis"
+  model, run in the page by `src/lib/wake/`) listens for his name on your
+  computer, and `src/lib/wake/router.ts` keeps audio heard while he is asleep
+  on this machine; only after a wake does speech go to the transcription
+  service below. Turn it off in Settings, or if it cannot start, and JARVIS
+  falls back to finding his name in the *transcript* (cloud listening, with a
+  CLOUD LISTENING badge in the HUD). See [DISCLAIMER.txt](DISCLAIMER.txt).
 - **Transcription has two tiers, chosen automatically at boot.** The browser asks
   the bridge `/health` and picks the best available:
   - **ElevenLabs key present** → ElevenLabs Scribe, via the bridge `/stt` endpoint.
@@ -568,12 +572,12 @@ The name J.A.R.V.I.S. is a tribute to Marvel's Iron Man stories; "Iron Man",
 Characters, Inc. and The Walt Disney Company), and no footage, images or voice
 recordings from any film are included. "Claude" and "Claude Code" are Anthropic's,
 "ElevenLabs" is ElevenLabs, Inc.'s; you use your own accounts under their terms.
-The wake word is not detected on your computer yet: while JARVIS waits for "Hey Jarvis",
-what the microphone hears is sent to a speech service to check for the name (sound loud
-enough to be speech goes to ElevenLabs if you added a key; otherwise your browser streams
-the microphone to its own service, which is Google in Chrome and Microsoft in Edge), so
-room sound can leave your computer before you wake it. An offline wake-word engine is
-planned. Provided "as is" with no warranty. Rights holders with a concern: please open an
+By default an offline wake word listens for "Hey Jarvis" on your computer, and what the
+microphone hears while JARVIS is asleep stays there. After a wake, speech is sent to be
+transcribed (to ElevenLabs if you added a key; otherwise to your browser's own service,
+which is Google in Chrome and Microsoft in Edge). With the offline wake word turned off,
+or if it cannot start, JARVIS falls back to cloud listening and shows a CLOUD LISTENING
+badge: asleep audio then goes to that same service to find his name. Provided "as is" with no warranty. Rights holders with a concern: please open an
 [issue](https://github.com/dhananjay09892/JARVIS/issues). Full text:
 [DISCLAIMER.txt](DISCLAIMER.txt).
 

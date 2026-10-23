@@ -35,17 +35,20 @@ change files. You are responsible for what you approve - read each approval
 before you accept it.
 
 WHILE IT WAITS FOR "HEY JARVIS"
-The wake word is not detected on your computer yet. After you click INITIALISE,
-JARVIS keeps the microphone open until you close it, and to notice "Hey Jarvis"
-it has to send what the microphone hears to a speech service to be turned into
-text, even while it is asleep:
-- With an ElevenLabs key, each stretch of sound loud enough to be speech
-  (including a TV or music) is sent to ElevenLabs through the JARVIS bridge.
-- Without a key, your browser's own speech service receives the microphone
-  audio continuously. In Google Chrome that is Google; in Microsoft Edge it is
-  Microsoft.
-So room sound can leave your computer before you wake JARVIS. An offline
-wake-word engine is planned. Until then, close JARVIS when you do not want it
+After you click INITIALISE, JARVIS keeps the microphone open until you close
+it. By default an offline wake word (openWakeWord) listens for "Hey Jarvis" on
+your computer, so while JARVIS is asleep what the microphone hears stays on
+your computer.
+Once it hears its name, what you say is sent to a speech service to be turned
+into text:
+- With an ElevenLabs key, to ElevenLabs through the JARVIS bridge.
+- Without a key, to your browser's own speech service. In Google Chrome that
+  is Google; in Microsoft Edge it is Microsoft.
+If you turn the offline wake word off in Settings, or it cannot start on your
+computer, JARVIS falls back to cloud listening and shows a CLOUD LISTENING
+badge. Then, to notice "Hey Jarvis", sound heard while it is asleep (including
+a TV or music) is sent to the same speech service, so room sound can leave
+your computer before you wake JARVIS. Close JARVIS when you do not want it
 listening.
 
 YOUR DATA

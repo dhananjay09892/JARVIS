@@ -12,7 +12,7 @@
 
 import { spawn } from 'node:child_process'
 import process from 'node:process'
-import { cpSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { parse } from 'dotenv'
 import { assertNode } from './node-version.mjs'
 
@@ -46,6 +46,27 @@ function vendorWasm() {
     console.log('  vendored the hand-tracking runtime into public/mediapipe.')
   } catch (err) {
     console.warn(`  could not vendor the hand-tracking runtime: ${err.message}`)
+  }
+}
+
+/**
+ * Same for the ONNX runtime the offline wake word runs on (plan 02, ADR 002).
+ * src/lib/wake/engine.ts points onnxruntime-web at /ort/, so the runtime is
+ * served from our own origin and works with no network. Without it the wake
+ * engine cannot start and JARVIS falls back to cloud listening (with a badge).
+ */
+function vendorOrt() {
+  const from = 'node_modules/onnxruntime-web/dist'
+  const to = 'public/ort'
+  if (!existsSync(from)) return
+  try {
+    const files = readdirSync(from).filter((f) => f.startsWith('ort-wasm'))
+    if (files.length && files.every((f) => existsSync(`${to}/${f}`))) return
+    mkdirSync(to, { recursive: true })
+    for (const f of files) cpSync(`${from}/${f}`, `${to}/${f}`)
+    console.log('  vendored the wake-word runtime into public/ort.')
+  } catch (err) {
+    console.warn(`  could not vendor the wake-word runtime: ${err.message}`)
   }
 }
 
@@ -131,6 +152,7 @@ if (port) {
 }
 
 vendorWasm()
+vendorOrt()
 
 console.log('\nJ.A.R.V.I.S. starting — the brain and the face.\n')
 run('bridge', 'node', ['bridge/server.mjs'], '36', bridgeEnv)

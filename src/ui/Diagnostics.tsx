@@ -20,6 +20,7 @@ import { fetchTraceStats, traceDiag, type TraceStats } from '../lib/trace'
  */
 
 type VoiceDiag = {
+  engine: string
   running: boolean
   sessions: number
   heard: string
@@ -31,6 +32,15 @@ type VoiceDiag = {
   accepted: number
   restarts: number
   idleMs: number
+  wakeEngine: 'offline' | 'cloud'
+  wakeReason: string
+  wakeScore: number
+  wakePeak: number
+  wakeThreshold: number
+  wakeFrameMs: number
+  falseWakes: number
+  droppedAsleep: number
+  uploadedAsleepBytes: number
 }
 
 type TtsDiag = {
@@ -144,6 +154,33 @@ export function Diagnostics() {
       <Row k="last heard" v={v.heard ? `"${v.heard}" ${ago(v.heardAt ?? 0)}` : '— nothing yet'} bad={!v.heard} />
       <Row k="last drop" v={v.dropped || '—'} bad={Boolean(v.dropped)} />
       <Row k="error" v={v.lastError || '—'} bad={Boolean(v.lastError)} />
+
+      <div className="diag-sec">WAKE WORD · plan 02</div>
+      <Row
+        k="listening for his name"
+        v={v.wakeEngine === 'offline' ? 'on this computer (offline)' : `CLOUD — ${v.wakeReason || 'offline engine not running'}`}
+        bad={v.wakeEngine !== 'offline'}
+      />
+      {v.wakeEngine === 'offline' && (
+        <>
+          <Row
+            k="score / best / bar"
+            v={`${(v.wakeScore ?? 0).toFixed(2)} / ${(v.wakePeak ?? 0).toFixed(2)} / ${(v.wakeThreshold ?? 0).toFixed(2)}`}
+          />
+          <Row k="ms per 80 ms frame" v={String(v.wakeFrameMs ?? 0)} bad={(v.wakeFrameMs ?? 0) > 40} />
+        </>
+      )}
+      <Row k="false wakes" v={String(v.falseWakes ?? 0)} />
+      <Row k="asleep segments kept here" v={String(v.droppedAsleep ?? 0)} />
+      {v.wakeEngine !== 'offline' && v.engine === 'browser' ? (
+        <Row k="sent while asleep" v="streamed continuously (browser speech service)" bad />
+      ) : (
+        <Row
+          k="sent while asleep"
+          v={`${Math.round((v.uploadedAsleepBytes ?? 0) / 1024)} KB`}
+          bad={(v.uploadedAsleepBytes ?? 0) > 0}
+        />
+      )}
 
       <div className="diag-sec">LATENCY · end of speech → first audio</div>
       {stats?.enabled && stats.latency ? (

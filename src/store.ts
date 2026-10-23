@@ -236,6 +236,13 @@ type State = {
   looking: string | null
   /** Transient status line during boot, e.g. the voice model download. */
   bootNote: string
+  /**
+   * Where the wake word is listened for (plan 02). 'cloud' means asleep audio
+   * is being transcribed off this computer, and the HUD shows a badge saying
+   * so. null before the voice loop starts.
+   */
+  wakeListening: 'offline' | 'cloud' | null
+  setWakeListening: (w: 'offline' | 'cloud' | null) => void
   /** Cards currently on the display, newest last. */
   panels: Panel[]
   /** Blades currently open, newest last — which is also front-most. */
@@ -295,9 +302,11 @@ export const useStore = create<State>((set) => ({
   focusedBlade: null,
   expandedBlade: null,
   bootNote: '',
+  wakeListening: null,
   ui: defaultUi(),
 
   setVoice: (voice) => set({ voice }),
+  setWakeListening: (wakeListening) => set({ wakeListening }),
   setLanguage: (language) => {
     savePreferredLanguage(language)
     set({ language })
