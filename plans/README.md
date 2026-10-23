@@ -47,7 +47,7 @@ anything marked *unaudited* was not read in depth.
 | 32 | [Health and wellbeing](32-health-and-wellbeing.md) | Pending | Later | Nothing → reminders, sleep, routines, vault; supportive, not medical |
 | 33 | [Knowledge work and meetings](33-knowledge-work-and-meetings.md) | Pending | P1/P2 | Keyword memory → cited RAG, meeting minutes, briefs, drafting, research |
 | 34 | [Wearables and mobility](34-wearables-and-mobility.md) | Pending | Later | Home PC only → phone, earbuds, watch, car, secure remote access |
-| 35 | [Ethics, limits and governance](35-ethics-limits-and-governance.md) | Pending | **P0** | Disclaimer only → published never-list, red-team gate, incident process |
+| 35 | [Ethics, limits and governance](35-ethics-limits-and-governance.md) | Partial | **P0** | Disclaimer only → published never-list, red-team gate, incident process |
 | 36 | [Economics and licensing](36-economics-and-licensing.md) | Pending | P1 | Unknown costs/licences → cost table, caps, licence register, IP review |
 | 37 | [Execution roadmap and risks](37-execution-roadmap-and-risks.md) | – | – | Dependency graph, 30/60/90 days, ADR list, risk register |
 | 38 | [Shared data contracts](38-shared-data-contracts.md) | Pending | P0/P1 | Ad-hoc shapes → typed, validated schemas and event topics |
