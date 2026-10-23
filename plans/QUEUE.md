@@ -103,10 +103,17 @@ this file decides *in what order*.
 - **Done when:** one green test per never-list rule.
 
 ### Q12 · Plan 36 · Licence register v1
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** 36 phase 3. Create `plans/LICENCES.md` covering dependencies, models and voices; flag any blockers and suggest swaps. Add `CREDITS.md` attributions if missing.
 - **Done when:** every shipped model, voice and dependency has a licence entry; blockers are listed.
+
+### Q41 · Plan 36 · Fix the licence blockers
+- **Status:** needs-you
+- **Needs you:** read "Blockers and risks" in `plans/LICENCES.md` and decide B1 (Kokoro's `phonemizer` bundles GPL-3.0 eSpeak NG into the installer): (a) leave the Kokoro chunk out of installer builds, (b) swap the phonemizer for a permissive one, or (c) accept GPL-3.0 for that part with notices. Write the choice under B1, then set this to `todo`. B2 (Claude Code binary terms) is decided with Q15.
+- **Depends on:** Q12
+- **Scope:** 36 phase 3, second half. Apply the B1 choice; ship Node's `LICENSE` next to `node.exe` in the installer (B7); confirm the `webgl-constants` licence (B8); remove the unused Picovoice packages if ADR 002 picks openWakeWord (B3).
+- **Done when:** no open blocker in `plans/LICENCES.md` applies to the installer.
 
 ### Q13 · Plan 36 · Legal review of name and branding
 - **Status:** needs-you

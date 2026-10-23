@@ -1,6 +1,6 @@
 # 36 · Economics, licensing and sustainability
 
-**Status:** Pending · **Priority:** P1 (before promoting widely) · **Effort:** 1–2 weeks research, then ongoing
+**Status:** Partial · **Priority:** P1 (before promoting widely) · **Effort:** 1–2 weeks research, then ongoing
 
 ## Why
 Every capability here has a running cost (models, voice, messaging, hardware) and a licence
@@ -28,7 +28,7 @@ profiles and a recommended budget cap per profile, surfaced in Settings as defau
 - **Idle discipline:** no cloud calls while asleep (02).
 - Cost shown per turn in diagnostics (16) and a monthly summary by voice.
 
-## 3. Licence register (`plans/LICENCES.md` to be created when work starts)
+## 3. Licence register ([`plans/LICENCES.md`](LICENCES.md))
 For each dependency: name, licence, commercial-use allowed?, redistribution in the installer allowed?, attribution needed?, obligations, link, last reviewed.
 Focus areas:
 - **Models:** TTS (Kokoro, Piper, others), STT (Whisper variants), wake-word (Porcupine key terms, openWakeWord models), speaker-embedding models, local LLMs. Some "open" models forbid commercial use.
@@ -46,7 +46,7 @@ Focus areas:
 ## Phases
 1. **Measure real usage (1 w)** with the metrics in 16 on a test household.
 2. **Fill the cost table and set default caps (3 d).**
-3. **Licence register v1 (1 w)** and fix any blockers (swap models, add attributions).
+3. **Licence register v1 (1 w)** and fix any blockers (swap models, add attributions). **Register v1 and `CREDITS.md` done (autopilot, 2026-10-23, Q12, awaiting review); fixing the blockers is Q41, which needs your choice on B1 first.**
 4. **Legal review of name/branding/IP (external, 1–2 w).**
 5. **Cost UI and monthly summary (3 d).**
 6. **Sustainability decision record (1 d)** once real numbers exist.
@@ -56,3 +56,19 @@ Vendor price changes → provider-agnostic design (21); licence changes → pin 
 
 ## Done when
 A user can see what JARVIS costs them this month; defaults cap spend; every bundled model, voice and binary has a recorded, compatible licence.
+
+## Autopilot log
+- **2026-10-23 — Phase 3, first half (Q12, licence register v1).** Created
+  [`plans/LICENCES.md`](LICENCES.md): how JARVIS is distributed (what the Windows installer actually
+  redistributes, from `scripts/package.mjs`), then one row per direct npm dependency, the notable
+  transitive ones, models, voices, fonts, audio, bundled binaries and cloud services, each with
+  licence, commercial use, whether it ships in the installer, obligations and review date, plus
+  sources. Added a root [`CREDITS.md`](../CREDITS.md) with the attributions that must travel with
+  JARVIS (CC BY 4.0 music, Kokoro, MediaPipe, Node, fonts, Anthropic), linked it from the README,
+  and made `scripts/package.mjs` copy it into the installer. Blockers found: **B1** `phonemizer`
+  (via `kokoro-js`) is a build of GPL-3.0 eSpeak NG and is bundled into `dist/` even though Kokoro
+  is off by default; **B2** the Claude Code binary is shipped under Anthropic's Commercial Terms
+  with conditions (ties to Q15); plus smaller items (Node `LICENSE` not shipped, `webgl-constants`
+  has no licence field, unused Picovoice packages, Inno Setup's commercial-user licence request).
+  **Left:** fixing the blockers (new task Q41, `needs-you` for the B1 choice); the cost table
+  (phases 1–2) and legal review (Q13).
