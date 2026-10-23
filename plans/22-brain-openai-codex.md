@@ -14,6 +14,8 @@ with ChatGPT", with the same tools, persona, permissions and memory as the Claud
 - The docs reference a non-interactive mode and a Codex SDK; this plan must read those pages first.
 - A news report says OpenAI is letting ChatGPT subscribers use plan allowance in participating third-party tools with per-partner caps; **official partner terms were not found** → treat third-party use of a subscription login as **unconfirmed**.
 
+> **Update 2026-10-23 (Q15):** OpenAI now offers **Sign in with ChatGPT** plan usage to open-source local apps (self-serve, Responses API). Third-party reuse of the Codex CLI login is not documented. See [ADR 001](adr/001-subscription-brain-terms.md); question 1 is answered there.
+
 ## Open questions to resolve first (week 0)
 1. Does OpenAI permit a third-party app (JARVIS) to drive the Codex CLI/SDK with the user's own ChatGPT login? Ask OpenAI / read the Services Agreement and any partner program. Record the answer.
 2. Does Codex expose a **permission/approval hook** per tool call (needed for policy), and can it consume **MCP servers** (JARVIS tools)? If not, Codex runs in read-only or tool-loop mode.

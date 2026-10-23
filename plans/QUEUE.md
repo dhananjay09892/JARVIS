@@ -129,7 +129,7 @@ this file decides *in what order*.
 - **Done when:** the contracts compile, validate the fixtures and are tested.
 
 ### Q15 · Plans 21–24, 27 · Subscription brain terms record
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** Write `plans/adr/001-subscription-brain-terms.md`: for each provider, the current terms on third-party use of subscription logins, with sources and the date checked. Leave `Decision:` empty with a recommendation.
 - **Done when:** the ADR is ready for the owner to decide.
