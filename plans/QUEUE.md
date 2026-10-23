@@ -97,7 +97,7 @@ this file decides *in what order*.
 - **Done when:** the page exists and is linked from the README.
 
 ### Q11 · Plan 35 · Never-list as tests
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q04, Q10
 - **Scope:** 35 phase 2. Encode each never-list rule as a policy rule with a test in `policy.mjs`.
 - **Done when:** one green test per never-list rule.

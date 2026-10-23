@@ -176,6 +176,156 @@ export function isReadName(tool) {
   return first !== undefined && READ_VERBS.has(first)
 }
 
+// ---------------------------------------------------------------------------
+// The never-list (plan 35, NEVER.md).
+//
+// These rules sit above everything else in this file. They refuse whatever
+// JARVIS_ALLOW_WRITES says, whichever server the tool comes from — JARVIS's
+// own servers, the read-only allowlist and VETO_EXEMPT included — because a
+// limit the owner can switch off with the same switch as "real actions" is not
+// a limit. Changing one is a reviewed change to this file and its tests.
+//
+// Like the rest of the gate they read tool names, which is what decide() is
+// given today. A name is a tripwire, not a proof: a browser click on a CAPTCHA
+// or a shell command that pays a bill carries no such name. Those paths are
+// covered by writes being off by default and by the approval cards; plan 35's
+// red-team suite (phase 4) is where they get tested end to end.
+
+const has = (words, set) => words.some((w) => set.has(w))
+const both = (words, a, b) => has(words, a) && has(words, b)
+
+/** Rule 1 — spying on people. Words that only name surveillance. */
+const SURVEILLANCE_WORDS = new Set([
+  'spy', 'spying', 'spyware', 'stalk', 'stalker', 'stalking', 'stalkerware',
+  'eavesdrop', 'wiretap', 'keylog', 'keylogger', 'covert', 'covertly', 'snoop',
+])
+/** Someone other than the owner. `person` and `contact` are left out: they name records. */
+const OTHER_PERSON_WORDS = new Set([
+  'partner', 'spouse', 'wife', 'husband', 'girlfriend', 'boyfriend', 'employee',
+  'employees', 'someone',
+])
+const WATCH_WORDS = new Set([
+  'track', 'tracking', 'locate', 'trace', 'monitor', 'watch', 'record', 'read',
+  'intercept', 'messages', 'texts', 'chats', 'inbox', 'calls', 'location',
+])
+const TRACK_WORDS = new Set(['track', 'tracking', 'locate', 'trace', 'geolocate', 'pinpoint'])
+const WHEREABOUTS_WORDS = new Set(['location', 'whereabouts', 'gps', 'position'])
+
+/** Rule 2 — impersonation and cloning a real person. */
+const IMPERSONATION_WORDS = new Set([
+  'impersonate', 'impersonation', 'impersonating', 'deepfake', 'deepfakes',
+  'faceswap', 'spoof', 'spoofing',
+])
+const CLONE_WORDS = new Set(['clone', 'cloning', 'cloned'])
+const LIKENESS_WORDS = new Set(['voice', 'voices', 'face', 'faces', 'likeness', 'person'])
+/** `swap_voice` only changes which stock voice speaks; swapping a face is a deepfake. */
+const SWAP_WORDS = new Set(['swap', 'swapping'])
+const FACE_WORDS = new Set(['face', 'faces'])
+
+/**
+ * Rule 3 — moving money. Unambiguous verbs refuse on their own; verbs that
+ * also mean something harmless (transfer a file, send a message, charge a
+ * battery) refuse only next to a money word, from the tool or its server.
+ * A name that begins with a read verb and does nothing else (`list_payments`,
+ * `get_trade_history`) is a read and is left to the ordinary rules below.
+ */
+const MONEY_VERBS = new Set([
+  'pay', 'payment', 'payout', 'purchase', 'buy', 'checkout', 'withdraw', 'deposit',
+  'refund', 'trade', 'invest', 'sell', 'remit', 'donate',
+])
+const AMBIGUOUS_MONEY_VERBS = new Set(['transfer', 'send', 'wire', 'charge', 'move', 'order'])
+const MONEY_WORDS = new Set([
+  'money', 'funds', 'fund', 'cash', 'payment', 'payments', 'crypto', 'bitcoin', 'btc',
+  'eth', 'usd', 'inr', 'amount', 'balance', 'invoice', 'bank', 'wallet', 'stock',
+  'stocks', 'shares', 'upi', 'stripe', 'paypal', 'razorpay', 'venmo',
+])
+/** Joins a read to a second action: `check_and_transfer`, `get_then_pay`. */
+const JOINERS = new Set(['and', 'then', 'or'])
+
+/** Rule 5 — security checks. */
+const SECURITY_BREAK_WORDS = new Set([
+  'captcha', 'captchas', 'recaptcha', 'hcaptcha', 'jailbreak', 'bruteforce', 'crack',
+])
+const EVADE_WORDS = new Set(['bypass', 'circumvent', 'evade', 'defeat', 'brute'])
+const SAFEGUARD_WORDS = new Set([
+  'captcha', 'security', 'auth', 'authentication', 'login', 'password', 'passwords',
+  '2fa', 'mfa', 'otp', 'paywall', 'drm', 'firewall', 'safeguard', 'safeguards',
+  'safety', 'verification', 'detection', 'antivirus', 'force', 'filter', 'lock',
+])
+
+/** Rule 6 — biometric and health data leaving the machine. */
+const BODY_DATA_WORDS = new Set([
+  'voiceprint', 'voiceprints', 'faceprint', 'faceprints', 'biometric', 'biometrics',
+  'fingerprint', 'fingerprints', 'medical', 'heartrate', 'ecg', 'vitals',
+])
+/** `health` alone is usually a service health check; next to these it is a person's. */
+const HEALTH_WORDS = new Set(['health'])
+const HEALTH_DATA_WORDS = new Set(['record', 'records', 'data', 'report', 'history'])
+const OUTBOUND_WORDS = new Set([
+  'send', 'upload', 'export', 'share', 'post', 'sync', 'publish', 'forward',
+  'transmit', 'email', 'tweet',
+])
+
+/**
+ * The seven never-list rules, in NEVER.md's order. `match(words, serverWords)`
+ * is true when a tool name falls under the rule. Rule 4 (orders from content)
+ * and rule 7 (the kill switch) are not name rules: rule 4 is the taint guard
+ * (taint.mjs) that every PreToolUse hook runs after the gate, and rule 7 is the
+ * `isFrozen` input, which refuses everything. Both are still listed here so
+ * the list stays one-to-one with the page.
+ */
+export const NEVER_RULES = Object.freeze([
+  {
+    n: 1, id: 'never-surveil', title: 'Spy on other people',
+    match: (w) =>
+      has(w, SURVEILLANCE_WORDS) || both(w, OTHER_PERSON_WORDS, WATCH_WORDS) ||
+      both(w, TRACK_WORDS, WHEREABOUTS_WORDS),
+  },
+  {
+    n: 2, id: 'never-impersonate', title: 'Pretend to be someone, or pretend to be human',
+    match: (w) =>
+      has(w, IMPERSONATION_WORDS) || both(w, CLONE_WORDS, LIKENESS_WORDS) || both(w, SWAP_WORDS, FACE_WORDS),
+  },
+  {
+    n: 3, id: 'never-move-money', title: 'Move your money',
+    match: (w, serverWords) => {
+      if (READ_VERBS.has(w[0]) && !has(w, JOINERS)) return false
+      if (has(w, MONEY_VERBS)) return true
+      return has(w, AMBIGUOUS_MONEY_VERBS) && has([...w, ...serverWords], MONEY_WORDS)
+    },
+  },
+  { n: 4, id: 'never-obey-content', title: 'Take orders from a web page, email or file', guard: 'taint.mjs' },
+  {
+    n: 5, id: 'never-break-security', title: 'Break through security checks',
+    match: (w) => has(w, SECURITY_BREAK_WORDS) || both(w, EVADE_WORDS, SAFEGUARD_WORDS),
+  },
+  {
+    n: 6, id: 'never-leak-body-data', title: "Send your body's data where it shouldn't go",
+    match: (w) =>
+      has(w, OUTBOUND_WORDS) && (has(w, BODY_DATA_WORDS) || both(w, HEALTH_WORDS, HEALTH_DATA_WORDS)),
+  },
+  { n: 7, id: 'frozen', title: 'Act while you have stopped it', input: 'isFrozen' },
+])
+
+/** The never-list rule a tool name falls under, or null. */
+export function neverRuleFor(name) {
+  if (typeof name !== 'string') return null
+  const server = mcpServerOf(name)
+  const words = splitToolWords(server ? mcpToolOf(name) : name)
+  const serverWords = server ? splitToolWords(server) : []
+  if (!words.length) return null
+  return NEVER_RULES.find((r) => typeof r.match === 'function' && r.match(words, serverWords)) ?? null
+}
+
+/** A kill-switch reading that cannot be taken counts as frozen. */
+function frozenNow(isFrozen) {
+  try {
+    return isFrozen() === true
+  } catch {
+    return true
+  }
+}
+
 /**
  * Which rule settles a tool call, and whether it runs.
  *
@@ -184,11 +334,15 @@ export function isReadName(tool) {
  * it. The order of the checks is the policy; the table in policy.test.mjs pins
  * every branch.
  */
-function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool }) {
+function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool, isFrozen }) {
   const writes = (rule) => ({ allow: allowWrites, rule })
   const fixed = (allow, rule) => ({ allow, rule })
 
+  // The never-list first: nothing below, and no switch, can reopen these.
+  if (frozenNow(isFrozen)) return fixed(false, 'frozen')
   if (typeof name !== 'string' || name === '') return fixed(false, 'malformed-name')
+  const never = neverRuleFor(name)
+  if (never) return fixed(false, never.id)
   if (name === 'Task' || name === 'Agent') return writes('subagent')
   if (READ_ONLY_BUILTINS.has(name)) return fixed(true, 'read-only-builtin')
   if (WRITE_BUILTINS.has(name)) return writes('write-builtin')
@@ -250,8 +404,17 @@ function gateOptions({
   isMemoryTool = () => false,
   isWorkflowTool = () => false,
   isTaskTool = () => false,
+  isFrozen = () => false,
 } = {}) {
-  return { allowWrites: allowWrites === true, isMemoryTool, isWorkflowTool, isTaskTool }
+  return {
+    allowWrites: allowWrites === true,
+    isMemoryTool,
+    isWorkflowTool,
+    isTaskTool,
+    // Read on every decision, so the kill switch (plan 15) can freeze a policy
+    // that is already built. Anything that isn't a function counts as frozen.
+    isFrozen: typeof isFrozen === 'function' ? isFrozen : () => true,
+  }
 }
 
 /**
@@ -276,6 +439,8 @@ function recordDecision(audit, log, entry) {
  *   isMemoryTool    — the jarvis_memory tool list (memory-tools.mjs).
  *   isWorkflowTool  — the jarvis_workflows tool list (workflow-tools.mjs).
  *   isTaskTool      — the jarvis_tasks tool list (task-tools.mjs).
+ *   isFrozen        — the kill switch (plan 15), read on every decision: true
+ *                     refuses everything. Not wired to a switch yet.
  *
  * Returns decideTool(name) → boolean: true runs the tool, false withholds it.
  * The bridge uses `createPolicy()`, which wraps this; it stays exported for
@@ -321,6 +486,13 @@ export const RULE_REASONS = Object.freeze({
   'no-read-verb': 'The tool name does not begin with a read verb, so it needs general writes.',
   'unknown-builtin': 'An unknown built-in tool needs general writes.',
   'unknown-action': 'Only tool calls are decided by policy so far; anything else is refused.',
+  // The never-list (NEVER.md). No setting turns these off.
+  'frozen': 'JARVIS is frozen by the kill switch, so nothing runs.',
+  'never-surveil': 'JARVIS never tracks, covertly records or reads the messages of other people.',
+  'never-impersonate': "JARVIS never impersonates anyone or clones a real person's voice or face.",
+  'never-move-money': 'JARVIS never makes payments, transfers, purchases or trades.',
+  'never-break-security': 'JARVIS never solves or bypasses CAPTCHAs or other security checks.',
+  'never-leak-body-data': 'JARVIS never sends biometric or health data off this computer.',
   // Not produced by decide(): the PreToolUse hook's verdict when the guard
   // that runs after the gate (the taint check) refuses or cannot finish.
   'guard-refused': 'The gate allowed it, but the safety check after it refused or held it.',
