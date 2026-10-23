@@ -44,9 +44,11 @@ type TurnContext = {             // assembled for the brain (06, 14, 07)
 }
 
 type BrainEvent =                // normalised across all brains (21)
+  | { t: 'ready'; servers: string[] }        // optional: the session's usable tool servers
   | { t: 'text'; delta: string }
+  | { t: 'tool_start'; id; name }            // optional: early, before args have streamed
   | { t: 'tool_call'; id; name; args }
-  | { t: 'tool_result'; id; ok: boolean; summary: string; tainted: boolean }
+  | { t: 'tool_result'; id; ok: boolean; summary: string; tainted: boolean; detail?: string }  // detail: bounded output, local journal only
   | { t: 'usage'; inTokens; outTokens; costUsd? }
   | { t: 'error'; code; retryable: boolean }
   | { t: 'done'; reason: 'complete'|'cancelled'|'limit' }

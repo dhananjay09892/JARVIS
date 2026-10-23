@@ -29,7 +29,7 @@ test('finished tasks come back after a restart, and a running one is marked inte
     runAgent: () => {
       runs += 1
       return runs === 1
-        ? (async function* () { yield { type: 'result', subtype: 'success', result: 'all good', total_cost_usd: 0.01 } })()
+        ? (async function* () { yield { t: 'text', delta: 'all good' }; yield { t: 'usage', inTokens: 1, outTokens: 1, costUsd: 0.01 }; yield { t: 'done', reason: 'complete' } })()
         : idleAgent()
     },
   })
@@ -54,7 +54,7 @@ test('finished tasks come back after a restart, and a running one is marked inte
 
 test('dismiss removes an ended task from memory and disk; a live task refuses', () => withDir(async (open) => {
   const store = open()
-  const m = createTaskManager({ store, log: silent, runAgent: () => (async function* () { yield { type: 'result', subtype: 'success', result: 'x' } })() })
+  const m = createTaskManager({ store, log: silent, runAgent: () => (async function* () { yield { t: 'text', delta: 'x' }; yield { t: 'done', reason: 'complete' } })() })
   const gone = []
   m.subscribe((f) => f.type === 'task_removed' && gone.push(f.id))
   const id = m.spawn({ title: 'a', goal: 'g' }).task.id
@@ -73,7 +73,7 @@ test('dismiss removes an ended task from memory and disk; a live task refuses', 
 
 test('secrets are filtered before anything is written to disk', () => withDir(async (open) => {
   const store = open()
-  const m = createTaskManager({ store, log: silent, runAgent: () => (async function* () { yield { type: 'result', subtype: 'success', result: 'key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789' } })() })
+  const m = createTaskManager({ store, log: silent, runAgent: () => (async function* () { yield { t: 'text', delta: 'key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789' }; yield { t: 'done', reason: 'complete' } })() })
   m.spawn({ title: 'leak', goal: 'use token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789' })
   await tick(); await tick()
   const raw = JSON.stringify(store.load())
@@ -83,7 +83,7 @@ test('secrets are filtered before anything is written to disk', () => withDir(as
 
 test('a broken store never stops a task', async () => {
   const store = { save() { throw new Error('disk full') }, load: () => [], remove() {} }
-  const m = createTaskManager({ store, log: silent, runAgent: () => (async function* () { yield { type: 'result', subtype: 'success', result: 'fine' } })() })
+  const m = createTaskManager({ store, log: silent, runAgent: () => (async function* () { yield { t: 'text', delta: 'fine' }; yield { t: 'done', reason: 'complete' } })() })
   const id = m.spawn({ title: 'a', goal: 'g' }).task.id
   await tick(); await tick()
   assert.equal(m.get(id).status, 'done')

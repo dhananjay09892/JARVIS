@@ -1401,14 +1401,15 @@ console.log(
 )
 
 /**
- * What to tell the browser when a turn ends badly. Plain sentences, because
- * whatever reaches the client is liable to be spoken.
+ * What to tell the browser when a turn ends badly, by the code of the brain's
+ * `error` event (brains/claude.mjs). Plain sentences, because whatever reaches
+ * the client is liable to be spoken.
  */
 const RESULT_FAILURES = {
-  error_during_execution: 'The turn failed part way through.',
-  error_max_turns: 'The turn ran too long and was stopped.',
-  error_max_budget_usd: 'The budget for this turn ran out.',
-  error_max_structured_output_retries: 'The answer could not be assembled.',
+  execution: 'The turn failed part way through.',
+  max_turns: 'The turn ran too long and was stopped.',
+  budget: 'The budget for this turn ran out.',
+  structured_output: 'The answer could not be assembled.',
   default: 'The turn ended without an answer.',
 }
 
@@ -1457,7 +1458,8 @@ const taskManager = createTaskManager({
     taint.noteOwnerText(`${task.title}\n${task.goal}`)
     const controller = new AbortController()
     signal.addEventListener('abort', () => controller.abort(), { once: true })
-    return brain.startSession({
+    // The worker's session as BrainEvents; tasks.mjs reads nothing else.
+    return brain.converse({
       prompt: `Task: ${task.title}
 
 ${task.goal}`,
@@ -1478,7 +1480,7 @@ ${task.goal}`,
       // Results the bridge does not build itself are labelled as untrusted
       // data as they come back, and private reads taint the worker.
       afterTool: postToolUse(taint, 'worker'),
-    })
+    }).events
   },
 })
 
@@ -1513,11 +1515,8 @@ wss.on('connection', (socket, req) => {
           deliver = resolve
         }))
       if (closed || text == null) return
-      yield {
-        type: 'user',
-        message: { role: 'user', content: text },
-        parent_tool_use_id: null,
-      }
+      // One turn each. The brain wraps it in whatever its provider wants.
+      yield text
     }
   }
 
@@ -1583,14 +1582,14 @@ wss.on('connection', (socket, req) => {
   /**
    * Announcing a tool on the HUD, once, and only if it actually runs.
    *
-   * A tool_use block surfaces twice — as a partial stream event and again on
-   * the completed assistant message — so ids are remembered. The harder part
+   * A tool call surfaces twice — as an early tool_start while it streams and
+   * again as the complete tool_call — so ids are remembered. The harder part
    * is timing, because a refused tool that lights the badge, plays the sound
    * and provokes a "working on it" line, for work that never happens, reads as
    * a bug on camera.
    *
    * The SDK's order is: the block starts streaming, then canUseTool is asked,
-   * then the tool runs. So nothing is known at content_block_start. Announcing
+   * then the tool runs. So nothing is known at tool_start. Announcing
    * from inside canUseTool would know the verdict but miss tools entirely —
    * measured on this SDK, the callback is consulted only for calls the CLI
    * hasn't already settled, so a `Bash: echo` its own classifier waves through
@@ -1607,17 +1606,17 @@ wss.on('connection', (socket, req) => {
   /**
    * Resolves when the turn in flight has actually finished.
    *
-   * Waiting on session.interrupt() alone is not enough. It resolves when the
+   * Waiting on session.cancel() alone is not enough. It resolves when the
    * agent has been *told* to stop, not when it has, so the last tokens of the
    * abandoned answer are still on their way — and since nothing on the wire
    * identifies which question a delta belongs to, they land on the next turn's
    * listener. Measured: ask for ALPHA, interrupt, ask for BRAVO, and BRAVO's
    * answer arrives as "ALPHA\nBRAVO".
    *
-   * The SDK emits exactly one `result` per turn, so that is the boundary worth
-   * waiting for. Raced against a timeout because a turn that never reports one
-   * must not wedge the conversation for ever — a stray word is a blemish, a
-   * deadlocked assistant is not.
+   * The brain ends every turn with exactly one `done` (brains/events.mjs), so
+   * that is the boundary worth waiting for. Raced against a timeout because a
+   * turn that never reports one must not wedge the conversation for ever — a
+   * stray word is a blemish, a deadlocked assistant is not.
    */
   let settling = Promise.resolve()
   let finishTurn = null
@@ -1658,8 +1657,10 @@ wss.on('connection', (socket, req) => {
     if (!failed) sendTurn({ type: 'tool', name })
   }
 
-  // Options and their reasons live with the brain (brains/claude.mjs).
-  const session = brain.startSession({
+  // Options and their reasons live with the brain (brains/claude.mjs). The
+  // session comes back as BrainEvents (brains/events.mjs): this pump never
+  // reads a provider's own message shapes.
+  const session = brain.converse({
     prompt: userMessages(),
     actor: 'voice',
     // Everything Claude Code has configured, plus the HUD as an in-process
@@ -1707,126 +1708,109 @@ wss.on('connection', (socket, req) => {
     log: console.log,
   })
 
-  // Pump the session's output stream to the browser for as long as it lives.
+  // Pump the session's events to the browser for as long as it lives.
   ;(async () => {
+    // The turn's last error, said when its `done` arrives.
+    let failure = null
+    // The turn's text so far and what it cost: both go out with `done`.
+    let reply = ''
+    let cost = null
     try {
-      for await (const msg of session) {
-        if (process.env.JARVIS_DEBUG === '1') {
-          console.log('[msg]', msg.type, msg.event?.type ?? '')
-        }
+      for await (const e of session.events) {
+        if (process.env.JARVIS_DEBUG === '1') console.log('[event]', e.t)
 
-        switch (msg.type) {
-          // Raw Anthropic stream events, surfaced by includePartialMessages.
-          // This is the ONLY place spoken text arrives: there is no top-level
-          // text_delta message in the SDK union and the 'assistant' message
-          // carries no deltas either. Turn includePartialMessages off and
-          // JARVIS goes completely mute.
-          case 'stream_event': {
-            const ev = msg.event
-            if (
-              ev?.type === 'content_block_delta' &&
-              ev.delta?.type === 'text_delta' &&
-              ev.delta.text
-            ) {
-              sm?.delta(ev.delta.text)
-              sendTurn({ type: 'text', delta: ev.delta.text })
-            }
-            if (
-              ev?.type === 'content_block_start' &&
-              ev.content_block?.type === 'tool_use'
-            ) {
-              announceTool(ev.content_block.id, ev.content_block.name)
-            }
+        switch (e.t) {
+          case 'ready':
+            // The tool servers this session can actually use.
+            send({ type: 'ready', servers: e.servers })
+            console.log(`[jarvis] ${e.servers.length} MCP servers available`)
             break
-          }
 
-          case 'assistant': {
-            // Fallback for builds that emit whole assistant messages rather
-            // than partial events. Deduped against the stream_event path.
-            for (const block of msg.content ?? msg.message?.content ?? []) {
-              if (block.type === 'tool_use') {
-                sm?.toolUse(block)
-                announceTool(block.id, block.name)
-              }
-            }
+          // Spoken text, in order, from the first finished token. Speech starts
+          // on the first sentence of these, so they go out the moment they come.
+          case 'text':
+            reply += e.delta
+            sm?.delta(e.delta)
+            sendTurn({ type: 'text', delta: e.delta })
             break
-          }
 
-          case 'user': {
-            // Tool results come back as a user message. This is the only place
-            // a held announcement can be resolved: a refused tool arrives with
-            // is_error set and stays off the HUD, anything else ran.
-            const blocks = msg.message?.content
-            if (!Array.isArray(blocks)) break
-            for (const block of blocks) {
-              if (block?.type === 'tool_result') {
-                sm?.toolResult(block)
-                settleTool(block.tool_use_id, block.is_error === true)
-              }
-            }
+          // The earliest sign of a tool: lets the badge light while the
+          // arguments are still streaming. The tool_call follows.
+          case 'tool_start':
+            announceTool(e.id, e.name)
             break
-          }
 
-          case 'result':
-            sm?.result(msg)
-            // A result is not automatically a success. The error subtypes
-            // carry no `result` field at all, so reporting them as 'done' with
-            // empty text is indistinguishable from a turn that simply had
-            // nothing to say — the HUD stops spinning and JARVIS stands there
-            // silent. Say what happened instead.
-            if (msg.subtype === 'success') {
-              sendTurn({
-                type: 'done',
-                text: msg.result ?? '',
-                costUsd: msg.total_cost_usd ?? null,
-              })
-            } else {
-              console.error(
-                `[jarvis] turn failed: ${msg.subtype}`,
-                msg.errors ?? '',
-              )
+          case 'tool_call':
+            sm?.toolCall(e)
+            announceTool(e.id, e.name)
+            break
+
+          // The only place a held announcement can be resolved: a refused tool
+          // comes back not ok and stays off the HUD, anything else ran.
+          case 'tool_result':
+            sm?.toolResult(e)
+            settleTool(e.id, !e.ok)
+            break
+
+          case 'usage':
+            cost = e.costUsd ?? null
+            break
+
+          case 'error':
+            failure = e
+            break
+
+          case 'done': {
+            sm?.done(e)
+            // A finished turn is not automatically a success. Reporting a
+            // failure as 'done' with empty text is indistinguishable from a turn
+            // that simply had nothing to say — the HUD stops spinning and JARVIS
+            // stands there silent. Say what happened instead.
+            if (e.reason === 'complete') {
+              sendTurn({ type: 'done', text: reply, costUsd: cost })
+            } else if (failure?.code === 'session_error') {
+              console.error('[jarvis] session error:', failure.message ?? '')
+              send({ type: 'error', message: failure.message ?? 'The session failed.' })
+            } else if (e.reason !== 'cancelled') {
+              console.error(`[jarvis] turn failed: ${failure?.code ?? e.reason}`, failure?.message ?? '')
               sendTurn({
                 type: 'error',
-                message: RESULT_FAILURES[msg.subtype] ?? RESULT_FAILURES.default,
+                message: RESULT_FAILURES[failure?.code] ?? RESULT_FAILURES.default,
               })
             }
             // Whatever was waiting on this turn to finish can go now. This is
             // the only place a turn is genuinely over.
             finishTurn?.()
             finishTurn = null
+            failure = null
+            reply = ''
+            cost = null
             // One turn's tool ids are never referred to again, and these
             // otherwise grow for as long as the socket is open.
             seenTools.clear()
             heldTools.clear()
             break
-
-          case 'system':
-            if (msg.subtype === 'init') {
-              // Servers report 'pending' until first use — they connect
-              // lazily — so only drop the ones that are actually unusable.
-              const usable = (msg.mcp_servers ?? [])
-                .filter((s) => s.status !== 'needs-auth' && s.status !== 'failed')
-                .map((s) => s.name)
-              send({ type: 'ready', servers: usable })
-              console.log(`[jarvis] ${usable.length} MCP servers available`)
-            }
-            break
+          }
         }
       }
     } catch (err) {
+      // Something on this side broke while handling an event. The session
+      // cannot be trusted to line up with the page any more.
       console.error('[jarvis] session error:', err)
       send({ type: 'error', message: String(err?.message ?? err) })
-      // The stream is finished either way — nothing will ever be read from it
-      // again. Leaving the socket open would leave the client believing it has
-      // a working bridge, and every later question would hang for ever waiting
-      // on a pump that has already stopped. Close it so it reconnects.
-      closed = true
-      sm?.fail()
-      approvals.cancel()
-      deliver?.(null)
-      session.close?.()
-      socket.close()
     }
+
+    // The stream is finished either way — nothing will ever be read from it
+    // again. Leaving the socket open would leave the client believing it has
+    // a working bridge, and every later question would hang for ever waiting
+    // on a pump that has already stopped. Close it so it reconnects.
+    if (closed) return
+    closed = true
+    sm?.fail()
+    approvals.cancel()
+    deliver?.(null)
+    session.close()
+    socket.close()
   })()
 
   socket.on('message', (raw) => {
@@ -1842,7 +1826,7 @@ wss.on('connection', (socket, req) => {
        * Queued behind any interrupt that is still settling.
        *
        * A barge-in is two messages in quick succession — interrupt, then the
-       * new question — and session.interrupt() is asynchronous. Delivering the
+       * new question — and session.cancel() is asynchronous. Delivering the
        * question the instant it arrives means the agent can still be winding
        * down the previous turn, so its last tokens are emitted after the new
        * one has begun and land on the new turn's listener. Measured: ask "one",
@@ -1935,7 +1919,7 @@ wss.on('connection', (socket, req) => {
       approvals.cancel()
       // Held so the next question can wait for it rather than racing it.
       const stopped = turnFinished()
-      settling = Promise.resolve(session.interrupt?.())
+      settling = Promise.resolve(session.cancel())
         .catch(() => {})
         .then(() =>
           Promise.race([
@@ -1954,6 +1938,6 @@ wss.on('connection', (socket, req) => {
     sm?.close()
     approvals.cancel()
     deliver?.(null)
-    session.close?.()
+    session.close()
   })
 })

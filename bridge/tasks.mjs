@@ -8,8 +8,10 @@
  * and any one can be cancelled without touching the others.
  *
  * This module owns state and scheduling only. How an agent is actually run is
- * injected as `runAgent`, which keeps it testable and keeps the SDK wiring (and
- * its permission rules) in server.mjs where every other session is built.
+ * injected as `runAgent`, which keeps it testable and keeps the brain wiring
+ * (and its permission rules) in server.mjs where every other session is built.
+ * `runAgent` returns the session as BrainEvents (brains/events.mjs), so this
+ * module never sees a provider's own message shapes.
  *
  * Nothing here grants anything. A task asks for approval through the same cards
  * as everything else; the manager only tags the card with the task it came from
@@ -177,6 +179,14 @@ export function createTaskManager({ runAgent, store = null, concurrency = MAX_CO
     })
   }
 
+  /** Why a worker's turn failed, from its `error` event, in words for the board. */
+  function failureText(e) {
+    if (!e) return 'The agent stopped without saying why.'
+    if (e.code === 'ended') return 'The agent ended without a result.'
+    if (e.code === 'session_error' && e.message) return clip(e.message, 300)
+    return `The agent stopped: ${e.code}.`
+  }
+
   async function start(t) {
     t.status = 'running'
     t.startedAt = now()
@@ -190,31 +200,39 @@ export function createTaskManager({ runAgent, store = null, concurrency = MAX_CO
         ask: asker(t),
         wrapApprove: (approve) => approver(t, approve),
       })
-      for await (const msg of stream) {
+      // The worker's session as BrainEvents (brains/events.mjs). The summary is
+      // the text after the last tool call: what the worker wrote once its work
+      // was done, not the "let me look" lines in between.
+      let reply = ''
+      let failure = null
+      for await (const e of stream) {
         if (!isActive(t)) break
-        switch (msg.type) {
-          case 'stream_event': {
-            const ev = msg.event
-            if (ev?.type === 'content_block_start' && ev.content_block?.type === 'tool_use') {
-              t.tools.add(ev.content_block.id)
-              note(t, 'tool', ev.content_block.name.replace(/^mcp__/, '').replace(/__/g, ' › '))
+        switch (e?.t) {
+          case 'text':
+            reply += e.delta
+            break
+          case 'tool_start':
+          case 'tool_call':
+            reply = ''
+            if (!t.tools.has(e.id)) {
+              t.tools.add(e.id)
+              note(t, 'tool', e.name.replace(/^mcp__/, '').replace(/__/g, ' › '))
               emit(t)
             }
             break
-          }
-          case 'assistant':
-            for (const b of msg.message?.content ?? msg.content ?? []) {
-              if (b.type === 'tool_use' && !t.tools.has(b.id)) {
-                t.tools.add(b.id)
-                note(t, 'tool', b.name.replace(/^mcp__/, '').replace(/__/g, ' › '))
-                emit(t)
-              }
-            }
+          case 'usage':
+            if (e.costUsd !== undefined) t.costUsd = e.costUsd
             break
-          case 'result':
-            t.costUsd = msg.total_cost_usd ?? t.costUsd
-            if (msg.subtype === 'success') finish(t, 'done', { result: clip(msg.result, 1200) })
-            else finish(t, 'failed', { error: `The agent stopped: ${msg.subtype}.` })
+          case 'error':
+            failure = e
+            break
+          case 'done':
+            if (e.reason === 'complete') finish(t, 'done', { result: clip(reply, 1200) })
+            else if (e.reason === 'cancelled' || t.abort.signal.aborted) finish(t, 'cancelled', { error: 'Cancelled.' })
+            else {
+              log.error?.('[jarvis] task failed:', failure?.message ?? failure?.code ?? e.reason)
+              finish(t, 'failed', { error: failureText(failure) })
+            }
             break
         }
       }

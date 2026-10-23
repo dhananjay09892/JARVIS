@@ -5,7 +5,7 @@ import { createTaskManager } from './tasks.mjs'
 const silent = { error() {} }
 const tick = () => new Promise((r) => setImmediate(r))
 
-/** An agent whose messages the test feeds by hand. */
+/** An agent whose BrainEvents the test feeds by hand. */
 function fakeAgent() {
   const runs = []
   const runAgent = (ctx) => {
@@ -19,13 +19,20 @@ function fakeAgent() {
         const m = queue.shift()
         if (m === null) return
         if (m instanceof Error) throw m
-        yield m
+        if (Array.isArray(m)) yield* m
+        else yield m
       }
     })()
   }
   return { runAgent, runs }
 }
-const result = (over = {}) => ({ type: 'result', subtype: 'success', result: 'all done', total_cost_usd: 0.02, ...over })
+/** One finished turn as BrainEvents: the summary, what it cost, and its done. */
+const result = ({ text = 'all done', costUsd = 0.02, error = null, reason = error ? 'limit' : 'complete' } = {}) => [
+  { t: 'text', delta: text },
+  { t: 'usage', inTokens: 10, outTokens: 5, costUsd },
+  ...(error ? [{ t: 'error', retryable: false, ...error }] : []),
+  { t: 'done', reason },
+]
 
 test('a task runs, reports progress and finishes with its result and cost', async () => {
   const { runAgent, runs } = fakeAgent()
@@ -38,7 +45,10 @@ test('a task runs, reports progress and finishes with its result and cost', asyn
   runs[0].ctx.report({ step: 2, note: 'writing' })
   assert.equal(m.get(task.id).percent, 50)
   assert.deepEqual(m.get(task.id).steps.map((s) => s.state), ['done', 'active'])
-  runs[0].push({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 'x', name: 'mcp__jarvis_workspace__read_file' } } })
+  runs[0].push({ t: 'text', delta: 'Let me look first. ' })
+  runs[0].push({ t: 'tool_start', id: 'x', name: 'mcp__jarvis_workspace__read_file' })
+  runs[0].push({ t: 'tool_call', id: 'x', name: 'mcp__jarvis_workspace__read_file', args: { path: 'a' } })
+  runs[0].push({ t: 'tool_result', id: 'x', ok: true, summary: 'ok', tainted: false })
   runs[0].push(result())
   await tick(); await tick()
   const t = m.get(task.id)
@@ -46,7 +56,7 @@ test('a task runs, reports progress and finishes with its result and cost', asyn
   assert.equal(t.percent, 100)
   assert.equal(t.result, 'all done')
   assert.equal(t.costUsd, 0.02)
-  assert.ok(t.log.some((l) => l.kind === 'tool' && l.text.includes('read_file')))
+  assert.equal(t.log.filter((l) => l.kind === 'tool' && l.text.includes('read_file')).length, 1, 'one note per tool, from tool_start or tool_call')
   assert.ok(frames.length > 3)
 })
 
@@ -76,18 +86,44 @@ test('cancel aborts the signal, ends only that task, and frees its slot', async 
   assert.equal(m.cancel('nope').ok, false)
 })
 
-test('failures: a thrown error, an error result and a silent end all fail the task', async () => {
+test('failures: a thrown error, an error result, a session error and a silent end all fail the task', async () => {
   const { runAgent, runs } = fakeAgent()
-  const m = createTaskManager({ runAgent, log: silent })
-  const ids = [1, 2, 3].map((n) => m.spawn({ title: `t${n}`, goal: 'g' }).task.id)
+  const m = createTaskManager({ runAgent, concurrency: 5, log: silent })
+  const ids = [1, 2, 3, 4, 5].map((n) => m.spawn({ title: `t${n}`, goal: 'g' }).task.id)
   await tick()
   runs[0].push(new Error('boom'))
-  runs[1].push(result({ subtype: 'error_max_turns' }))
+  runs[1].push(result({ error: { code: 'max_turns' } }))
   runs[2].end()
+  runs[3].push([{ t: 'error', code: 'session_error', retryable: true, message: 'socket closed' }, { t: 'done', reason: 'error' }])
+  runs[4].push([{ t: 'error', code: 'ended', retryable: true }, { t: 'done', reason: 'error' }])
   await tick(); await tick()
-  assert.deepEqual(ids.map((id) => m.get(id).status), ['failed', 'failed', 'failed'])
+  assert.deepEqual(ids.map((id) => m.get(id).status), ['failed', 'failed', 'failed', 'failed', 'failed'])
   assert.match(m.get(ids[0]).error, /boom/)
-  assert.match(m.get(ids[1]).error, /error_max_turns/)
+  assert.match(m.get(ids[1]).error, /stopped: max_turns/)
+  assert.match(m.get(ids[2]).error, /without a result/)
+  assert.match(m.get(ids[3]).error, /socket closed/)
+  assert.match(m.get(ids[4]).error, /without a result/)
+})
+
+test('a brain that ends the turn cancelled cancels the task; the summary is the text after the last tool', async () => {
+  const { runAgent, runs } = fakeAgent()
+  const m = createTaskManager({ runAgent, log: silent })
+  const a = m.spawn({ title: 'a', goal: 'g' }).task.id
+  const b = m.spawn({ title: 'b', goal: 'g' }).task.id
+  await tick()
+  runs[0].push({ t: 'done', reason: 'cancelled' })
+  runs[1].push([
+    { t: 'text', delta: 'Checking.' },
+    { t: 'tool_call', id: 'c1', name: 'Read', args: {} },
+    { t: 'tool_result', id: 'c1', ok: true, summary: '', tainted: false },
+    { t: 'text', delta: 'Found ' }, { t: 'text', delta: 'two files.' },
+    { t: 'done', reason: 'complete' },
+  ])
+  await tick(); await tick()
+  assert.equal(m.get(a).status, 'cancelled')
+  assert.equal(m.get(b).status, 'done')
+  assert.equal(m.get(b).result, 'Found two files.')
+  assert.equal(m.get(b).costUsd, null, 'no usage event, no cost')
 })
 
 test('approvals are tagged with the task and mark it waiting until answered', async () => {

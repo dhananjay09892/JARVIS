@@ -5,12 +5,16 @@ import { checkBrainEvent, summarise, BRAIN_EVENT_TYPES, DONE_REASONS } from './e
 import { checkContract } from '../../shared/contracts.ts'
 
 const VALID = [
+  { t: 'ready', servers: [] },
+  { t: 'ready', servers: ['gmail', 'jarvis'] },
+  { t: 'tool_start', id: 'toolu_01', name: 'mcp__calendar__list_events' },
   { t: 'text', delta: 'At your service.' },
   { t: 'text', delta: '' },
   { t: 'tool_call', id: 'toolu_01', name: 'mcp__calendar__list_events', args: { day: 'today' } },
   { t: 'tool_call', id: 'c', name: 'Read', args: {} },
   { t: 'tool_result', id: 'toolu_01', ok: true, summary: '2 events', tainted: true },
   { t: 'tool_result', id: 'toolu_01', ok: false, summary: '', tainted: false },
+  { t: 'tool_result', id: 'toolu_01', ok: true, summary: '{"bytes":1}', tainted: false, detail: '{"bytes":1,"sha256":"aa"}' },
   { t: 'usage', inTokens: 0, outTokens: 0 },
   { t: 'usage', inTokens: 1820, outTokens: 41, costUsd: 0.006 },
   { t: 'error', code: 'max_turns', retryable: false },
@@ -19,6 +23,13 @@ const VALID = [
 ]
 
 const INVALID = [
+  { t: 'ready' },
+  { t: 'ready', servers: 'gmail' },
+  { t: 'ready', servers: [''] },
+  { t: 'tool_start', id: 'c1' },
+  { t: 'tool_start', id: 'has space', name: 'Read' },
+  { t: 'tool_result', id: 'c1', ok: true, summary: '', tainted: false, detail: 5 },
+  { t: 'tool_result', id: 'c1', ok: true, summary: '', tainted: false, detail: 'x'.repeat(2001) },
   null,
   [],
   'done',

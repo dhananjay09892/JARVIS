@@ -371,7 +371,7 @@ test('server.mjs routes every tool path through policy.mjs', () => {
   // plan 21) with the policy engine and the taint guard (plan 08); no agent
   // is started by calling the SDK directly.
   assert.equal(count(/\bquery\(/g), 0, 'agents start through the brain, not the SDK')
-  const agents = count(/brain\.startSession\(\{/g)
+  const agents = count(/brain\.converse\(\{/g)
   assert.ok(agents >= 2, 'expected the voice session and the task worker')
   assert.equal(count(/^\s+policy,$/gm), agents, 'every session is given the policy engine')
   assert.equal(count(/guard: taintGuard\(/g), agents, 'every session runs the taint guard')
