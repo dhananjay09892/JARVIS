@@ -15,7 +15,7 @@ for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone bu
 
 ## Phases
 1. **Disclose (30 min):** fix DISCLAIMER, site, Settings wording.
-2. **Engine (1–2 d):** Porcupine ("Jarvis" built in) *or* openWakeWord ("hey jarvis"), run in
+2. **Engine (1–2 d):** *(Decision record ready: [ADR 002](adr/002-wake-engine.md), waiting for the owner.)* Porcupine ("Jarvis" built in) *or* openWakeWord ("hey jarvis"), run in
    the page (WASM) or bridge. Keep a 2–3 s ring buffer so the words after the name are not lost.
    In `wake` mode the VAD blobs are **dropped locally**; only a wake event starts STT.
 3. **Tuning (1 d):** sensitivity slider; false-wake log; a "TV mode" (raise threshold when media
@@ -40,6 +40,15 @@ for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone bu
 
 ## Risks
 Licence/keys (Picovoice free tier limits), model size on low-end laptops, mic permissions in iframes/panes.
+
+## Autopilot log
+- **2026-10-23 — Q08 (wake engine decision record).** Wrote [ADR 002](adr/002-wake-engine.md)
+  comparing Porcupine and openWakeWord (licence and cost, accuracy, CPU, custom phrases, Windows,
+  page vs bridge), with sherpa-onnx keyword spotting as a third path. Key finding: Picovoice
+  disabled Free Tier AccessKeys on 30 June 2026 and offers no personal plan, so the "Engine + key"
+  row of the fallback matrix above no longer has a free path. Recommendation: openWakeWord in
+  the page via onnxruntime-web (already a transitive dependency). `Decision:` is left for the
+  owner; Q09 (phase 2) waits on it.
 
 ## Related plans
 [04 speech stack](04-local-speech-stack.md) · [16 network audit test](16-evals-and-observability.md) · [29 calibration](29-onboarding-and-first-run.md) · [35 consent](35-ethics-limits-and-governance.md)

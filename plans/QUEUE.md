@@ -78,7 +78,7 @@ this file decides *in what order*.
 - **Done when:** no user-facing text overstates on-device wake detection.
 
 ### Q08 · Plan 02 · Wake engine decision record
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** Write `plans/adr/002-wake-engine.md` comparing Porcupine and openWakeWord: licence and cost, accuracy, CPU, custom phrases, Windows support, how each fits the bridge. Leave `Decision:` empty with a recommendation.
 - **Done when:** the ADR is ready for the owner to decide.
