@@ -48,6 +48,8 @@ import { setting, updateSettings, publicSettings, readSettings } from './setting
 import { settingDefault, settingsSchema } from './settings-registry.mjs'
 import { createClaudeBrain } from './brains/claude.mjs'
 import { createBrainRegistry } from './brains/registry.mjs'
+import { createConnectorRegistry } from './connectors/registry.mjs'
+import { createCredentialStore, createUnavailableCredentialStore } from './connectors/credentials.mjs'
 import { checkForUpdate } from './update.mjs'
 import { fileURLToPath } from 'node:url'
 
@@ -281,6 +283,24 @@ function configuredServers() {
 const MCP_SERVERS = configuredServers()
 
 /**
+ * Connectors (plans/connectors, task C01). None is registered yet; each
+ * connector task adds its adapter here, inside the registry's own try/catch,
+ * so one that fails cannot stop the bridge. Credentials stay unavailable until
+ * the OS keychain (Q20) unless a developer opts into the dev-only store.
+ */
+function connectorCredentials() {
+  try {
+    return createCredentialStore()
+  } catch (err) {
+    // A misconfigured dev-only store must not stop the bridge; nothing is stored instead.
+    console.error('[jarvis] connector credentials unavailable:', err?.message ?? err)
+    return createUnavailableCredentialStore()
+  }
+}
+const connectors = createConnectorRegistry({ credentials: connectorCredentials() })
+connectors.registerAll([])
+
+/**
  * The policy engine lives in policy.mjs, where it is tested on its own.
  * Every path a tool call can take — the voice session, sub-agents, the
  * PreToolUse hook, canUseTool and the SDK's disallowedTools list — asks it.
@@ -290,6 +310,7 @@ const policy = createPolicy({
   isMemoryTool,
   isWorkflowTool,
   isTaskTool,
+  connectorRule: connectors.policyRule,
   audit,
 })
 const { decideTool } = policy

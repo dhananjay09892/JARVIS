@@ -334,7 +334,7 @@ function frozenNow(isFrozen) {
  * it. The order of the checks is the policy; the table in policy.test.mjs pins
  * every branch.
  */
-function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool, isFrozen }) {
+function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool, isFrozen, connectorRule }) {
   const writes = (rule) => ({ allow: allowWrites, rule })
   const fixed = (allow, rule) => ({ allow, rule })
 
@@ -385,6 +385,13 @@ function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool,
       return fixed(['report_progress', 'ask_owner'].includes(tool), 'own-server-list')
     }
 
+    // Connectors (plans/connectors, task C01). The connector registry knows
+    // each connector's tools, grants and kill switches, so it is asked; it
+    // answers with one of its own rule ids, and anything else — a missing
+    // registry, an answer it cannot give, a throw — is a refusal. A write also
+    // needs general writes, which this module passes in rather than trusts.
+    if (server === 'jarvis_connectors') return connectorDecision(connectorRule, tool, allowWrites)
+
     // The camera. Not withheld behind ALLOW_WRITES: looking changes nothing,
     // and the real gate is the browser's own camera permission plus an
     // indicator the user can see for as long as it is live.
@@ -398,6 +405,27 @@ function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool,
   return writes('unknown-builtin')
 }
 
+/** The rules a connector decision may carry; see bridge/connectors/registry.mjs. */
+const CONNECTOR_RULES = new Set([
+  'connector-read', 'connector-write', 'connector-subscribe', 'connector-not-granted',
+  'connector-disabled', 'connector-frozen', 'connector-unknown', 'connector-malformed',
+])
+
+/** Ask the connector registry about one of its tools, failing closed. */
+function connectorDecision(connectorRule, tool, allowWrites) {
+  let answer
+  try {
+    answer = connectorRule(tool, { allowWrites })
+  } catch {
+    return { allow: false, rule: 'connector-unknown' }
+  }
+  if (!answer || !CONNECTOR_RULES.has(answer.rule)) return { allow: false, rule: 'connector-unknown' }
+  // Only the three grant rules can allow, and a write never without general writes.
+  const mayAllow = ['connector-read', 'connector-subscribe'].includes(answer.rule)
+    || (answer.rule === 'connector-write' && allowWrites)
+  return { allow: answer.allow === true && mayAllow, rule: answer.rule }
+}
+
 /** Normalise the options every gate takes, failing closed on anything odd. */
 function gateOptions({
   allowWrites = false,
@@ -405,6 +433,7 @@ function gateOptions({
   isWorkflowTool = () => false,
   isTaskTool = () => false,
   isFrozen = () => false,
+  connectorRule = () => ({ allow: false, rule: 'connector-unknown' }),
 } = {}) {
   return {
     allowWrites: allowWrites === true,
@@ -414,6 +443,11 @@ function gateOptions({
     // Read on every decision, so the kill switch (plan 15) can freeze a policy
     // that is already built. Anything that isn't a function counts as frozen.
     isFrozen: typeof isFrozen === 'function' ? isFrozen : () => true,
+    // The connector registry's policyRule (connectors/registry.mjs). Without
+    // one, every connector tool is refused.
+    connectorRule: typeof connectorRule === 'function'
+      ? connectorRule
+      : () => ({ allow: false, rule: 'connector-unknown' }),
   }
 }
 
@@ -441,6 +475,8 @@ function recordDecision(audit, log, entry) {
  *   isTaskTool      — the jarvis_tasks tool list (task-tools.mjs).
  *   isFrozen        — the kill switch (plan 15), read on every decision: true
  *                     refuses everything. Not wired to a switch yet.
+ *   connectorRule   — the connector registry's policyRule(tool, { allowWrites })
+ *                     for `mcp__jarvis_connectors__…` tools. Default: refuse.
  *
  * Returns decideTool(name) → boolean: true runs the tool, false withholds it.
  * The bridge uses `createPolicy()`, which wraps this; it stays exported for
@@ -486,6 +522,15 @@ export const RULE_REASONS = Object.freeze({
   'no-read-verb': 'The tool name does not begin with a read verb, so it needs general writes.',
   'unknown-builtin': 'An unknown built-in tool needs general writes.',
   'unknown-action': 'Only tool calls are decided by policy so far; anything else is refused.',
+  // Connectors (plans/connectors). Each capability is a separate grant.
+  'connector-read': 'A connector read the owner granted.',
+  'connector-subscribe': 'A connector subscription the owner granted.',
+  'connector-write': "A connector write: needs the owner's write grant, general writes, and approval each time.",
+  'connector-not-granted': 'The owner has not granted that permission to this connector.',
+  'connector-disabled': 'This connector is turned off.',
+  'connector-frozen': 'All connectors are frozen by the kill switch.',
+  'connector-unknown': 'No connector offers that tool.',
+  'connector-malformed': 'The connector tool name is malformed.',
   // The never-list (NEVER.md). No setting turns these off.
   'frozen': 'JARVIS is frozen by the kill switch, so nothing runs.',
   'never-surveil': 'JARVIS never tracks, covertly records or reads the messages of other people.',
