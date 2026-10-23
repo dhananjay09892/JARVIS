@@ -84,10 +84,9 @@ this file decides *in what order*.
 - **Done when:** the ADR is ready for the owner to decide.
 
 ### Q09 · Plan 02 · Offline wake engine
-- **Status:** needs-you
-- **Needs you:** decide the wake engine in ADR 002 (from Q08), then set this to `todo`.
+- **Status:** todo
 - **Depends on:** Q08, Q06
-- **Scope:** 02 phase 2. Run the chosen engine on-device so no room audio goes to the cloud before the wake word.
+- **Scope:** 02 phase 2, with the engine chosen in ADR 002 (openWakeWord in the page, decided 2026-10-23). Follow the ADR's "Recommendation" steps 1–5: `WakeDetector` interface and `hey_jarvis` model, drop VAD audio locally while asleep, Settings toggle and sensitivity, false-wake counter, remove the `@picovoice/*` packages, record the model licence. Update the disclosure wording and `bridge/disclosure.test.mjs` together. If the model files cannot be fetched in the run, deliver the interface and pipeline with a test model and note what is missing.
 - **Done when:** no audio leaves the machine while JARVIS is asleep, verified by a test.
 
 ### Q10 · Plan 35 · Draft the never-list page

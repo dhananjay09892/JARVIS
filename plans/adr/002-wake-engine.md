@@ -1,10 +1,10 @@
 # ADR 002 · Wake engine: Porcupine vs openWakeWord
 
-- **Status:** Proposed (waiting for the owner)
+- **Status:** Accepted (2026-10-23)
 - **Plan:** [02 Offline wake word](../02-offline-wake-word.md) · roadmap open decision 2 in [37](../37-execution-roadmap-and-risks.md)
 - **Queue:** written by Q08; unblocks Q09 (offline wake engine)
 - **Date checked:** 2026-10-23
-- **Decision:** <!-- owner: write the chosen option here, then set Q09 to `todo` in plans/QUEUE.md -->
+- **Decision:** Accepted as recommended, decided by the owner on 2026-10-23: **Option B, openWakeWord running in the page**, behind a `WakeDetector` interface, with the `hey_jarvis` model, a ring buffer, local dropping of audio while asleep, a Settings toggle and sensitivity, a false-wake counter, and the regex path kept as the visible "cloud listening" fallback. The unused `@picovoice/*` packages and the `VITE_PICOVOICE_ACCESS_KEY` / `WAKE_ENGINE` code are removed (Porcupine is not kept as an opt-in). The pre-trained models are non-commercial (CC BY-NC-SA 4.0); train our own model before any commercial release.
 
 ## Context
 
