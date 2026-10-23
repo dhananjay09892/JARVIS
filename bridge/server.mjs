@@ -46,7 +46,8 @@ import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
 import { setting, updateSettings, publicSettings, readSettings } from './settings.mjs'
 import { settingDefault, settingsSchema } from './settings-registry.mjs'
-import { claudeStatus, startClaudeLogin } from './claude-cli.mjs'
+import { createClaudeBrain } from './brains/claude.mjs'
+import { createBrainRegistry } from './brains/registry.mjs'
 import { checkForUpdate } from './update.mjs'
 import { fileURLToPath } from 'node:url'
 
@@ -252,8 +253,8 @@ const EFFORT = setting('JARVIS_EFFORT') ?? settingDefault('JARVIS_EFFORT')
  * and the agent doesn't emit its init message — and therefore its server
  * list — until the first user message flows through, which is far too late.
  * More importantly, this bridge turns filesystem settings off (see
- * settingSources below) and the SDK stops discovering these servers on its
- * own, so handing them over explicitly is what keeps the local stdio ones —
+ * settingSources in brains/claude.mjs) and the SDK stops discovering these
+ * servers on its own, so handing them over explicitly is what keeps the local stdio ones —
  * the whole reason the bridge exists — in play.
  *
  * Only the global block and the home-directory project scope, because
@@ -292,6 +293,15 @@ const policy = createPolicy({
   audit,
 })
 const { decideTool } = policy
+
+/**
+ * The brains JARVIS can think with (plan 21). Only Claude so far, on the Agent
+ * SDK; the bridge talks to it through the registry and never calls the SDK
+ * directly, so the policy engine above stays the same whatever brain runs.
+ */
+const brains = createBrainRegistry()
+brains.register(createClaudeBrain({ query }))
+const brain = brains.default()
 
 /**
  * URLs that arrived in external content (search results, fetched pages, the
@@ -1060,7 +1070,7 @@ const handleRequest = async (req, res) => {
 
   // Is Claude Code installed and signed in? The brain cannot work without it.
   if (req.method === 'GET' && requestUrl.pathname === '/setup/status') {
-    const c = claudeStatus()
+    const c = brains.get('claude').status()
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(
       JSON.stringify({ claudeInstalled: c.installed, claudeVersion: c.version, claudeLoggedIn: c.loggedIn }),
@@ -1073,7 +1083,7 @@ const handleRequest = async (req, res) => {
       res.writeHead(403, cors)
       return res.end('forbidden')
     }
-    startClaudeLogin()
+    brains.get('claude').login()
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(JSON.stringify({ ok: true }))
   }
@@ -1426,36 +1436,27 @@ const taskManager = createTaskManager({
     taint.noteOwnerText(`${task.title}\n${task.goal}`)
     const controller = new AbortController()
     signal.addEventListener('abort', () => controller.abort(), { once: true })
-    return query({
+    return brain.startSession({
       prompt: `Task: ${task.title}
 
 ${task.goal}`,
-      options: {
-        abortController: controller,
-        mcpServers: {
-          ...MCP_SERVERS,
-          jarvis_task: progressServer(report, ask),
-          jarvis_workspace: workspaceServer(approve),
-          jarvis_development: developmentServer(approve),
-        },
-        systemPrompt: WORKER_PROMPT,
-        cwd: homedir(),
-        settingSources: [],
-        model: MODEL,
-        effort: EFFORT,
-        maxTurns: 40,
-        permissionMode: 'default',
-        disallowedTools: policy.disallowedTools(),
-        hooks: {
-          // The gate, then the taint check (plan 08, phase 2). See taint.mjs.
-          PreToolUse: [policy.preToolUse({ guard: taintGuard(taint, approve), actor: 'worker' })],
-          // Results the bridge does not build itself are labelled as untrusted
-          // data as they come back, and private reads taint the worker.
-          PostToolUse: [postToolUse(taint, 'worker')],
-        },
-        includePartialMessages: true,
-        canUseTool: policy.canUseTool('worker'),
+      actor: 'worker',
+      abortController: controller,
+      mcpServers: {
+        ...MCP_SERVERS,
+        jarvis_task: progressServer(report, ask),
+        jarvis_workspace: workspaceServer(approve),
+        jarvis_development: developmentServer(approve),
       },
+      systemPrompt: WORKER_PROMPT,
+      model: MODEL,
+      effort: EFFORT,
+      policy,
+      // The gate, then the taint check (plan 08, phase 2). See taint.mjs.
+      guard: taintGuard(taint, approve),
+      // Results the bridge does not build itself are labelled as untrusted
+      // data as they come back, and private reads taint the worker.
+      afterTool: postToolUse(taint, 'worker'),
     })
   },
 })
@@ -1636,103 +1637,53 @@ wss.on('connection', (socket, req) => {
     if (!failed) sendTurn({ type: 'tool', name })
   }
 
-  const session = query({
+  // Options and their reasons live with the brain (brains/claude.mjs).
+  const session = brain.startSession({
     prompt: userMessages(),
-    options: {
-      // Everything Claude Code has configured, plus the HUD as an in-process
-      // server. The HUD's handler closes over this socket, so a `display` call
-      // lands on screen directly — which is also why this object is built per
-      // connection rather than once.
-      mcpServers: {
-        ...MCP_SERVERS,
-        jarvis: displayServer(
-          (panel) => send({ type: 'panel', panel }),
-          (blade) => send({ type: 'blade', blade }),
-        ),
-        // The interface controls, on the same socket. A separate key because
-        // MCP tool names are `mcp__<key>__<tool>` and one key can only carry
-        // one server; the underscore in it is why decideTool and announceTool
-        // both name `jarvis_ui` explicitly.
-        jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
-        // The user's own Chrome, over the extension's native-host socket. It
-        // holds no per-connection state, but it is built here with the rest so
-        // the write gate is read once, at the same point as everything else.
-        jarvis_chrome: chromeServer({ allowWrites: policy.allowWrites }),
-        jarvis_apps: appsServer(),
-        jarvis_workspace: workspaceServer(approve),
-        jarvis_development: developmentServer(approve),
-        // The camera, which unlike everything else here has to ask and wait.
-        jarvis_eyes: visionServer(ask),
-        jarvis_tasks: taskServer(taskManager),
-        ...(workflows && { jarvis_workflows: workflowServer({ store: workflows, engine, approve }) }),
-        ...(sm && {
-          jarvis_memory: memoryServer(memory, {
-            conversation: () => sm.id,
-            project: () => sm.currentProject(),
-          }),
+    actor: 'voice',
+    // Everything Claude Code has configured, plus the HUD as an in-process
+    // server. The HUD's handler closes over this socket, so a `display` call
+    // lands on screen directly — which is also why this object is built per
+    // connection rather than once.
+    mcpServers: {
+      ...MCP_SERVERS,
+      jarvis: displayServer(
+        (panel) => send({ type: 'panel', panel }),
+        (blade) => send({ type: 'blade', blade }),
+      ),
+      // The interface controls, on the same socket. A separate key because
+      // MCP tool names are `mcp__<key>__<tool>` and one key can only carry
+      // one server; the underscore in it is why decideTool and announceTool
+      // both name `jarvis_ui` explicitly.
+      jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
+      // The user's own Chrome, over the extension's native-host socket. It
+      // holds no per-connection state, but it is built here with the rest so
+      // the write gate is read once, at the same point as everything else.
+      jarvis_chrome: chromeServer({ allowWrites: policy.allowWrites }),
+      jarvis_apps: appsServer(),
+      jarvis_workspace: workspaceServer(approve),
+      jarvis_development: developmentServer(approve),
+      // The camera, which unlike everything else here has to ask and wait.
+      jarvis_eyes: visionServer(ask),
+      jarvis_tasks: taskServer(taskManager),
+      ...(workflows && { jarvis_workflows: workflowServer({ store: workflows, engine, approve }) }),
+      ...(sm && {
+        jarvis_memory: memoryServer(memory, {
+          conversation: () => sm.id,
+          project: () => sm.currentProject(),
         }),
-      },
-      // A plain system prompt, not the claude_code preset. The preset is
-      // tuned for a coding agent — verbose, file-oriented, and a large chunk
-      // of input tokens on every turn. Replacing it makes the persona stick,
-      // keeps answers short enough to speak, and cuts cost per turn.
-      systemPrompt: SYSTEM_PROMPT,
-      // Run from the home directory so project-scoped MCP servers don't shadow
-      // the global ones, and so file tools have a sane root.
-      cwd: homedir(),
-      // No filesystem settings at all. Left to its default the SDK loads
-      // ~/.claude/settings.json and settings.local.json exactly as the CLI
-      // does — which on a working machine means a bypassPermissions default
-      // and a pile of allow-rules for Bash. Allow-rules are matched before the
-      // permission callback, so decideTool below would never even be asked
-      // about the tools it most needs to refuse. Empty makes this bridge the
-      // only authority. It also stops the global CLAUDE.md riding along on
-      // every voice turn, carrying instructions written for a coding agent
-      // into a conversation that is meant to be two sentences long.
-      //
-      // The cost is that MCP servers stop being discovered too, which is why
-      // mcpServers above passes them in by hand.
-      settingSources: [],
-      // Stated explicitly, and it has to be.
-      //
-      // With no `model` here the SDK falls back to its own default, which on
-      // this machine resolved to claude-opus-4-8[1m] — not what src/config.ts
-      // declares for the browser-direct path, and not anything anyone chose.
-      // Normally your own `/model` preference would decide, but that lives in
-      // the settings files `settingSources: []` deliberately stops loading, so
-      // without this line nothing in the project has a say at all.
-      model: MODEL,
-      effort: EFFORT,
-      maxTurns: 24,
-      permissionMode: 'default',
-      disallowedTools: policy.disallowedTools(),
-      hooks: {
-        // The gate, then the taint check: once this session has read private
-        // content, opening, fetching or sending to a destination the owner did
-        // not name waits for an approval card (plan 08, phase 2; taint.mjs).
-        PreToolUse: [policy.preToolUse({ guard: taintGuard(taint, approve), actor: 'voice' })],
-        // Results the bridge does not build itself — built-in tools such as
-        // WebFetch, and other people's MCP servers — come back with a note that
-        // they are untrusted data (plan 08, phase 2). JARVIS's own browser and
-        // page tools wrap their results where they are built. See untrusted.mjs.
-        // Every result is also noted for taint and for the media proxy.
-        PostToolUse: [postToolUse(taint, 'voice')],
-      },
-      // Without this the SDK only emits whole assistant messages, and JARVIS
-      // would sit silent until the entire answer was written. Partial events
-      // are what let speech start on the first finished sentence.
-      includePartialMessages: true,
-      // Signature is (toolName, input, options) and it must return a
-      // PermissionResult object. Returning a bare boolean silently denies
-      // everything, with the tool name arriving undefined.
-      //
-      // Worth knowing: this is a last gate, not the only one. Calls the CLI
-      // has already settled never arrive here — its own classifier waves
-      // through a `Bash: echo hello` without asking, and only reaches us for
-      // something with a consequence, like a `touch`. So a deny here is
-      // reliable; an absence of a call here is not proof nothing ran.
-      canUseTool: policy.canUseTool('voice', console.log),
+      }),
     },
+    systemPrompt: SYSTEM_PROMPT,
+    model: MODEL,
+    effort: EFFORT,
+    policy,
+    // Once this session has read private content, opening, fetching or
+    // sending to a destination the owner did not name waits for an approval
+    // card (plan 08, phase 2; taint.mjs).
+    guard: taintGuard(taint, approve),
+    afterTool: postToolUse(taint, 'voice'),
+    log: console.log,
   })
 
   // Pump the session's output stream to the browser for as long as it lives.

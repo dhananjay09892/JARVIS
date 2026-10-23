@@ -367,23 +367,34 @@ test('server.mjs routes every tool path through policy.mjs', () => {
   assert.doesNotMatch(src, /JARVIS_ALLOW_WRITES\s*===/)
   assert.match(src, /writesEnabled\(\{ env: process\.env, settings: readSettings\(\) \}\)/)
 
-  // Every agent the bridge starts: each query() has all three hooks into policy.
-  const agents = count(/\bquery\(\{/g)
+  // Every agent the bridge starts goes through the brain (brains/claude.mjs,
+  // plan 21) with the policy engine and the taint guard (plan 08); no agent
+  // is started by calling the SDK directly.
+  assert.equal(count(/\bquery\(/g), 0, 'agents start through the brain, not the SDK')
+  const agents = count(/brain\.startSession\(\{/g)
   assert.ok(agents >= 2, 'expected the voice session and the task worker')
-  assert.equal(count(/canUseTool:/g), agents, 'one canUseTool per agent')
-  assert.equal(count(/canUseTool: policy\.canUseTool\(/g), agents, 'canUseTool must come from policy')
-  assert.equal(count(/disallowedTools:/g), agents, 'one disallowedTools per agent')
-  assert.equal(count(/disallowedTools: policy\.disallowedTools\(\)/g), agents)
-  assert.equal(count(/PreToolUse:/g), agents, 'one PreToolUse hook per agent')
-  assert.equal(count(/PreToolUse: \[policy\.preToolUse\(/g), agents, 'the PreToolUse matcher must come from policy')
-  // Each agent's hook also runs the taint guard (plan 08) after the gate.
-  assert.equal(count(/policy\.preToolUse\(\{ guard: taintGuard\(/g), agents)
+  assert.equal(count(/^\s+policy,$/gm), agents, 'every session is given the policy engine')
+  assert.equal(count(/guard: taintGuard\(/g), agents, 'every session runs the taint guard')
+
+  // The brain builds every session's options in one place, all from policy.
+  const brain = readFileSync(new URL('./brains/claude.mjs', import.meta.url), 'utf8')
+  const inBrain = (re) => (brain.match(re) ?? []).length
+  assert.equal(inBrain(/canUseTool: policy\.canUseTool\(actor, log\)/g), 1, 'canUseTool must come from policy')
+  assert.equal(inBrain(/canUseTool:/g), 1)
+  assert.equal(inBrain(/disallowedTools: policy\.disallowedTools\(\)/g), 1)
+  assert.equal(inBrain(/disallowedTools:/g), 1)
+  assert.equal(inBrain(/PreToolUse: \[policy\.preToolUse\(\{ guard, actor \}\)\]/g), 1, 'the PreToolUse matcher must come from policy')
+  assert.equal(inBrain(/PreToolUse:/g), 1)
+  assert.equal(inBrain(/permissionMode: 'default'/g), 1, "every agent runs in permissionMode 'default'")
+  assert.equal(inBrain(/permissionMode:/g), 1)
+  assert.doesNotMatch(brain, /\ballowedTools:|allowDangerouslySkipPermissions|permissionDecision:/)
+  for (const opt of ['canUseTool:', 'disallowedTools:', 'PreToolUse:', 'permissionMode:']) {
+    assert.equal(count(new RegExp(opt, 'g')), 0, `${opt} is set by the brain, not server.mjs`)
+  }
 
   // The browser builds its acting tools from the same switch.
   assert.match(src, /chromeServer\(\{ allowWrites: policy\.allowWrites \}\)/)
   // No permission shortcuts that would skip the callback.
-  assert.equal(count(/permissionMode: 'default'/g), agents, "every agent runs in permissionMode 'default'")
-  assert.equal(count(/permissionMode:/g), agents)
   assert.doesNotMatch(src, /\ballowedTools:|allowDangerouslySkipPermissions/)
 })
 
