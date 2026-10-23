@@ -45,7 +45,7 @@ for *what* to build; this file decides *in what order*. The main roadmap queue i
 ## Framework
 
 ### C01 · connectors · Connector framework
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q02, Q04, Q14
 - **Scope:** Connector index "The JARVIS connector interface" and vetting rules 2–5, 8–9. `bridge/connectors/`: the `Connector` interface (plan 38 types), a registry that registers each adapter inside try/catch, a credential-store interface that uses the OS keychain once Q20 is `done` (until then a clearly marked dev-only store behind the same interface: outside the repo, file mode 0600, never plain secrets in git or logs), policy-engine registration per capability (read / write / subscribe as separate grants, writes off by default), untrusted-content wrapping for everything a connector returns (reuse Q02), per-connector and global kill switch, and a test-pack helper (auth failure, revoked token, injection fixture, rate limit, offline) every adapter reuses. One fake connector proves it end to end.
 - **Done when:** a fake connector registers, syncs fixture data as untrusted content, has its write capability denied by default, and passes the shared test pack; a throwing adapter does not break startup.

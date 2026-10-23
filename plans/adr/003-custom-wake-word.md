@@ -25,9 +25,9 @@ What already exists and shapes the choice:
 - The front end (mel + embedding) runs in the page on onnxruntime-web, behind the
   `WakeDetector` interface (`detector.ts`), with the score gate (`gate.ts`) and the router that
   drops asleep audio locally (`router.ts`). A new engine only has to implement `WakeDetector`.
-- Q47's recipe (open PR) rebuilds the mel front end from MIT/ISC formulas and lists commercially
+- Q47's recipe (merged, `scripts/wake/`) rebuilds the mel front end from MIT/ISC formulas and lists commercially
   usable training inputs in `scripts/wake/sources.json` (Kokoro-82M, Piper LibriTTS-R, FLEURS
-  en/hi/gu, MUSAN, OpenSLR 28). Q53 (added by the same PR) clears the embedding model (Google
+  en/hi/gu, MUSAN, OpenSLR 28). Q53 (queued) clears the embedding model (Google
   `speech_embedding`, Apache-2.0).
 - Kokoro-82M is already an optional local TTS (`kokoro-js`), but its `phonemizer` bundles
   GPL-3.0 eSpeak NG (licence blocker **B1**, owner decision **Q41**).
@@ -200,7 +200,7 @@ negative pack and Settings flow, so nothing built for A is thrown away.
 - Indic Parler-TTS (AI4Bharat, Apache-2.0, Hindi and Gujarati), third-party listing:
   https://tts.ai/voices/indic-parler/?lang=gu
 - Q47 recipe inputs and licences: `scripts/wake/sources.json` and `scripts/wake/README.md` on
-  branch `autopilot/Q47-wake-model-recipe` (open PR #39).
+  `main` (merged in PR #39).
 
 Not verified in this run: the Indic Parler-TTS model card on Hugging Face (fetch not permitted;
 re-check licence and size before using it), the training data behind Vosk's small models, and
