@@ -34,7 +34,8 @@ import { createSessionMemory } from './conversation.mjs'
 import { memoryServer, isMemoryTool } from './memory-tools.mjs'
 import { developmentServer } from './development.mjs'
 import { approvalQueue } from './approvals.mjs'
-import { createToolGate } from './tool-gate.mjs'
+import { createToolGate, isVetoed } from './tool-gate.mjs'
+import { createSeenUrls, createTaintTracker, guardOutbound, proxiedMediaIn } from './taint.mjs'
 import { UNTRUSTED_PROMPT, untrustedNotice } from './untrusted.mjs'
 import { homedir, tmpdir } from 'node:os'
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
@@ -268,6 +269,58 @@ const decideTool = createToolGate({
   isMemoryTool,
   isWorkflowTool,
   isTaskTool,
+})
+
+/**
+ * URLs that arrived in external content (search results, fetched pages, the
+ * owner's own words). Shared by every session's taint tracker and by the /img
+ * and /media proxy, which serves nothing else — see taint.mjs (plan 08).
+ */
+const seenUrls = createSeenUrls()
+
+/**
+ * The PreToolUse hook both agent kinds use: the permission gate first, then
+ * the taint check, which may hold the call on an approval card. The matcher's
+ * timeout is longer than the approval queue's 90 seconds so the card, not the
+ * hook, is what expires.
+ */
+const preToolUse = (taint, approve) => ({
+  timeout: 120,
+  hooks: [async (input) => {
+    let reason = null
+    if (!decideTool(input.tool_name)) {
+      reason = 'Use the approved JARVIS workspace and development tools instead.'
+    } else {
+      try {
+        reason = await guardOutbound(taint, approve, input.tool_name, input.tool_input)
+      } catch (err) {
+        // A check that cannot finish must refuse, never wave the call through.
+        console.error('[jarvis] taint check failed:', err)
+        reason = 'Not sent: the safety check could not finish. Tell the owner in one sentence.'
+      }
+    }
+    return reason === null ? {} : {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: reason,
+      },
+    }
+  }],
+})
+
+/** PostToolUse: note what was read for taint, then label it as untrusted. */
+const postToolUse = (taint) => ({
+  hooks: [async (input) => {
+    try {
+      taint.noteResult(input.tool_name, input.tool_response)
+    } catch (err) {
+      // Failing to read a result must not cost the taint: assume it was private.
+      taint.markPrivate(input.tool_name)
+      console.warn('[jarvis] taint: could not read a tool result:', err.message)
+    }
+    return untrustedNotice(input)
+  }],
 })
 
 const SYSTEM_PROMPT = `You are JARVIS. You are speaking out loud to one person.
@@ -595,6 +648,13 @@ const MEDIA_TIMEOUT_MS = 30_000
 async function proxyRemote(req, res, cors, { kinds, maxBytes, timeoutMs, ranged }) {
   const asked = new URL(req.url, 'http://x').searchParams.get('url') ?? ''
   const target = vetTarget(asked)
+  // Only media that arrived in a tool result, in the owner's words or in a page
+  // we rendered. A URL the model wrote into panel HTML is otherwise a beacon
+  // that fires the moment it is drawn, with nothing to approve (plan 08).
+  if (!seenUrls.has(asked)) {
+    console.warn(`[jarvis] media proxy refused ${target.hostname}: not seen in any tool result`)
+    throw proxyError(403, 'not a link from a tool result')
+  }
 
   const headers = {
     'user-agent': PROXY_UA,
@@ -843,6 +903,8 @@ const handleRequest = async (req, res) => {
     const mode = asked.searchParams.get('mode') === 'live' ? 'live' : 'reader'
     try {
       const page = await renderPage(target, mode, `http://localhost:${PORT}`)
+      // The reading view's images were chosen by the page, not by the model.
+      for (const url of proxiedMediaIn(page.body)) seenUrls.add(url)
       res.writeHead(200, { ...cors, ...page.headers })
       return res.end(page.body)
     } catch (err) {
@@ -1303,6 +1365,10 @@ const taskManager = createTaskManager({
   store: taskStore,
   runAgent: ({ task, signal, report, ask, wrapApprove }) => {
     const approve = wrapApprove(approvalHub.request)
+    // A brief is written by a model that may have read private content, so a
+    // worker starts tainted; the links in its brief count as named (taint.mjs).
+    const taint = createTaintTracker({ seen: seenUrls, isEffectful: isVetoed, tainted: true })
+    taint.noteOwnerText(`${task.title}\n${task.goal}`)
     const controller = new AbortController()
     signal.addEventListener('abort', () => controller.abort(), { once: true })
     return query({
@@ -1326,18 +1392,11 @@ ${task.goal}`,
         permissionMode: 'default',
         disallowedTools: ALLOW_WRITES ? [] : ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Agent', 'Task'],
         hooks: {
-          PreToolUse: [{
-            hooks: [async (input) => decideTool(input.tool_name) ? {} : {
-              hookSpecificOutput: {
-                hookEventName: 'PreToolUse',
-                permissionDecision: 'deny',
-                permissionDecisionReason: 'Use the approved JARVIS workspace and development tools instead.',
-              },
-            }],
-          }],
+          // The gate, then the taint check (plan 08, phase 2). See taint.mjs.
+          PreToolUse: [preToolUse(taint, approve)],
           // Results the bridge does not build itself are labelled as untrusted
-          // data as they come back (plan 08, phase 2). See untrusted.mjs.
-          PostToolUse: [{ hooks: [async (input) => untrustedNotice(input)] }],
+          // data as they come back, and private reads taint the worker.
+          PostToolUse: [postToolUse(taint)],
         },
         includePartialMessages: true,
         canUseTool: async (toolName) => decideTool(toolName)
@@ -1439,6 +1498,10 @@ wss.on('connection', (socket, req) => {
     send,
     connected: () => !closed && socket.readyState === socket.OPEN,
   })
+
+  // What this session has read, and which destinations the owner has named
+  // (plan 08, phase 2). Sticky for the session: private text stays in context.
+  const taint = createTaintTracker({ seen: seenUrls, isEffectful: isVetoed })
 
   /**
    * Announcing a tool on the HUD, once, and only if it actually runs.
@@ -1589,20 +1652,16 @@ wss.on('connection', (socket, req) => {
       permissionMode: 'default',
       disallowedTools: ALLOW_WRITES ? [] : ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Agent', 'Task'],
       hooks: {
-        PreToolUse: [{
-          hooks: [async (input) => decideTool(input.tool_name) ? {} : {
-            hookSpecificOutput: {
-              hookEventName: 'PreToolUse',
-              permissionDecision: 'deny',
-              permissionDecisionReason: 'Use the approved JARVIS workspace and development tools instead.',
-            },
-          }],
-        }],
+        // The gate, then the taint check: once this session has read private
+        // content, opening, fetching or sending to a destination the owner did
+        // not name waits for an approval card (plan 08, phase 2; taint.mjs).
+        PreToolUse: [preToolUse(taint, approvals.request)],
         // Results the bridge does not build itself — built-in tools such as
         // WebFetch, and other people's MCP servers — come back with a note that
         // they are untrusted data (plan 08, phase 2). JARVIS's own browser and
         // page tools wrap their results where they are built. See untrusted.mjs.
-        PostToolUse: [{ hooks: [async (input) => untrustedNotice(input)] }],
+        // Every result is also noted for taint and for the media proxy.
+        PostToolUse: [postToolUse(taint)],
       },
       // Without this the SDK only emits whole assistant messages, and JARVIS
       // would sit silent until the entire answer was written. Partial events
@@ -1791,7 +1850,12 @@ wss.on('connection', (socket, req) => {
       if (sm && id && !stored) return
       void settling.then(() => {
         answering = id
-        const text = stored ? stored.start() : preface ? `${preface}\n\n${msg.text}` : msg.text
+        const plain = preface ? `${preface}\n\n${msg.text}` : msg.text
+        const text = stored ? stored.start() : plain
+        // Only the owner's own words name destinations. Memory context riding
+        // along with the turn is private content, so it taints the session.
+        taint.noteOwnerText(msg.text)
+        if (text !== plain && text !== msg.text) taint.markPrivate('saved memories and earlier conversation')
         if (deliver) {
           const resolve = deliver
           deliver = null
