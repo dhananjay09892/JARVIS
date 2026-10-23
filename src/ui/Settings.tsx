@@ -20,6 +20,28 @@ import {
  * here is required for JARVIS to run on the browser's own speech.
  */
 
+/**
+ * What happens to microphone audio while JARVIS waits for his name. Keep this
+ * in step with DISCLAIMER.txt and voice.ts: the wake word is matched on a cloud
+ * transcript today, so this must not claim on-device wake detection until plan
+ * 02's offline engine ships. bridge/disclosure.test.mjs checks the wording.
+ */
+const LISTENING_NOTE = [
+  'The wake word is not detected on this computer yet. After you click INITIALISE, JARVIS keeps the microphone open until you close it, and sends what it hears to a speech service to listen for “Hey Jarvis”, even while asleep.',
+  'With an ElevenLabs key, sound loud enough to be speech is sent to ElevenLabs. Without one, your browser streams the microphone to its own speech service (Google in Chrome, Microsoft in Edge).',
+  'Close JARVIS when you do not want it listening. An offline wake word is planned.',
+]
+
+const listeningNote = (
+  <>
+    {LISTENING_NOTE.map((line) => (
+      <p key={line} className="mem-note">
+        {line}
+      </p>
+    ))}
+  </>
+)
+
 const EFFORTS = ['low', 'medium', 'high', 'xhigh']
 const RESTART = 'Saved. Restart JARVIS to apply.'
 
@@ -211,6 +233,7 @@ export function Settings() {
               Click INITIALISE, allow the microphone when your browser asks, then say <b>“Hey Jarvis”</b>. You can
               change any of this later under SETTINGS.
             </p>
+            {listeningNote}
             <button onClick={() => setStep(1)}>Back</button>
             <button disabled={busy} onClick={finish}>Finish</button>
           </>
@@ -230,6 +253,9 @@ export function Settings() {
 
             <h3>Voice</h3>
             {keyBlock}
+
+            <h3>Listening</h3>
+            {listeningNote}
 
             <h3>Brain</h3>
             <div className="mem-add">

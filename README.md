@@ -170,10 +170,13 @@ prints its choice, e.g. `[jarvis] model claude-opus-5 · effort medium`.
 
 The loop is designed so that nothing silently dies and barge-in feels natural.
 
-- **Detection is local.** An energy-based voice-activity detector
-  (`src/lib/vad.ts`) decides when you are speaking. It is instant, cannot quietly
-  fail, and is what makes **barge-in** work — speak while JARVIS is talking and he
-  stops.
+- **Speech detection is local; wake-word detection is not (yet).** An
+  energy-based voice-activity detector (`src/lib/vad.ts`) decides when you are
+  speaking. It is instant, cannot quietly fail, and is what makes **barge-in**
+  work — speak while JARVIS is talking and he stops. The wake word itself is
+  found by matching the *transcript*, so while JARVIS is asleep the audio still
+  goes to the transcription service below (see [DISCLAIMER.txt](DISCLAIMER.txt)).
+  An offline wake-word engine is planned (plan 02).
 - **Transcription has two tiers, chosen automatically at boot.** The browser asks
   the bridge `/health` and picks the best available:
   - **ElevenLabs key present** → ElevenLabs Scribe, via the bridge `/stt` endpoint.
@@ -559,10 +562,12 @@ The name J.A.R.V.I.S. is a tribute to Marvel's Iron Man stories; "Iron Man",
 Characters, Inc. and The Walt Disney Company), and no footage, images or voice
 recordings from any film are included. "Claude" and "Claude Code" are Anthropic's,
 "ElevenLabs" is ElevenLabs, Inc.'s; you use your own accounts under their terms.
-While JARVIS waits for "Hey Jarvis", short clips of speech it hears are sent to a
-speech service (ElevenLabs if you added a key, otherwise your browser's, which in
-Chrome is Google's) to check for the name, so room sound can leave your computer
-before you wake it; an offline wake-word engine is planned. Provided "as is" with no warranty. Rights holders with a concern: please open an
+The wake word is not detected on your computer yet: while JARVIS waits for "Hey Jarvis",
+what the microphone hears is sent to a speech service to check for the name (sound loud
+enough to be speech goes to ElevenLabs if you added a key; otherwise your browser streams
+the microphone to its own service, which is Google in Chrome and Microsoft in Edge), so
+room sound can leave your computer before you wake it. An offline wake-word engine is
+planned. Provided "as is" with no warranty. Rights holders with a concern: please open an
 [issue](https://github.com/dhananjay09892/JARVIS/issues). Full text:
 [DISCLAIMER.txt](DISCLAIMER.txt).
 

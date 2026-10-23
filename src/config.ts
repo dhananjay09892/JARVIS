@@ -148,12 +148,16 @@ export const MODEL = 'claude-opus-5'
 export const FAST_MODE = true
 
 /**
- * Wake-word engine.
- *   'speech'    — zero setup, uses the browser's SpeechRecognition to listen for
- *                 "hey jarvis". Chrome/Edge only, audio goes to Google.
- *   'porcupine' — recommended. Runs offline in WASM, "Jarvis" is a built-in
- *                 keyword, far fewer false triggers. Needs a free AccessKey
- *                 from console.picovoice.ai.
+ * Wake-word engine — NOT WIRED UP YET. Nothing reads this value today: the wake
+ * word is always found by matching transcripts in `voice.ts`, so asleep audio
+ * goes to whichever transcriber is active (ElevenLabs Scribe or the browser's
+ * SpeechRecognition). Setting VITE_PICOVOICE_ACCESS_KEY changes nothing yet.
+ * The offline engine is plan 02 phase 2; do not describe it to users as
+ * shipped until it is.
+ *   'speech'    — browser SpeechRecognition. Chrome/Edge only; audio goes to
+ *                 Google (Chrome) or Microsoft (Edge).
+ *   'porcupine' — planned. Would run offline in WASM ("Jarvis" is a built-in
+ *                 keyword). Needs a free AccessKey from console.picovoice.ai.
  */
 export const WAKE_ENGINE: 'speech' | 'porcupine' = env.porcupineKey
   ? 'porcupine'

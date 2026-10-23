@@ -14,7 +14,7 @@ for follow-ups), and has non-voice wake options (clap, gesture, hotkey, phone bu
 - Clap trigger exists (`clap.ts`).
 
 ## Phases
-1. **Disclose (30 min):** fix DISCLAIMER, site, Settings wording.
+1. **Disclose (30 min):** fix DISCLAIMER, site, Settings wording. ✅ Done (Q07, 2026-10-23).
 2. **Engine (1–2 d):** Porcupine ("Jarvis" built in) *or* openWakeWord ("hey jarvis"), run in
    the page (WASM) or bridge. Keep a 2–3 s ring buffer so the words after the name are not lost.
    In `wake` mode the VAD blobs are **dropped locally**; only a wake event starts STT.
@@ -43,3 +43,15 @@ Licence/keys (Picovoice free tier limits), model size on low-end laptops, mic pe
 
 ## Related plans
 [04 speech stack](04-local-speech-stack.md) · [16 network audit test](16-evals-and-observability.md) · [29 calibration](29-onboarding-and-first-run.md) · [35 consent](35-ethics-limits-and-governance.md)
+
+## Autopilot log
+- **2026-10-23 · Q07 · Phase 1 (disclosure) done.** DISCLAIMER.txt, the README (disclaimer
+  footer and the voice-loop "Detection is local" bullet) and a new "Listening" note in Settings
+  and the welcome wizard now say plainly that the wake word is not detected on-device yet: with
+  an ElevenLabs key, VAD-gated sound is sent to Scribe via the bridge; without one, the browser
+  streams the mic continuously to its speech service (Google in Chrome, Microsoft in Edge).
+  `WAKE_ENGINE` in `config.ts` is documented as not wired up. `bridge/disclosure.test.mjs`
+  fails if user-facing text claims on-device/offline wake detection and checks the disclosure
+  is present; it is added to the CI test list. Left: there is no separate website in the repo,
+  so "site" was covered by the README; phase 2 (offline engine) waits on ADR 002 (Q08/Q09).
+  When phase 2 ships, update the disclosure and the test together.
