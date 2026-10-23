@@ -16,6 +16,9 @@ listens through the browser's own speech, and everything still works.
 **Just want to use it?** Skip to [Install on Windows](#install-on-windows-no-setup-no-commands):
 download one installer and run it.
 
+**What JARVIS will never do** — spy on people, pretend to be human, move your money, take
+orders from a web page — is set out on one page: [NEVER.md](NEVER.md).
+
 ---
 
 ## Install on Windows (no setup, no commands)
@@ -550,6 +553,9 @@ All of this lives in `bridge/server.mjs`:
   resolve the real path, and refuse private and loopback addresses (SSRF guard).
 - The tool gate (`decideTool`) is default-deny for effectful MCP tools.
 - A strict CSP in `index.html`; model-authored panel HTML is sanitised.
+
+The limits JARVIS keeps no matter what it is asked are listed in
+[What JARVIS will never do](NEVER.md).
 
 ---
 

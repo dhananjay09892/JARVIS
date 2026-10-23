@@ -1,6 +1,6 @@
 # 35 · Ethics, limits and governance (what JARVIS will never do)
 
-**Status:** Pending · **Priority:** P0 (a short version before wider release) · **Effort:** 1–2 weeks to write and enforce, then ongoing
+**Status:** Partial · **Priority:** P0 (a short version before wider release) · **Effort:** 1–2 weeks to write and enforce, then ongoing
 
 ## Why
 A system that listens, remembers, speaks for you and acts needs explicit limits that don't
@@ -36,7 +36,7 @@ depend on any one model's mood. This plan turns values into rules, tests and rel
 9. **Sunset and portability:** the user can export everything and leave (17).
 
 ## Phases
-1. **Write the one-page "What JARVIS will never do" and publish it (2 d).**
+1. **Write the one-page "What JARVIS will never do" and publish it (2 d).** *Drafted in [NEVER.md](../NEVER.md) (Q10); wording awaits owner approval in the PR review.*
 2. **Encode the never-list as tests (1 w)** in 15/16.
 3. **Privacy/legal register v1 (3 d)** for the regions you operate in.
 4. **Red-team suite and release gate (1 w).**
@@ -48,3 +48,15 @@ depend on any one model's mood. This plan turns values into rules, tests and rel
 
 ## Done when
 The never-list is published, enforced by passing tests, and referenced from the disclaimer and Privacy Centre.
+
+## Autopilot log
+- **2026-10-23 — Phase 1 (Q10, never-list page).** Wrote [`NEVER.md`](../NEVER.md), the
+  one-page "What JARVIS will never do": one plain-language rule for each of the seven
+  never-list items above, each with a **Today** line saying honestly how far it is enforced
+  now (rule 4, injection, is covered by the Q02/Q03 tests; rule 3 is refused in the default
+  read-only mode only; the others are marked *planned*). Linked from the top of the README
+  and its Security section. `bridge/never-list.test.mjs` checks the page has one rule per
+  never-list item, a Today line for each, the README link, and that it does not claim the
+  kill switch exists yet; added to the release workflow's test list. Left: owner approval
+  of the wording, linking from DISCLAIMER and the Privacy Centre (the plan's "Done when"),
+  and phase 2 (Q11, each rule as a policy rule with a test).

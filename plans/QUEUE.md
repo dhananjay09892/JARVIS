@@ -91,7 +91,7 @@ this file decides *in what order*.
 - **Done when:** no audio leaves the machine while JARVIS is asleep, verified by a test.
 
 ### Q10 · Plan 35 · Draft the never-list page
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** 35 phase 1. Write the one-page "What JARVIS will never do" from the never-list in plan 35. You approve the wording in the PR review.
 - **Done when:** the page exists and is linked from the README.
