@@ -110,7 +110,7 @@ this file decides *in what order*.
 
 ### Q41 · Plan 36 · Fix the licence blockers
 - **Status:** needs-you
-- **Needs you:** read "Blockers and risks" in `plans/LICENCES.md` and decide B1 (Kokoro's `phonemizer` bundles GPL-3.0 eSpeak NG into the installer): (a) leave the Kokoro chunk out of installer builds, (b) swap the phonemizer for a permissive one, or (c) accept GPL-3.0 for that part with notices. Write the choice under B1, then set this to `todo`. B2 (Claude Code binary terms) is decided with Q15.
+- **Needs you:** read "Blockers and risks" in `plans/LICENCES.md` and decide B1 (Kokoro's `phonemizer` bundles GPL-3.0 eSpeak NG into the installer): (a) leave the Kokoro chunk out of installer builds, (b) swap the phonemizer for a permissive one, or (c) accept GPL-3.0 for that part with notices. Write the choice under B1, then set this to `todo`. B2 (Claude Code binary terms) was decided in ADR 001 on 2026-10-23.
 - **Depends on:** Q12
 - **Scope:** 36 phase 3, second half. Apply the B1 choice; ship Node's `LICENSE` next to `node.exe` in the installer (B7); confirm the `webgl-constants` licence (B8); remove the unused Picovoice packages if ADR 002 picks openWakeWord (B3).
 - **Done when:** no open blocker in `plans/LICENCES.md` applies to the installer.
@@ -171,6 +171,25 @@ this file decides *in what order*.
 - **Depends on:** Q17, Q18
 - **Scope:** 25 phase 1. Generic adapter with an OpenAI profile: streaming, tool loop, cancellation, usage. Test against a mock server so no paid key is needed.
 - **Done when:** the adapter passes the conformance suite against the mock.
+
+### Q42 · Plan 21 · Claude API-key fallback
+- **Status:** todo
+- **Depends on:** Q20
+- **Scope:** ADR 001 decision (Anthropic line). Add an optional Claude API-key mode next to subscription sign-in: the key is stored in the keychain from Q20 and passed to the stock binary as `ANTHROPIC_API_KEY`; subscription stays the default; `status().authMode` reports which is in use; a Settings control to choose it. Never read or store Claude.ai credentials.
+- **Done when:** JARVIS runs on either the user's subscription or their API key, switchable in Settings, with tests.
+
+### Q43 · Plan 22 · Sign in with ChatGPT for the OpenAI profile
+- **Status:** todo
+- **Depends on:** Q21
+- **Scope:** ADR 001 decision (OpenAI line). Add a Sign in with ChatGPT auth option to the OpenAI profile from Q21, following the SIWC terms: local token storage, a "Manage usage" link, consent before background tasks, privacy notice. Test against mocks.
+- **Done when:** the OpenAI profile works with SIWC or an API key, with tests.
+
+### Q44 · Plan 21 · Written confirmation from Anthropic
+- **Status:** needs-you
+- **Needs you:** write to Anthropic (support or sales) describing JARVIS: each user signs in with their own subscription to the unmodified Claude Code binary through the Agent SDK. Ask them to confirm in writing that this is allowed, then paste the answer in ADR 001 and set this to `done`.
+- **Depends on:** none
+- **Scope:** ADR 001 option D.
+- **Done when:** Anthropic's answer is recorded in ADR 001.
 
 ### Q22 · Plan 25 · Keys behind the bridge
 - **Status:** todo

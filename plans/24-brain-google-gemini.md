@@ -22,7 +22,7 @@ Outcome options: (a) API key only, (b) API key + official subscription route, (c
 
 ## Design
 - **Track A, API key (tool-loop mode, shares code with plan 25):** Gemini API with function calling; JARVIS runs the loop; persona via system instruction; streaming; vision support (useful for plan 11/14).
-- **Track B, subscription route:** only if the gate confirms an official, third-party-permitted path; an adapter like 22/23 using the vendor CLI/SDK with MCP and permission hooks.
+- **Track B, subscription route:** *dropped by ADR 001 (2026-10-23): Google is API key only unless Google publishes a third-party route.* Originally: only if the gate confirms an official, third-party-permitted path; an adapter like 22/23 using the vendor CLI/SDK with MCP and permission hooks.
 - Strengths to exploit: long context (large documents, screen history), native multimodal (images, audio, video), cheap fast models for the quick path.
 - Privacy note: if the free tier uses data for improvement, show a warning and recommend a paid tier for private use.
 

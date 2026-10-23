@@ -1,13 +1,19 @@
 # ADR 001 · Subscription brain terms: may JARVIS run on a user's own subscription login?
 
-- **Status:** Proposed (waiting for the owner)
+- **Status:** Accepted (2026-10-23)
 - **Plans:** [21 Multi-brain framework](../21-multi-brain-framework.md) (phase 6, provider terms register) ·
   [22 Codex](../22-brain-openai-codex.md) · [23 Copilot](../23-brain-github-copilot.md) ·
   [24 Gemini](../24-brain-google-gemini.md) · [27 Other agent CLIs](../27-brain-other-agent-clis.md) ·
   roadmap open decision 1 in [37](../37-execution-roadmap-and-risks.md) · licence blocker **B2** in [LICENCES](../LICENCES.md)
 - **Queue:** written by Q15. Informs Q16–Q18 and Q21 (brain interface and adapters) and Q41 (B2).
 - **Date checked:** 2026-10-23
-- **Decision:** <!-- owner: write the chosen option per provider here (see "Decision to make" below). Then update B2 in plans/LICENCES.md. -->
+- **Decision:** Accepted as recommended (**B + D**), decided by the owner on 2026-10-23:
+  - **Anthropic:** subscription sign-in stays the default; add a Claude API-key mode as a supported fallback (Q42). Keep every B2 condition (stock binary, never touch credentials, never "Claude Code" in the product name). Ask Anthropic for written confirmation (Q44) and record the answer here.
+  - **OpenAI:** Sign in with ChatGPT + Responses API through the Q21 adapter (Q43), following the SIWC terms; not the Codex CLI's login.
+  - **GitHub Copilot:** Copilot SDK login, one GitHub login per person (plan 23).
+  - **Google:** API key only; plan 24 Track B dropped unless Google publishes a third-party route.
+  - **Other agent CLIs (plan 27):** API key only until a vendor documents subscription use.
+  - Build the terms register (21 phase 6) and re-check this ADR before each release.
 
 > This is a reading of public vendor documents by the autopilot, not legal advice. Terms in this
 > area changed several times in 2026 (see the Anthropic timeline below), so every row carries the
