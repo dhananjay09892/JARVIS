@@ -20,7 +20,7 @@ time/quiet hours, budgets, standing grants.
 Risk tiers: **R0** read local · **R1** read private/remote · **R2** reversible write · **R3** irreversible/external (send, spend, delete, unlock) · **R4** forbidden.
 
 ## Phases
-1. **Extract and test (P0):** move gating into `bridge/policy.mjs`; table-driven tests; no behaviour change except fixing known defects (08).
+1. ✅ **Extract and test (P0) — done (autopilot, 2026-10-23, awaiting review):** move gating into `bridge/policy.mjs`; table-driven tests; no behaviour change except fixing known defects (08).
 2. **Roles and identity (with 01):** owner/member/child/guest matrices.
 3. **Standing grants:** "for the next 30 minutes you may archive mail"; time-boxed, scoped, listed in UI, revocable.
 4. **Taint and egress control:** track untrusted content; egress allow-list; outbound URL approval after private reads.
@@ -30,6 +30,26 @@ Risk tiers: **R0** read local · **R1** read private/remote · **R2** reversible
 8. **Privacy centre:** one screen: connected sources, data stored, voiceprints, retention, what leaves the machine; export & delete-all buttons.
 9. **Secrets handling:** OS keychain/DPAPI for keys; never log secrets; redaction filters on logs and prompts.
 10. **Third-party review:** threat model doc, external pen-test before wider release.
+
+## Autopilot log
+- **2026-10-23 — Phase 1 (Q04, extract and test).** `bridge/tool-gate.mjs` became
+  `bridge/policy.mjs` and gained `createPolicy()`, which now owns every piece of tool gating
+  that was inline in `server.mjs`: the write switch (`writesEnabled`), the SDK
+  `disallowedTools` list, the PreToolUse hook matcher, both `canUseTool` callbacks and their
+  refusal messages (`DENY_MESSAGES`), and the switch `chromeServer` builds its acting tools
+  from. The PreToolUse hook runs the gate first and then an optional guard — the Q03 taint
+  check (`taint.mjs`) is passed in as that guard, with the same 120 s timeout and
+  fail-closed handling it had. `policy.decide({ kind: 'tool', name })` returns a plan-38
+  style `PolicyDecision` (`verdict`, `rule`, `reason`); non-tool actions are denied.
+  No behaviour change: the 141-case gate table is unchanged and `decideTool` is checked
+  against it in both modes. A wiring test reads `server.mjs` and fails if any agent's
+  `canUseTool`, `disallowedTools` or PreToolUse hook bypasses the policy, if the taint guard
+  is missing, or if writes are computed inline. `tool-gate.mjs` is gone.
+  **Left:** `verdict: 'ask'` is not produced yet — approval cards still live in the servers
+  that act (workspace, development, workflows) and in the taint guard; folding them into
+  `decide()` belongs with grants (phase 3) and taint/egress (phase 4). Add
+  `bridge/policy.test.mjs` and `bridge/taint.test.mjs` to the CI test list in
+  `.github/workflows/release.yml`.
 
 ## Metrics
 100 % of tool paths go through policy (test enforces via a registry); 0 R3 actions without approval/grant; audit completeness; time-to-freeze < 1 s.

@@ -29,7 +29,7 @@
  * clear our memory of the risk, not the risk. An approved target is remembered
  * for the rest of the session so the owner is asked once, not every time.
  *
- * No dependencies, like tool-gate.mjs, so taint.test.mjs can drive it directly.
+ * No dependencies, like policy.mjs, so taint.test.mjs can drive it directly.
  */
 
 // ---------------------------------------------------------------------------
@@ -260,7 +260,7 @@ const CHROME_OUTBOUND = new Set(['chrome_navigate', 'chrome_type', 'chrome_form_
  *   'always' — outbound whatever its arguments; with no target we can check,
  *              a tainted session must ask.
  *
- * `isEffectful(server, tool)` is the gate's own veto (tool-gate.mjs isVetoed):
+ * `isEffectful(server, tool)` is the gate's own veto (policy.mjs isVetoed):
  * a third-party tool that sends, posts or creates is outbound even when it
  * names no target we can read.
  */
@@ -361,7 +361,7 @@ export function proxiedMediaIn(html) {
  * One per agent session.
  *
  *   seen         — the bridge's createSeenUrls().
- *   isEffectful  — tool-gate.mjs isVetoed, so a send/post/create counts.
+ *   isEffectful  — policy.mjs isVetoed, so a send/post/create counts.
  *   tainted      — start tainted (a background worker, whose brief was
  *                  written by a model that may have read private content).
  */
