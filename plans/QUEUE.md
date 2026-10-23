@@ -54,7 +54,7 @@ this file decides *in what order*.
 - **Done when:** an injected "open this URL with my data" is blocked in a test.
 
 ### Q04 · Plan 15 · Extract the policy engine
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q01
 - **Scope:** 15 phase 1. Move all gating into `bridge/policy.mjs` with table-driven tests. No behaviour change beyond the fixes from Q01.
 - **Done when:** every tool decision goes through `policy.mjs` and the existing behaviour is pinned by tests.

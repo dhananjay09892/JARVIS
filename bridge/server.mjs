@@ -34,7 +34,7 @@ import { createSessionMemory } from './conversation.mjs'
 import { memoryServer, isMemoryTool } from './memory-tools.mjs'
 import { developmentServer } from './development.mjs'
 import { approvalQueue } from './approvals.mjs'
-import { createToolGate, isVetoed } from './tool-gate.mjs'
+import { createPolicy, writesEnabled, isVetoed } from './policy.mjs'
 import { createSeenUrls, createTaintTracker, guardOutbound, proxiedMediaIn } from './taint.mjs'
 import { UNTRUSTED_PROMPT, untrustedNotice } from './untrusted.mjs'
 import { homedir, tmpdir } from 'node:os'
@@ -199,8 +199,7 @@ function originAllowed(origin) {
  * runs a shell, or changes the world waits for JARVIS_ALLOW_WRITES=1. Start
  * without it, and turn it on once you trust what you're demoing.
  */
-const ALLOW_WRITES =
-  process.env.JARVIS_ALLOW_WRITES === '1' || readSettings().JARVIS_ALLOW_WRITES === '1'
+const ALLOW_WRITES = writesEnabled({ env: process.env, settings: readSettings() })
 
 /**
  * The orchestrator model. Override with JARVIS_MODEL to trade quality for pace
@@ -260,16 +259,17 @@ function configuredServers() {
 const MCP_SERVERS = configuredServers()
 
 /**
- * The permission gate lives in tool-gate.mjs, where it is tested on its own.
+ * The policy engine lives in policy.mjs, where it is tested on its own.
  * Every path a tool call can take — the voice session, sub-agents, the
- * PreToolUse hook and canUseTool — asks this one function.
+ * PreToolUse hook, canUseTool and the SDK's disallowedTools list — asks it.
  */
-const decideTool = createToolGate({
+const policy = createPolicy({
   allowWrites: ALLOW_WRITES,
   isMemoryTool,
   isWorkflowTool,
   isTaskTool,
 })
+const { decideTool } = policy
 
 /**
  * URLs that arrived in external content (search results, fetched pages, the
@@ -279,35 +279,13 @@ const decideTool = createToolGate({
 const seenUrls = createSeenUrls()
 
 /**
- * The PreToolUse hook both agent kinds use: the permission gate first, then
- * the taint check, which may hold the call on an approval card. The matcher's
- * timeout is longer than the approval queue's 90 seconds so the card, not the
- * hook, is what expires.
+ * The taint check (plan 08, phase 2) that the policy's PreToolUse hook runs
+ * after the gate, for both agent kinds. It may hold the call on an approval
+ * card; policy.preToolUse() gives the hook a timeout longer than the approval
+ * queue's 90 seconds so the card, not the hook, is what expires.
  */
-const preToolUse = (taint, approve) => ({
-  timeout: 120,
-  hooks: [async (input) => {
-    let reason = null
-    if (!decideTool(input.tool_name)) {
-      reason = 'Use the approved JARVIS workspace and development tools instead.'
-    } else {
-      try {
-        reason = await guardOutbound(taint, approve, input.tool_name, input.tool_input)
-      } catch (err) {
-        // A check that cannot finish must refuse, never wave the call through.
-        console.error('[jarvis] taint check failed:', err)
-        reason = 'Not sent: the safety check could not finish. Tell the owner in one sentence.'
-      }
-    }
-    return reason === null ? {} : {
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: reason,
-      },
-    }
-  }],
-})
+const taintGuard = (taint, approve) => (toolName, toolInput) =>
+  guardOutbound(taint, approve, toolName, toolInput)
 
 /** PostToolUse: note what was read for taint, then label it as untrusted. */
 const postToolUse = (taint) => ({
@@ -1390,18 +1368,16 @@ ${task.goal}`,
         effort: EFFORT,
         maxTurns: 40,
         permissionMode: 'default',
-        disallowedTools: ALLOW_WRITES ? [] : ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Agent', 'Task'],
+        disallowedTools: policy.disallowedTools(),
         hooks: {
           // The gate, then the taint check (plan 08, phase 2). See taint.mjs.
-          PreToolUse: [preToolUse(taint, approve)],
+          PreToolUse: [policy.preToolUse({ guard: taintGuard(taint, approve) })],
           // Results the bridge does not build itself are labelled as untrusted
           // data as they come back, and private reads taint the worker.
           PostToolUse: [postToolUse(taint)],
         },
         includePartialMessages: true,
-        canUseTool: async (toolName) => decideTool(toolName)
-          ? { behavior: 'allow' }
-          : { behavior: 'deny', message: 'Blocked. Use the workspace and development tools; commands wait for owner approval.' },
+        canUseTool: policy.canUseTool('worker'),
       },
     })
   },
@@ -1602,7 +1578,7 @@ wss.on('connection', (socket, req) => {
         // The user's own Chrome, over the extension's native-host socket. It
         // holds no per-connection state, but it is built here with the rest so
         // the write gate is read once, at the same point as everything else.
-        jarvis_chrome: chromeServer({ allowWrites: ALLOW_WRITES }),
+        jarvis_chrome: chromeServer({ allowWrites: policy.allowWrites }),
         jarvis_apps: appsServer(),
         jarvis_workspace: workspaceServer(approvals.request),
         jarvis_development: developmentServer(approvals.request),
@@ -1650,12 +1626,12 @@ wss.on('connection', (socket, req) => {
       effort: EFFORT,
       maxTurns: 24,
       permissionMode: 'default',
-      disallowedTools: ALLOW_WRITES ? [] : ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Agent', 'Task'],
+      disallowedTools: policy.disallowedTools(),
       hooks: {
         // The gate, then the taint check: once this session has read private
         // content, opening, fetching or sending to a destination the owner did
         // not name waits for an approval card (plan 08, phase 2; taint.mjs).
-        PreToolUse: [preToolUse(taint, approvals.request)],
+        PreToolUse: [policy.preToolUse({ guard: taintGuard(taint, approvals.request) })],
         // Results the bridge does not build itself — built-in tools such as
         // WebFetch, and other people's MCP servers — come back with a note that
         // they are untrusted data (plan 08, phase 2). JARVIS's own browser and
@@ -1676,25 +1652,7 @@ wss.on('connection', (socket, req) => {
       // through a `Bash: echo hello` without asking, and only reaches us for
       // something with a consequence, like a `touch`. So a deny here is
       // reliable; an absence of a call here is not proof nothing ran.
-      canUseTool: async (toolName) => {
-        const ok = decideTool(toolName)
-        console.log(`[jarvis] tool ${toolName} -> ${ok ? 'allow' : 'deny'}`)
-        return ok
-          ? { behavior: 'allow' }
-          : {
-              behavior: 'deny',
-              // Every word of this can end up spoken, so it carries no command
-              // to read out — the persona is forbidden from saying one aloud.
-              message:
-                'Blocked: general write and command access is disabled. ' +
-                'For files in Documents/GitHub, use mcp__jarvis_workspace__list_files, ' +
-                'mcp__jarvis_workspace__read_file, and mcp__jarvis_workspace__write_file; ' +
-                'those tools allow local file creation and editing without general writes. ' +
-                'Do not request broader permissions for workspace file tasks. ' +
-                'For commands or GitHub pushes, use mcp__jarvis_development__run_command ' +
-                'and wait for browser approval. Other effectful actions are unavailable.',
-            }
-      },
+      canUseTool: policy.canUseTool('voice', console.log),
     },
   })
 
