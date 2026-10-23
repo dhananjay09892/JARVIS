@@ -1,0 +1,100 @@
+{
+  "scenario": "Voice command with a tool call: the owner asks what is on the calendar today; the brain calls a read-only calendar tool, the policy engine allows it, and the answer is spoken.",
+  "steps": [
+    {
+      "contract": "Utterance",
+      "value": {
+        "v": 1, "id": "utt-0001", "ts": 1792800001200,
+        "traceId": "3f9a1c0e7b2d4a65", "deviceId": "desk-pc", "room": "study",
+        "modality": "voice", "text": "What's on my calendar today?",
+        "language": "en-IN", "langConfidence": 0.97, "audioMs": 1800,
+        "identity": { "personId": "dhananjay", "role": "owner", "confidence": 0.91, "sources": ["voice", "device"] },
+        "wake": { "engine": "porcupine", "score": 0.88 },
+        "timings": { "speechEnd": 1792800001000, "sttDone": 1792800001180 }
+      }
+    },
+    {
+      "contract": "BusEvent",
+      "value": {
+        "v": 1, "id": "evt-0001", "ts": 1792800001201, "topic": "utterance.received", "traceId": "3f9a1c0e7b2d4a65",
+        "payload": {
+          "v": 1, "id": "utt-0001", "ts": 1792800001200,
+          "traceId": "3f9a1c0e7b2d4a65", "deviceId": "desk-pc", "room": "study",
+          "modality": "voice", "text": "What's on my calendar today?",
+          "language": "en-IN", "langConfidence": 0.97,
+          "identity": { "personId": "dhananjay", "role": "owner", "confidence": 0.91, "sources": ["voice", "device"] },
+          "wake": { "engine": "porcupine", "score": 0.88 },
+          "timings": { "speechEnd": 1792800001000, "sttDone": 1792800001180 }
+        }
+      }
+    },
+    {
+      "contract": "TurnContext",
+      "value": {
+        "v": 1, "id": "turn-0001", "ts": 1792800001210, "traceId": "3f9a1c0e7b2d4a65",
+        "utterance": {
+          "v": 1, "id": "utt-0001", "ts": 1792800001200,
+          "traceId": "3f9a1c0e7b2d4a65", "deviceId": "desk-pc", "room": "study",
+          "modality": "voice", "text": "What's on my calendar today?",
+          "language": "en-IN", "langConfidence": 0.97,
+          "identity": { "personId": "dhananjay", "role": "owner", "confidence": 0.91, "sources": ["voice", "device"] },
+          "wake": { "engine": "porcupine", "score": 0.88 },
+          "timings": { "speechEnd": 1792800001000, "sttDone": 1792800001180 }
+        },
+        "persona": { "id": "jarvis", "mode": "normal" },
+        "slices": [
+          { "name": "presence", "source": "satellites", "fetchedAt": 1792800001100, "ttlMs": 60000, "sensitivity": "private", "text": "Owner alone in the study.", "untrusted": false }
+        ],
+        "memories": [
+          { "id": "mem-0042", "text": "Prefers 24-hour times.", "source": "preference", "score": 0.71 }
+        ],
+        "tools": [
+          { "name": "mcp__calendar__list_events", "server": "calendar", "description": "List calendar events in a time range.", "readOnly": true, "risk": "R0" }
+        ],
+        "budget": { "maxTokens": 4000, "maxSteps": 4, "maxSpendUsd": 0.05 }
+      }
+    },
+    { "contract": "BrainEvent", "value": { "t": "tool_call", "id": "call-1", "name": "mcp__calendar__list_events", "args": { "from": "2026-10-23T00:00:00+05:30", "to": "2026-10-23T23:59:59+05:30" } } },
+    {
+      "contract": "PolicyRequest",
+      "value": {
+        "v": 1, "id": "req-0001", "ts": 1792800001900, "traceId": "3f9a1c0e7b2d4a65",
+        "action": { "kind": "tool", "name": "mcp__calendar__list_events", "args": { "from": "2026-10-23T00:00:00+05:30", "to": "2026-10-23T23:59:59+05:30" } },
+        "actor": { "personId": "dhananjay", "role": "owner", "confidence": 0.91, "sources": ["voice", "device"] },
+        "room": "study", "presence": [], "via": "voice",
+        "taint": { "privateRead": false, "untrustedContent": false },
+        "risk": "R0"
+      }
+    },
+    {
+      "contract": "PolicyDecision",
+      "value": {
+        "v": 1, "id": "dec-0001", "ts": 1792800001901, "requestId": "req-0001",
+        "verdict": "allow", "rule": "read-only-mcp", "reason": "Reading your calendar changes nothing."
+      }
+    },
+    { "contract": "BrainEvent", "value": { "t": "tool_result", "id": "call-1", "ok": true, "summary": "2 events", "tainted": true } },
+    { "contract": "BrainEvent", "value": { "t": "text", "delta": "You have two things today: stand-up at 10:00 and the dentist at 16:30." } },
+    { "contract": "BrainEvent", "value": { "t": "usage", "inTokens": 1820, "outTokens": 41, "costUsd": 0.006 } },
+    { "contract": "BrainEvent", "value": { "t": "done", "reason": "complete" } },
+    {
+      "contract": "AuditRecord",
+      "value": {
+        "v": 1, "id": "aud-0001", "ts": 1792800001902,
+        "actor": { "personId": "dhananjay", "role": "owner", "confidence": 0.91, "sources": ["voice", "device"] },
+        "request": {
+          "v": 1, "id": "req-0001", "ts": 1792800001900, "traceId": "3f9a1c0e7b2d4a65",
+          "action": { "kind": "tool", "name": "mcp__calendar__list_events" },
+          "actor": { "personId": "dhananjay", "role": "owner", "confidence": 0.91, "sources": ["voice", "device"] },
+          "presence": [], "taint": { "privateRead": false, "untrustedContent": false }
+        },
+        "decision": {
+          "v": 1, "id": "dec-0001", "ts": 1792800001901, "requestId": "req-0001",
+          "verdict": "allow", "rule": "read-only-mcp", "reason": "Reading your calendar changes nothing."
+        },
+        "result": { "ok": true },
+        "prevHash": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    }
+  ]
+}
