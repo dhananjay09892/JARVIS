@@ -23,12 +23,6 @@ and a wordmark. "JARVIS" stays only as an internal codename.
 | Gujarati | તમેલો |
 | Wake word | "Hey Tamelo" (3 syllables, distinct from "Hey Siri", "Alexa", "OK Google") |
 
-> **Spelling note:** it was also written as "TameIO" (capital I + capital O). In many fonts a
-> capital I and a lowercase l look identical, but "TameIO" would be read as "Tame-I-O"
-> (TAYM-eye-oh), which breaks the pronunciation rules below and loses the Hindi/Gujarati
-> spelling. Decide one form before filing. **Recommended: Tamelo.** If the "I/O" tech
-> reference is wanted, use it only as a styled logo treatment, never as the registered name.
-
 ### Why it works in every language
 - **Only stable sounds:** t, m, l and the plain vowels a, e, o. No "ai", "ou", "th", "j" or
   "w", which change between languages.
@@ -86,7 +80,7 @@ A web search is **not** legal clearance. The steps below are what actually make 
 **Backup name:** Kalemo (kah-LEH-moh), same pronunciation rules.
 
 ## Steps to claim the name
-1. [ ] Confirm final spelling (Tamelo vs TameIO).
+1. [x] Final spelling confirmed: **Tamelo**.
 2. [ ] Trademark search: USPTO (tmsearch.uspto.gov), UK IPO, and India (IP India / ipindia.gov.in), classes **9** (software) and **42** (SaaS / AI services).
 3. [ ] Trademark attorney clearance search, including the Tamplo similarity.
 4. [ ] Register domains: tamelo.com, tamelo.ai, tamelo.in.
