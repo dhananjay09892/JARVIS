@@ -8,15 +8,20 @@
  * second brain can be added beside this one without touching the turn loop.
  *
  * This is a move, not a redesign: the options below are exactly the ones
- * server.mjs used to build inline, and claude.test.mjs pins them. Normalising
- * the SDK's stream into BrainEvents is the next step (plan 21 phase 2, Q17);
- * until then the caller still reads the SDK's own message shapes.
+ * server.mjs used to build inline, and claude.test.mjs pins them.
+ *
+ * Two ways in. `startSession` returns the SDK's own Query, which server.mjs
+ * and tasks.mjs still read message by message. `converse` (plan 21 phase 2)
+ * returns the same session as normalised BrainEvents (events.mjs) and is what
+ * the conformance suite (conformance.mjs) holds every brain to; the bridge
+ * moves onto it in a later step.
  *
  * The SDK's `query` is passed in rather than imported here, so this module and
  * its tests load without the SDK installed. server.mjs hands over the real one.
  */
 import { homedir } from 'node:os'
 import { claudeStatus, startClaudeLogin } from '../claude-cli.mjs'
+import { summarise } from './events.mjs'
 
 /** Turn limits per kind of session, unchanged from server.mjs. */
 export const MAX_TURNS = Object.freeze({ voice: 24, worker: 40 })
@@ -113,6 +118,186 @@ export function claudeOptions({
   }
 }
 
+/** How each failed `result` subtype ends the turn. Anything unlisted is an error. */
+const RESULT_ENDINGS = Object.freeze({
+  error_max_turns: { code: 'max_turns', retryable: false, reason: 'limit' },
+  error_max_budget_usd: { code: 'budget', retryable: false, reason: 'limit' },
+  error_during_execution: { code: 'execution', retryable: true, reason: 'error' },
+  error_max_structured_output_retries: { code: 'structured_output', retryable: false, reason: 'error' },
+})
+
+const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+/**
+ * Turns the Agent SDK's messages into BrainEvents (events.mjs), one session at
+ * a time. Pure bookkeeping, no I/O, so it is tested message by message.
+ *
+ * Where each event comes from, and why:
+ * - text: the partial `stream_event` text deltas. They are the only place
+ *   spoken text arrives early (see includePartialMessages above). If a build
+ *   never streams, the text blocks of whole `assistant` messages are used
+ *   instead, so the answer is late but not lost.
+ * - tool_call: the `tool_use` blocks of whole `assistant` messages, because
+ *   only those carry the complete input; the partial block start has `{}`.
+ *   The SDK repeats blocks, so ids are deduplicated.
+ * - tool_result: the `tool_result` blocks of `user` messages. A tool refused
+ *   by the policy engine comes back here with `is_error`, so it is `ok: false`
+ *   and never looks like work that happened.
+ * - usage and done: the one `result` per turn. A failed result says why in an
+ *   `error` first; a turn the caller cancelled ends `cancelled` whatever the
+ *   SDK reports, and any text still in flight after the cancel is dropped, so
+ *   the tail of an abandoned answer is never spoken.
+ *
+ * @param {object} [p]
+ * @param {(toolName: string) => boolean} [p.tainted] does this tool's output count as private (taint.mjs)?
+ */
+export function claudeEventMapper({ tainted = () => false } = {}) {
+  let streamed = false // has this session ever streamed a text delta?
+  let pending = 0 // turns handed to the SDK and not yet ended; the SDK may read ahead
+  let cancelled = false // did the caller cancel the turn in progress?
+  const calls = new Map() // tool id → name, for this turn
+
+  const started = () => {
+    if (pending === 0) pending = 1
+  }
+  const endTurn = () => {
+    pending = Math.max(0, pending - 1)
+    cancelled = false
+    calls.clear()
+  }
+
+  return {
+    /** A prompt has been handed to the SDK: a turn is now in progress. */
+    begin() {
+      pending++
+    },
+
+    /** Mark the turn in progress as cancelled. False when there is none. */
+    cancel() {
+      if (pending === 0) return false
+      cancelled = true
+      return true
+    },
+
+    get open() {
+      return pending > 0
+    },
+
+    /** The BrainEvents for one SDK message (often none). */
+    map(msg) {
+      const out = []
+      switch (msg?.type) {
+        case 'stream_event': {
+          const ev = msg.event
+          if (ev?.type === 'content_block_delta' && ev.delta?.type === 'text_delta' && ev.delta.text) {
+            streamed = true
+            started()
+            if (!cancelled) out.push({ t: 'text', delta: ev.delta.text })
+          }
+          break
+        }
+        case 'assistant': {
+          started()
+          for (const block of msg.message?.content ?? msg.content ?? []) {
+            if (block?.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string' && block.name && !calls.has(block.id)) {
+              calls.set(block.id, block.name)
+              out.push({ t: 'tool_call', id: block.id, name: block.name, args: isRecord(block.input) ? block.input : {} })
+            } else if (block?.type === 'text' && block.text && !streamed && !cancelled) {
+              out.push({ t: 'text', delta: block.text })
+            }
+          }
+          break
+        }
+        case 'user': {
+          const blocks = msg.message?.content
+          if (!Array.isArray(blocks)) break
+          for (const block of blocks) {
+            if (block?.type !== 'tool_result' || typeof block.tool_use_id !== 'string') continue
+            const name = calls.get(block.tool_use_id) ?? ''
+            out.push({
+              t: 'tool_result',
+              id: block.tool_use_id,
+              ok: block.is_error !== true,
+              summary: summarise(block.content),
+              tainted: block.is_error !== true && Boolean(name && tainted(name)),
+            })
+          }
+          break
+        }
+        case 'result': {
+          const u = msg.usage
+          if (u) {
+            const n = (v) => (Number.isInteger(v) && v >= 0 ? v : 0)
+            out.push({
+              t: 'usage',
+              // Cached prompt tokens are still prompt tokens.
+              inTokens: n(u.input_tokens) + n(u.cache_creation_input_tokens) + n(u.cache_read_input_tokens),
+              outTokens: n(u.output_tokens),
+              ...(typeof msg.total_cost_usd === 'number' && msg.total_cost_usd >= 0 && { costUsd: msg.total_cost_usd }),
+            })
+          }
+          if (cancelled) out.push({ t: 'done', reason: 'cancelled' })
+          else if (msg.subtype === 'success') out.push({ t: 'done', reason: 'complete' })
+          else {
+            const end = RESULT_ENDINGS[msg.subtype] ?? { code: String(msg.subtype || 'unknown'), retryable: false, reason: 'error' }
+            out.push({ t: 'error', code: end.code, retryable: end.retryable })
+            out.push({ t: 'done', reason: end.reason })
+          }
+          endTurn()
+          break
+        }
+      }
+      return out
+    },
+
+    /** The stream ended. A turn still open gets its `done`, so nobody waits for ever. */
+    end() {
+      if (pending === 0) return []
+      const out = cancelled
+        ? [{ t: 'done', reason: 'cancelled' }]
+        : [{ t: 'error', code: 'ended', retryable: true, message: 'The session ended part way through a turn.' },
+            { t: 'done', reason: 'error' }]
+      endTurn()
+      pending = 0
+      return out
+    },
+
+    /** The stream threw. Whatever was in progress is over. */
+    fail(err) {
+      const out = [
+        { t: 'error', code: 'session_error', retryable: true, message: String(err?.message ?? err) },
+        { t: 'done', reason: cancelled ? 'cancelled' : 'error' },
+      ]
+      endTurn()
+      pending = 0
+      return out
+    },
+  }
+}
+
+/**
+ * What `converse` accepts as a prompt, in the shape the SDK wants. A string is
+ * one turn. A list or async iterable is a conversation: each item a string or
+ * an SDK user message, handed over one turn at a time.
+ */
+function sdkPrompt(prompt, mapper) {
+  if (typeof prompt === 'string') {
+    mapper.begin()
+    return prompt
+  }
+  if (!prompt || (typeof prompt[Symbol.asyncIterator] !== 'function' && typeof prompt[Symbol.iterator] !== 'function')) {
+    throw new Error('converse needs a prompt: a string, or an iterable of turns.')
+  }
+  return (async function* turns() {
+    for await (const item of prompt) {
+      mapper.begin()
+      yield typeof item === 'string'
+        ? { type: 'user', message: { role: 'user', content: item }, parent_tool_use_id: null }
+        : item
+    }
+  })()
+}
+
 /**
  * Build the Claude brain.
  *
@@ -161,8 +346,43 @@ export function createClaudeBrain({ query, status = claudeStatus, login = startC
      * user messages (the voice conversation). Returns the SDK's Query: an async
      * iterable of SDK messages with interrupt() and close().
      */
-    startSession({ prompt, ...options }) {
-      return query({ prompt, options: claudeOptions(options) })
+    startSession,
+
+    /**
+     * Start a session and read it as BrainEvents (plan 21 phase 2). Takes the
+     * same options as startSession, plus `tainted(toolName)` for marking
+     * private tool output. `prompt` is a string (one turn) or an iterable or
+     * async iterable of turns (strings or SDK user messages).
+     *
+     * Returns { events, cancel, close }:
+     *   events   async iterable of BrainEvents; each turn ends with one `done`
+     *   cancel() stops the turn in progress (barge-in); it ends `cancelled`
+     *   close()  ends the whole session
+     */
+    converse({ prompt, tainted, ...options }) {
+      const mapper = claudeEventMapper({ tainted })
+      const session = startSession({ prompt: sdkPrompt(prompt, mapper), ...options })
+      async function* events() {
+        try {
+          for await (const msg of session) yield* mapper.map(msg)
+          yield* mapper.end()
+        } catch (err) {
+          yield* mapper.fail(err)
+        }
+      }
+      return {
+        events: events(),
+        async cancel() {
+          if (mapper.cancel()) await session.interrupt?.()
+        },
+        close() {
+          session.close?.()
+        },
+      }
     },
   })
+
+  function startSession({ prompt, ...options }) {
+    return query({ prompt, options: claudeOptions(options) })
+  }
 }

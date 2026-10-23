@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { createPolicy, GENERAL_WRITE_TOOLS, PRE_TOOL_USE_GUARD_TIMEOUT_S } from '../policy.mjs'
-import { createClaudeBrain, claudeOptions, MAX_TURNS } from './claude.mjs'
+import { createClaudeBrain, claudeOptions, claudeEventMapper, MAX_TURNS } from './claude.mjs'
 import { createBrainRegistry } from './registry.mjs'
 
 const none = () => false
@@ -191,4 +191,147 @@ test('server.mjs reaches the SDK only through the brain registry', () => {
   // Session options are built in one place only.
   assert.doesNotMatch(src, /(settingSources|includePartialMessages|permissionMode|canUseTool):/)
   assert.doesNotMatch(src, /claudeStatus|startClaudeLogin/)
+})
+
+// ---------------------------------------------------------------------------
+// SDK messages → BrainEvents (plan 21 phase 2). The conformance suite plays
+// whole scenarios; these pin the edge cases one message at a time.
+
+const delta = (text) => ({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } })
+const toolUse = (id, name, input) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] } })
+const toolResult = (id, text, isError = false) => ({
+  type: 'user',
+  message: { content: [{ type: 'tool_result', tool_use_id: id, content: text, ...(isError && { is_error: true }) }] },
+})
+
+test('mapper: deltas are text; a repeated tool_use block is one tool_call', () => {
+  const m = claudeEventMapper()
+  assert.deepEqual(m.map(delta('Hi')), [{ t: 'text', delta: 'Hi' }])
+  const call = toolUse('c1', 'Read', { file_path: '/x' })
+  assert.deepEqual(m.map(call), [{ t: 'tool_call', id: 'c1', name: 'Read', args: { file_path: '/x' } }])
+  assert.deepEqual(m.map(call), [])
+  // Streamed text is not repeated from the whole assistant message.
+  assert.deepEqual(m.map({ type: 'assistant', message: { content: [{ type: 'text', text: 'Hi' }] } }), [])
+  assert.deepEqual(m.map({ type: 'system', subtype: 'init' }), [])
+})
+
+test('mapper: without partial messages, whole assistant text is used', () => {
+  const m = claudeEventMapper()
+  assert.deepEqual(m.map({ type: 'assistant', message: { content: [{ type: 'text', text: 'Whole.' }] } }), [{ t: 'text', delta: 'Whole.' }])
+})
+
+test('mapper: a tool_use with no object input still gets args', () => {
+  const m = claudeEventMapper()
+  assert.deepEqual(m.map(toolUse('c1', 'Read', 'oops'))[0].args, {})
+})
+
+test('mapper: tool results carry ok, a one-line summary and taint', () => {
+  const m = claudeEventMapper({ tainted: (name) => name === 'mcp__gmail__read_email' })
+  m.map(toolUse('c1', 'mcp__gmail__read_email', {}))
+  m.map(toolUse('c2', 'mcp__gmail__read_email', {}))
+  assert.deepEqual(m.map(toolResult('c1', 'Subject: hello\nsecret body')), [
+    { t: 'tool_result', id: 'c1', ok: true, summary: 'Subject: hello', tainted: true },
+  ])
+  // A refusal is a failure, and nothing private was read.
+  assert.deepEqual(m.map(toolResult('c2', 'Blocked.', true)), [
+    { t: 'tool_result', id: 'c2', ok: false, summary: 'Blocked.', tainted: false },
+  ])
+})
+
+test('mapper: a successful result is usage then done', () => {
+  const m = claudeEventMapper()
+  m.begin()
+  const out = m.map({
+    type: 'result', subtype: 'success', total_cost_usd: 0.004,
+    usage: { input_tokens: 10, cache_read_input_tokens: 1000, cache_creation_input_tokens: 5, output_tokens: 7 },
+  })
+  assert.deepEqual(out, [
+    { t: 'usage', inTokens: 1015, outTokens: 7, costUsd: 0.004 },
+    { t: 'done', reason: 'complete' },
+  ])
+  assert.equal(m.open, false)
+})
+
+test('mapper: failed results say why, and limits end as limit', () => {
+  const cases = [
+    ['error_max_turns', { t: 'error', code: 'max_turns', retryable: false }, 'limit'],
+    ['error_max_budget_usd', { t: 'error', code: 'budget', retryable: false }, 'limit'],
+    ['error_during_execution', { t: 'error', code: 'execution', retryable: true }, 'error'],
+    ['something_new', { t: 'error', code: 'something_new', retryable: false }, 'error'],
+  ]
+  for (const [subtype, error, reason] of cases) {
+    const m = claudeEventMapper()
+    assert.deepEqual(m.map({ type: 'result', subtype }), [error, { t: 'done', reason }])
+  }
+})
+
+test('mapper: cancel drops text in flight and ends the turn cancelled', () => {
+  const m = claudeEventMapper()
+  assert.equal(m.cancel(), false, 'nothing to cancel before a turn starts')
+  m.begin()
+  assert.equal(m.cancel(), true)
+  assert.deepEqual(m.map(delta('tail')), [])
+  assert.deepEqual(m.map({ type: 'result', subtype: 'error_during_execution' }), [{ t: 'done', reason: 'cancelled' }])
+  // The next turn is not cancelled.
+  m.begin()
+  assert.deepEqual(m.map(delta('next')), [{ t: 'text', delta: 'next' }])
+})
+
+test('mapper: the SDK may read the next prompt before this turn ends', () => {
+  const m = claudeEventMapper()
+  m.begin()
+  m.begin()
+  m.map({ type: 'result', subtype: 'success' })
+  // The second turn is in progress, so it can still be cancelled.
+  assert.equal(m.open, true)
+  assert.equal(m.cancel(), true)
+})
+
+test('mapper: a stream that ends or throws mid-turn still ends the turn', () => {
+  const ended = claudeEventMapper()
+  assert.deepEqual(ended.end(), [], 'nothing open, nothing to end')
+  ended.begin()
+  assert.deepEqual(ended.end().map((e) => e.t + ':' + (e.code ?? e.reason)), ['error:ended', 'done:error'])
+
+  const cancelled = claudeEventMapper()
+  cancelled.begin()
+  cancelled.cancel()
+  assert.deepEqual(cancelled.end(), [{ t: 'done', reason: 'cancelled' }])
+
+  const thrown = claudeEventMapper()
+  thrown.begin()
+  assert.deepEqual(thrown.fail(new Error('socket closed')), [
+    { t: 'error', code: 'session_error', retryable: true, message: 'socket closed' },
+    { t: 'done', reason: 'error' },
+  ])
+})
+
+test('converse: turns strings into SDK user messages and passes options through', async () => {
+  const { calls, query } = fakeQuery()
+  const brain = createClaudeBrain({ query, status: () => ({}), login() {} })
+  const run = brain.converse({ prompt: ['one', 'two'], ...base(), tainted: () => true })
+  assert.equal(calls[0].options.maxTurns, 24)
+  assert.equal('tainted' in calls[0].options, false)
+  const sent = []
+  for await (const m of calls[0].prompt) sent.push(m)
+  assert.deepEqual(sent.map((m) => [m.type, m.message.content, m.parent_tool_use_id]), [['user', 'one', null], ['user', 'two', null]])
+  // The fake session is empty: the stream ends with turns still open, so they end in an error.
+  const events = []
+  for await (const e of run.events) events.push(e)
+  assert.deepEqual(events.map((e) => e.t), ['error', 'done'])
+  assert.throws(() => brain.converse({ ...base() }), /prompt/)
+})
+
+test('converse: a session that throws ends with an error and done', async () => {
+  const query = () => ({
+    async *[Symbol.asyncIterator]() { throw new Error('boom') },
+    interrupt: async () => {}, close() {},
+  })
+  const run = createClaudeBrain({ query, status: () => ({}), login() {} }).converse({ prompt: 'hi', ...base() })
+  const events = []
+  for await (const e of run.events) events.push(e)
+  assert.deepEqual(events, [
+    { t: 'error', code: 'session_error', retryable: true, message: 'boom' },
+    { t: 'done', reason: 'error' },
+  ])
 })

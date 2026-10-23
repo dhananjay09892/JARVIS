@@ -8,6 +8,7 @@ const brain = (over = {}) => ({
   capabilities: { tools: true, streaming: true },
   status: () => ({ installed: true }),
   startSession: () => ({}),
+  converse: () => ({}),
   ...over,
 })
 
@@ -45,5 +46,6 @@ test('duplicates and malformed brains are rejected', () => {
   assert.throws(() => brains.register(brain({ id: 'y', capabilities: null })), /capabilities/)
   assert.throws(() => brains.register(brain({ id: 'z', status: undefined })), /status\(\)/)
   assert.throws(() => brains.register(brain({ id: 'w', startSession: 'no' })), /startSession\(\)/)
+  assert.throws(() => brains.register(brain({ id: 'v', converse: undefined })), /converse\(\)/)
   assert.deepEqual(brains.list().map((b) => b.id), ['claude'])
 })
