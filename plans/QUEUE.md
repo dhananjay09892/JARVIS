@@ -137,7 +137,7 @@ this file decides *in what order*.
 ## Phase 1 · Identity and feel
 
 ### Q16 · Plan 21 · Claude brain behind an interface
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q04
 - **Scope:** 21 phase 1. Extract the Claude code from `server.mjs` into `bridge/brains/claude.mjs` with no behaviour change; add a brain registry; add tests that pin current behaviour.
 - **Done when:** JARVIS works exactly as before through the registry.
