@@ -56,7 +56,7 @@ Two integration modes:
 3. **Policy contract (2 d):** all tool calls flow through `policy.decide()` (15); brains without a pre-execution hook are forced to read-only or tool-loop mode; test that `disallowedTools`-equivalents hold on every brain.
 4. **Brain settings UI (2 d):** pick default brain, per-person brain (01), per-task rules (06), connection status, "test this brain" button, clear subscription-vs-API-key labels and a cost/limit meter.
 5. **Router and fallback (3 d):** extend plan 06 routing with brain choice (reflex → fast → deep) and failover on outage/429/timeouts, with a spoken notice; sticky per conversation so tool state isn't lost.
-6. **Provider terms register (1 d):** `plans/brain-terms.md` or a doc listing per provider: auth mode, ToS stance for third-party apps, last verified date, risk level; surfaced in Settings before enabling a subscription login for that brain.
+6. **Provider terms register (1 d):** *(research done: [ADR 001](adr/001-subscription-brain-terms.md) has the per-provider findings and a summary table to build the register from; waiting for the owner's decision)* `plans/brain-terms.md` or a doc listing per provider: auth mode, ToS stance for third-party apps, last verified date, risk level; surfaced in Settings before enabling a subscription login for that brain.
 7. **Observability (1 d):** per-brain latency, failure and cost metrics in 16; A/B scoring on the behaviour eval set.
 8. **Memory and persona portability (2 d):** persona/context assembly (06/07) is brain-agnostic with per-provider prompt adapters; memory stays in JARVIS, never in a vendor thread.
 
@@ -79,6 +79,15 @@ Conformance suite pass rate per brain; policy-bypass tests = 0 on all brains; fa
 [06](06-brain-routing.md) · [15](15-policy-trust-and-privacy.md) · [16](16-evals-and-observability.md) · [25](25-brain-api-providers.md) · [37 ADRs](37-execution-roadmap-and-risks.md) · [38 BrainEvent](38-shared-data-contracts.md)
 
 ## Autopilot log
+- **2026-10-23 · Q15 · Subscription terms research done (phase 6 input, roadmap decision 1).**
+  Wrote [ADR 001](adr/001-subscription-brain-terms.md): current vendor terms for using a user's own
+  subscription login from a third-party local app, with sources and dates. Anthropic: allowed for now
+  (stock binary, Anthropic's own sign-in) but provisional, Medium risk. OpenAI: Sign in with ChatGPT
+  is open to open-source local apps, Low. GitHub Copilot SDK: documented, Low. Google: prohibited
+  and enforced, High (API key only). Cursor/xAI/Mistral: not shown, API key only. Recommendation:
+  keep Claude subscription as default, add a Claude API-key fallback, ask Anthropic for written
+  confirmation. `Decision:` left empty for the owner. Left: the owner's decision, then the terms
+  register and Settings warning (phase 6 build).
 - **2026-10-23 · Q16 · Phase 1 done.** New `bridge/brains/claude.mjs` (`createClaudeBrain`,
   `claudeOptions`) holds everything Claude-specific: the Agent SDK session options with their
   reasons, status and sign-in through the bundled binary. New `bridge/brains/registry.mjs`
