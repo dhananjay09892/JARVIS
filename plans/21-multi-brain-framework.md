@@ -51,7 +51,7 @@ Two integration modes:
 | **Tool-loop mode** | JARVIS | Any chat-completions/responses API, OpenRouter, local models |
 
 ## Phases
-1. **Refactor behind an interface (4–5 d):** extract the current Claude code from `server.mjs` into `bridge/brains/claude.mjs` with no behaviour change; add a registry; add tests that pin current behaviour.
+1. ✅ **Refactor behind an interface (4–5 d):** extract the current Claude code from `server.mjs` into `bridge/brains/claude.mjs` with no behaviour change; add a registry; add tests that pin current behaviour.
 2. **Event schema and conformance suite (3 d):** normalise events; scripted scenarios every brain must pass (plain answer, one tool call, denied tool, cancel mid-stream, long answer, tool error, resume).
 3. **Policy contract (2 d):** all tool calls flow through `policy.decide()` (15); brains without a pre-execution hook are forced to read-only or tool-loop mode; test that `disallowedTools`-equivalents hold on every brain.
 4. **Brain settings UI (2 d):** pick default brain, per-person brain (01), per-task rules (06), connection status, "test this brain" button, clear subscription-vs-API-key labels and a cost/limit meter.
@@ -88,3 +88,14 @@ Conformance suite pass rate per brain; policy-bypass tests = 0 on all brains; fa
   keep Claude subscription as default, add a Claude API-key fallback, ask Anthropic for written
   confirmation. `Decision:` left empty for the owner. Left: the owner's decision, then the terms
   register and Settings warning (phase 6 build).
+- **2026-10-23 · Q16 · Phase 1 done.** New `bridge/brains/claude.mjs` (`createClaudeBrain`,
+  `claudeOptions`) holds everything Claude-specific: the Agent SDK session options with their
+  reasons, status and sign-in through the bundled binary. New `bridge/brains/registry.mjs`
+  registers brains and picks the default (Claude). `server.mjs` now starts the voice session and
+  task workers with `brain.startSession(...)` and no longer calls the SDK's `query()` or the
+  Claude CLI helpers directly. No behaviour change: `brains/claude.test.mjs` pins every option
+  (turn limits, `settingSources: []`, `permissionMode: 'default'`, hooks, `canUseTool`) and runs
+  the real policy engine through them; the `policy.test.mjs` structure check now follows the
+  options into the brain. `status()` also reports `authMode` (`apikey` when `ANTHROPIC_API_KEY` is
+  set, else `subscription`) for the later Settings work. Left: normalised `BrainEvent`s and the
+  conformance suite (Q17); the stream pump in `server.mjs` still reads SDK message shapes.
