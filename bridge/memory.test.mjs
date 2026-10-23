@@ -144,21 +144,25 @@ test('session: tool results become journal rows, interruptions stay interrupted'
 
   // Turn 1: a file is written and a test command passes.
   sm.receive({ id: 't1', text: 'in Created-By-Jarvis add a main file and run npm test' }).start()
-  sm.toolUse({ id: 'u1', name: 'mcp__jarvis_workspace__write_file', input: { path: 'Created-By-Jarvis\\main.js', content: 'x' } })
-  sm.toolResult({ tool_use_id: 'u1', content: [{ type: 'text', text: JSON.stringify({ bytes: 1, sha256: 'a'.repeat(64) }) }] })
-  sm.toolUse({ id: 'u2', name: 'mcp__jarvis_development__run_command', input: { cwd: 'Created-By-Jarvis', command: 'npm test' } })
-  sm.toolResult({ tool_use_id: 'u2', content: [{ type: 'text', text: '{"status":"completed"}' }] })
+  // The brain's tool_result carries a one-line summary and the bounded detail
+  // the journal reads (brains/events.mjs).
+  const written = JSON.stringify({ path: 'Created-By-Jarvis/main.js', bytes: 1, sha256: 'a'.repeat(64) })
+  sm.toolCall({ t: 'tool_call', id: 'u1', name: 'mcp__jarvis_workspace__write_file', args: { path: 'Created-By-Jarvis\\main.js', content: 'x' } })
+  sm.toolResult({ t: 'tool_result', id: 'u1', ok: true, summary: written.slice(0, 40), tainted: false, detail: written })
+  sm.toolCall({ t: 'tool_call', id: 'u2', name: 'mcp__jarvis_development__run_command', args: { cwd: 'Created-By-Jarvis', command: 'npm test' } })
+  sm.toolResult({ t: 'tool_result', id: 'u2', ok: true, summary: '{"status":"completed"}', tainted: false })
   sm.delta('Done.')
-  sm.result({ subtype: 'success', result: 'Done.' })
+  sm.done({ t: 'done', reason: 'complete' })
   let events = memory.listEvents('created-by-jarvis')
   assert.deepEqual(events.filter((e) => e.kind !== 'request').map((e) => [e.kind, e.status]).reverse(), [['file_write', 'completed'], ['command', 'verified']])
+  assert.equal(events.find((e) => e.kind === 'file_write').detail, `1 bytes, sha256 ${'a'.repeat(12)}…`)
   assert.equal(events.find((e) => e.kind === 'request').status, 'requested')
   assert.equal(memory.messages(sm.id).at(-1).status, 'complete')
 
   // Turn 2: a command is requested, then the owner barges in.
   sm.receive({ id: 't2', text: 'now run the build in Created-By-Jarvis' }).start()
   sm.delta('Running')
-  sm.toolUse({ id: 'u3', name: 'mcp__jarvis_development__run_command', input: { cwd: 'Created-By-Jarvis', command: 'npm run build' } })
+  sm.toolCall({ t: 'tool_call', id: 'u3', name: 'mcp__jarvis_development__run_command', args: { cwd: 'Created-By-Jarvis', command: 'npm run build' } })
   sm.interrupt()
   events = memory.listEvents('Created-By-Jarvis')
   assert.equal(events.find((e) => e.call_id === 'u3').status, 'interrupted')
@@ -168,10 +172,10 @@ test('session: tool results become journal rows, interruptions stay interrupted'
   // Turn 3 starts; turn 2's late output and result must not touch it.
   sm.receive({ id: 't3', text: 'never mind, hello' }).start()
   sm.delta(' late tail of turn two')
-  sm.result({ subtype: 'success', result: 'late' })
+  sm.done({ t: 'done', reason: 'cancelled' })
   assert.equal(memory.messages(sm.id).at(-1).status, 'pending', "turn 2's result must not close turn 3")
   sm.delta('Hello.')
-  sm.result({ subtype: 'success', result: 'Hello.' })
+  sm.done({ t: 'done', reason: 'complete' })
   last = memory.messages(sm.id).at(-1)
   assert.deepEqual([last.status, last.text], ['complete', 'Hello.'])
 
@@ -183,9 +187,9 @@ test('session: tool results become journal rows, interruptions stay interrupted'
 
   // A failed turn and a duplicate retry.
   sm.receive({ id: 't5', text: 'fail please' }).start()
-  sm.result({ subtype: 'success', result: 'late' }) // t4's owed result
+  sm.done({ t: 'done', reason: 'complete' }) // t4's owed done
   sm.delta('oops')
-  sm.result({ subtype: 'error_during_execution' })
+  sm.done({ t: 'done', reason: 'error' })
   last = memory.messages(sm.id).at(-1)
   assert.deepEqual([last.status, last.text], ['failed', 'oops'])
   assert.equal(sm.receive({ id: 't5', text: 'fail please' }), null)
@@ -196,7 +200,7 @@ test('a new session resumes the stored conversation but never merges others', ()
   const one = createSessionMemory({ memory, requestedId: null, log: silent })
   one.receive({ id: 'a', text: 'remember the codeword pomegranate' }).start()
   one.delta('Noted.')
-  one.result({ subtype: 'success', result: 'Noted.' })
+  one.done({ t: 'done', reason: 'complete' })
   one.close()
 
   const again = createSessionMemory({ memory, requestedId: one.id, log: silent })

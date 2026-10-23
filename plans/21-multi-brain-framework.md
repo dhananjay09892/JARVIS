@@ -52,7 +52,7 @@ Two integration modes:
 
 ## Phases
 1. ✅ **Refactor behind an interface (4–5 d):** extract the current Claude code from `server.mjs` into `bridge/brains/claude.mjs` with no behaviour change; add a registry; add tests that pin current behaviour.
-2. ✅ **Event schema and conformance suite (3 d):** *(events, adapter and suite done in Q17; the bridge moves onto the events in Q52)* normalise events; scripted scenarios every brain must pass (plain answer, one tool call, denied tool, cancel mid-stream, long answer, tool error, resume).
+2. ✅ **Event schema and conformance suite (3 d):** *(events, adapter and suite done in Q17; `server.mjs` and `tasks.mjs` read only BrainEvents since Q52)* normalise events; scripted scenarios every brain must pass (plain answer, one tool call, denied tool, cancel mid-stream, long answer, tool error, resume).
 3. **Policy contract (2 d):** all tool calls flow through `policy.decide()` (15); brains without a pre-execution hook are forced to read-only or tool-loop mode; test that `disallowedTools`-equivalents hold on every brain.
 4. **Brain settings UI (2 d):** pick default brain, per-person brain (01), per-task rules (06), connection status, "test this brain" button, clear subscription-vs-API-key labels and a cost/limit meter.
 5. **Router and fallback (3 d):** extend plan 06 routing with brain choice (reflex → fast → deep) and failover on outage/429/timeouts, with a spoken notice; sticky per conversation so tool state isn't lost.
@@ -117,3 +117,21 @@ Conformance suite pass rate per brain; policy-bypass tests = 0 on all brains; fa
   (`startSession`); moving them onto `converse()` is Q52. `resume` is tested as "a second turn in
   the same session keeps to its own turn", because JARVIS owns history (`capabilities.resume:
   false`); a brain with vendor-side resume will need its own scenario.
+- **2026-10-23 · Q52 · Phase 2 finished: the bridge reads BrainEvents.** The voice pump in
+  `server.mjs` and the worker loop in `tasks.mjs` now read `brain.converse()` events instead of
+  Agent SDK messages; neither calls `startSession` or names an SDK message type any more (a
+  structure test in `brains/claude.test.mjs` checks both files). Three optional additions to the
+  `BrainEvent` contract, in `shared/contracts.ts`, `events.mjs` and plan 38 together: `ready
+  { servers }` (the usable MCP servers, from the SDK's init message, for the HUD's `ready` frame),
+  `tool_start { id, name }` (the early tool badge from the partial block start; the `tool_call`
+  still follows) and `tool_result.detail` (the tool's output bounded to 2,000 characters, read only
+  by the local project journal for a write's size and hash and a failure's reason). The project
+  journal and session memory (`journal.mjs`, `conversation.mjs`) take `tool_call`, `tool_result`
+  and `done` events. Kept as before: speech from the first text delta, the HUD tool badge held
+  until a refused tool is settled, the spoken failure messages (now keyed by the event's error
+  code), a session error closing the socket so the page reconnects, and the barge-in wait on the
+  turn's `done`. One change by design: the abandoned answer's tail after a barge-in is now dropped
+  in the brain (it used to be sent and ignored by the page). A worker's summary is the text after
+  its last tool call, as the SDK's `result` field was. Checked against a scripted fake SDK through
+  the real bridge and a WebSocket: answer, tool badge, failed turn, and barge-in with no tail.
+  Left: phase 3 (Q18, every tool call through `policy.decide()`).

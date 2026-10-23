@@ -7,7 +7,7 @@
  * turn as it happens, and builds the bounded memory block that is placed ahead
  * of the owner's words.
  *
- * Replies are only ever stored as 'complete' when the SDK reported a successful
+ * Replies are only ever stored as 'complete' when the brain reported a successful
  * result for a turn nobody interrupted. Everything else is stored as what it
  * was — interrupted or failed — together with the text produced so far.
  */
@@ -81,7 +81,7 @@ export function createSessionMemory({ memory, requestedId, listProjects = () => 
     const began = turn.started
     turn.interrupted = true
     finish('interrupted')
-    // The SDK will still emit that turn's result; it must not close the next one.
+    // The brain will still end that turn with a done; it must not close the next one.
     if (began) { abandoned += 1; abandonedAt = Date.now() }
   }
 
@@ -132,17 +132,19 @@ export function createSessionMemory({ memory, requestedId, listProjects = () => 
       turn.started = true
       flush()
     },
-    toolUse(block) { if (turn && !staleOutput()) journal.toolUse(block) },
-    toolResult(block) { if (!staleOutput()) journal.toolResult(block) },
+    /** A `tool_call` BrainEvent. */
+    toolCall(event) { if (turn && !staleOutput()) journal.toolCall(event) },
+    /** A `tool_result` BrainEvent. */
+    toolResult(event) { if (!staleOutput()) journal.toolResult(event) },
     /** Marks that the SDK has begun producing output for the turn. */
     noteActivity() { if (turn) turn.started = true },
 
-    /** The SDK reported the end of a turn. */
-    result(msg) {
+    /** The brain ended a turn: its `done` BrainEvent ({ reason }). */
+    done(event) {
       if (staleOutput()) { abandoned -= 1; return }
       if (!turn) return
-      if (!turn.text && typeof msg.result === 'string') turn.text = msg.result
-      finish(turn.interrupted ? 'interrupted' : msg.subtype === 'success' ? 'complete' : 'failed')
+      const reason = event?.reason
+      finish(turn.interrupted || reason === 'cancelled' ? 'interrupted' : reason === 'complete' ? 'complete' : 'failed')
     },
 
     /** Barge-in or stop. Whatever was produced so far is kept, labelled partial. */

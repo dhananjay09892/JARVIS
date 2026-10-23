@@ -145,10 +145,14 @@ export type TurnContext = z.infer<typeof TurnContext>
 // Brain events (plan 21): normalised across every brain
 // ---------------------------------------------------------------------------
 
+// `ready` and `tool_start` are optional (a brain may never send them); `detail`
+// is a tool's bounded output for the bridge's local journal, never the HUD or traces.
 export const BrainEvent = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('ready'), servers: z.array(z.string().min(1)) }),
   z.object({ t: z.literal('text'), delta: z.string() }),
+  z.object({ t: z.literal('tool_start'), id: Id, name: z.string().min(1) }),
   z.object({ t: z.literal('tool_call'), id: Id, name: z.string().min(1), args: z.record(z.string(), z.unknown()) }),
-  z.object({ t: z.literal('tool_result'), id: Id, ok: z.boolean(), summary: z.string(), tainted: z.boolean() }),
+  z.object({ t: z.literal('tool_result'), id: Id, ok: z.boolean(), summary: z.string(), tainted: z.boolean(), detail: z.string().max(2000).optional() }),
   z.object({ t: z.literal('usage'), inTokens: Count, outTokens: Count, costUsd: z.number().nonnegative().optional() }),
   z.object({ t: z.literal('error'), code: z.string().min(1), retryable: z.boolean(), message: z.string().optional() }),
   z.object({ t: z.literal('done'), reason: z.enum(['complete', 'cancelled', 'limit', 'error']) }),

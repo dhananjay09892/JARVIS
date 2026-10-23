@@ -1,8 +1,9 @@
 /**
  * Turns real tool activity into project-journal rows.
  *
- * Rows come from what the SDK stream reports — a tool_use block and the
- * tool_result that answers it — never from what the model says it did. A call
+ * Rows come from what the brain reports — a `tool_call` BrainEvent and the
+ * `tool_result` that answers it (brains/events.mjs) — never from what the
+ * model says it did. A call
  * is written as "requested" the moment it is seen and only moves on when its
  * result arrives:
  *
@@ -57,12 +58,10 @@ export function describeCall(name, input = {}) {
   return null
 }
 
-/** Flattens an MCP tool_result's content to text. */
-export function resultText(block) {
-  const c = block?.content
-  if (typeof c === 'string') return c
-  if (Array.isArray(c)) return c.map((p) => (typeof p?.text === 'string' ? p.text : '')).join('\n')
-  return ''
+/** A tool_result event's output as text: the bounded detail, else the one-line summary. */
+export function resultText(event) {
+  if (typeof event?.detail === 'string') return event.detail
+  return typeof event?.summary === 'string' ? event.summary : ''
 }
 
 /** The journal outcome for a finished call. */
@@ -100,9 +99,10 @@ export function createJournal(memory, { conversation, turn, onProject }) {
   }
 
   return {
-    toolUse(block) {
-      if (!block?.id || calls.has(block.id)) return
-      const call = describeCall(block.name, block.input)
+    /** A `tool_call` BrainEvent: { id, name, args }. */
+    toolCall(event) {
+      if (!event?.id || calls.has(event.id)) return
+      const call = describeCall(event.name, event.args)
       if (!call) return
       safe(() => {
         const t = turn()
@@ -116,19 +116,20 @@ export function createJournal(memory, { conversation, turn, onProject }) {
           })
         }
         call.eventId = memory.recordEvent({
-          project: call.project, conversationId: conversation(), turnId: t?.id ?? null, callId: block.id,
+          project: call.project, conversationId: conversation(), turnId: t?.id ?? null, callId: event.id,
           kind: call.kind, summary: call.summary, status: 'requested',
         })
-        calls.set(block.id, call)
+        calls.set(event.id, call)
         onProject?.(call.project)
       })
     },
-    toolResult(block) {
-      const call = calls.get(block?.tool_use_id)
+    /** A `tool_result` BrainEvent: { id, ok, summary, detail? }. */
+    toolResult(event) {
+      const call = calls.get(event?.id)
       if (!call || call.eventId == null) return
-      calls.delete(block.tool_use_id)
+      calls.delete(event.id)
       safe(() => {
-        const { status, detail } = classifyResult(call, block.is_error === true, resultText(block))
+        const { status, detail } = classifyResult(call, event.ok !== true, resultText(event))
         memory.finishEvent(call.eventId, status, detail)
       })
     },

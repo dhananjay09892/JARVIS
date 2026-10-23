@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { createPolicy, GENERAL_WRITE_TOOLS, PRE_TOOL_USE_GUARD_TIMEOUT_S } from '../policy.mjs'
 import { createClaudeBrain, claudeOptions, claudeEventMapper, MAX_TURNS } from './claude.mjs'
 import { createBrainRegistry } from './registry.mjs'
+import { checkBrainEvent } from './events.mjs'
 
 const none = () => false
 const makePolicy = (allowWrites = false, audit = undefined) =>
@@ -187,10 +188,23 @@ test('server.mjs reaches the SDK only through the brain registry', () => {
   // query is imported once and handed to the brain, never called directly.
   assert.equal((src.match(/\bquery\(/g) ?? []).length, 0)
   assert.match(src, /createClaudeBrain\(\{ query \}\)/)
-  assert.equal((src.match(/brain\.startSession\(/g) ?? []).length, 2)
+  // Both sessions (voice and task worker) are read as BrainEvents.
+  assert.equal((src.match(/brain\.converse\(/g) ?? []).length, 2)
+  assert.equal((src.match(/\.startSession\(/g) ?? []).length, 0)
   // Session options are built in one place only.
   assert.doesNotMatch(src, /(settingSources|includePartialMessages|permissionMode|canUseTool):/)
   assert.doesNotMatch(src, /claudeStatus|startClaudeLogin/)
+})
+
+test('neither server.mjs nor tasks.mjs reads an SDK message type (plan 21 phase 2)', () => {
+  for (const file of ['../server.mjs', '../tasks.mjs']) {
+    const src = readFileSync(new URL(file, import.meta.url), 'utf8')
+      // Comments may name SDK shapes when explaining history; code may not.
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    for (const shape of [/stream_event/, /content_block/, /text_delta/, /tool_use/, /tool_use_id/, /is_error/, /total_cost_usd/, /\.subtype\b/, /mcp_servers/, /\bcase 'assistant'/, /\bcase 'result'/, /\bcase 'system'/]) {
+      assert.doesNotMatch(src, shape, `${file} reads an SDK shape: ${shape}`)
+    }
+  }
 })
 
 // ---------------------------------------------------------------------------
@@ -212,7 +226,24 @@ test('mapper: deltas are text; a repeated tool_use block is one tool_call', () =
   assert.deepEqual(m.map(call), [])
   // Streamed text is not repeated from the whole assistant message.
   assert.deepEqual(m.map({ type: 'assistant', message: { content: [{ type: 'text', text: 'Hi' }] } }), [])
-  assert.deepEqual(m.map({ type: 'system', subtype: 'init' }), [])
+})
+
+test('mapper: init lists the usable servers; a tool_use block start is one early tool_start', () => {
+  const m = claudeEventMapper()
+  assert.deepEqual(m.map({ type: 'system', subtype: 'init' }), [{ t: 'ready', servers: [] }])
+  assert.deepEqual(m.map({
+    type: 'system', subtype: 'init',
+    mcp_servers: [{ name: 'gmail', status: 'pending' }, { name: 'drive', status: 'needs-auth' }, { name: 'x', status: 'failed' }, { name: 'jarvis', status: 'connected' }],
+  }), [{ t: 'ready', servers: ['gmail', 'jarvis'] }])
+  assert.deepEqual(m.map({ type: 'system', subtype: 'status' }), [])
+  const start = { type: 'stream_event', event: { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'c1', name: 'Read', input: {} } } }
+  assert.deepEqual(m.map(start), [{ t: 'tool_start', id: 'c1', name: 'Read' }])
+  assert.deepEqual(m.map(start), [])
+  assert.equal(m.open, true)
+  // The whole message still brings the tool_call, with its arguments.
+  assert.deepEqual(m.map(toolUse('c1', 'Read', { file_path: '/x' })), [{ t: 'tool_call', id: 'c1', name: 'Read', args: { file_path: '/x' } }])
+  // A text block start is not a tool.
+  assert.deepEqual(m.map({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'text', text: '' } } }), [])
 })
 
 test('mapper: without partial messages, whole assistant text is used', () => {
@@ -230,12 +261,17 @@ test('mapper: tool results carry ok, a one-line summary and taint', () => {
   m.map(toolUse('c1', 'mcp__gmail__read_email', {}))
   m.map(toolUse('c2', 'mcp__gmail__read_email', {}))
   assert.deepEqual(m.map(toolResult('c1', 'Subject: hello\nsecret body')), [
-    { t: 'tool_result', id: 'c1', ok: true, summary: 'Subject: hello', tainted: true },
+    { t: 'tool_result', id: 'c1', ok: true, summary: 'Subject: hello', tainted: true, detail: 'Subject: hello\nsecret body' },
   ])
   // A refusal is a failure, and nothing private was read.
   assert.deepEqual(m.map(toolResult('c2', 'Blocked.', true)), [
-    { t: 'tool_result', id: 'c2', ok: false, summary: 'Blocked.', tainted: false },
+    { t: 'tool_result', id: 'c2', ok: false, summary: 'Blocked.', tainted: false, detail: 'Blocked.' },
   ])
+  // The detail is bounded.
+  m.map(toolUse('c3', 'Read', {}))
+  const [long] = m.map(toolResult('c3', [{ type: 'text', text: 'x'.repeat(5000) }]))
+  assert.equal(long.detail.length, 2000)
+  assert.ok(checkBrainEvent(long).ok)
 })
 
 test('mapper: a successful result is usage then done', () => {

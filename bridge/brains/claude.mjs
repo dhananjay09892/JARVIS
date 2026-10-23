@@ -10,18 +10,18 @@
  * This is a move, not a redesign: the options below are exactly the ones
  * server.mjs used to build inline, and claude.test.mjs pins them.
  *
- * Two ways in. `startSession` returns the SDK's own Query, which server.mjs
- * and tasks.mjs still read message by message. `converse` (plan 21 phase 2)
- * returns the same session as normalised BrainEvents (events.mjs) and is what
- * the conformance suite (conformance.mjs) holds every brain to; the bridge
- * moves onto it in a later step.
+ * Two ways in. `converse` (plan 21 phase 2) returns the session as normalised
+ * BrainEvents (events.mjs); it is what server.mjs and tasks.mjs read, and what
+ * the conformance suite (conformance.mjs) holds every brain to. `startSession`
+ * returns the SDK's own Query underneath it; nothing in the bridge reads that
+ * directly any more.
  *
  * The SDK's `query` is passed in rather than imported here, so this module and
  * its tests load without the SDK installed. server.mjs hands over the real one.
  */
 import { homedir } from 'node:os'
 import { claudeStatus, startClaudeLogin } from '../claude-cli.mjs'
-import { summarise } from './events.mjs'
+import { detailOf, summarise } from './events.mjs'
 
 /** Turn limits per kind of session, unchanged from server.mjs. */
 export const MAX_TURNS = Object.freeze({ voice: 24, worker: 40 })
@@ -133,6 +133,12 @@ const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
  * a time. Pure bookkeeping, no I/O, so it is tested message by message.
  *
  * Where each event comes from, and why:
+ * - ready: the SDK's `system` init message, listing the MCP servers. Servers
+ *   report 'pending' until first use (they connect lazily), so only the ones
+ *   that need sign-in or failed are left out.
+ * - tool_start: the partial `content_block_start` of a `tool_use` block. It is
+ *   the earliest sign of a tool call, so the HUD can light its badge before
+ *   the arguments have streamed. Only id and name are known there.
  * - text: the partial `stream_event` text deltas. They are the only place
  *   spoken text arrives early (see includePartialMessages above). If a build
  *   never streams, the text blocks of whole `assistant` messages are used
@@ -156,6 +162,7 @@ export function claudeEventMapper({ tainted = () => false } = {}) {
   let pending = 0 // turns handed to the SDK and not yet ended; the SDK may read ahead
   let cancelled = false // did the caller cancel the turn in progress?
   const calls = new Map() // tool id → name, for this turn
+  const starts = new Set() // tool ids already announced by tool_start, this turn
 
   const started = () => {
     if (pending === 0) pending = 1
@@ -164,6 +171,7 @@ export function claudeEventMapper({ tainted = () => false } = {}) {
     pending = Math.max(0, pending - 1)
     cancelled = false
     calls.clear()
+    starts.clear()
   }
 
   return {
@@ -194,6 +202,22 @@ export function claudeEventMapper({ tainted = () => false } = {}) {
             started()
             if (!cancelled) out.push({ t: 'text', delta: ev.delta.text })
           }
+          const block = ev?.type === 'content_block_start' ? ev.content_block : null
+          if (block?.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string' && block.name &&
+            !starts.has(block.id) && !calls.has(block.id)) {
+            starts.add(block.id)
+            started()
+            out.push({ t: 'tool_start', id: block.id, name: block.name })
+          }
+          break
+        }
+        case 'system': {
+          if (msg.subtype === 'init') {
+            const servers = (Array.isArray(msg.mcp_servers) ? msg.mcp_servers : [])
+              .filter((s) => typeof s?.name === 'string' && s.name && s.status !== 'needs-auth' && s.status !== 'failed')
+              .map((s) => s.name)
+            out.push({ t: 'ready', servers })
+          }
           break
         }
         case 'assistant': {
@@ -220,6 +244,7 @@ export function claudeEventMapper({ tainted = () => false } = {}) {
               ok: block.is_error !== true,
               summary: summarise(block.content),
               tainted: block.is_error !== true && Boolean(name && tainted(name)),
+              detail: detailOf(block.content),
             })
           }
           break
