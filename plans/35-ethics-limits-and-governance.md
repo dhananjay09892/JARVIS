@@ -37,7 +37,8 @@ depend on any one model's mood. This plan turns values into rules, tests and rel
 
 ## Phases
 1. **Write the one-page "What JARVIS will never do" and publish it (2 d).** *Drafted in [NEVER.md](../NEVER.md) (Q10); wording awaits owner approval in the PR review.*
-2. **Encode the never-list as tests (1 w)** in 15/16.
+2. **Encode the never-list as tests (1 w)** in 15/16. *Done for the policy engine (Q11): one rule and test per
+   never-list item in `bridge/policy.mjs` / `policy.test.mjs`; end-to-end cases (browser, shell) belong to phase 4.*
 3. **Privacy/legal register v1 (3 d)** for the regions you operate in.
 4. **Red-team suite and release gate (1 w).**
 5. **Incident process and report-a-problem flow (3 d).**
@@ -60,3 +61,18 @@ The never-list is published, enforced by passing tests, and referenced from the 
   kill switch exists yet; added to the release workflow's test list. Left: owner approval
   of the wording, linking from DISCLAIMER and the Privacy Centre (the plan's "Done when"),
   and phase 2 (Q11, each rule as a policy rule with a test).
+- **2026-10-23 — Phase 2 (Q11, never-list as policy rules).** Added `NEVER_RULES` to
+  `bridge/policy.mjs`, checked before every other rule and regardless of
+  `JARVIS_ALLOW_WRITES`, server allowlists, own servers or `VETO_EXEMPT`. Rules 1, 2, 3, 5
+  and 6 refuse tools by name (word-split, with nouns required where a verb is ambiguous,
+  e.g. `transfer` only next to a money word); rule 4 is the existing taint guard, now
+  pinned by a never-list test through `policy.preToolUse`; rule 7 is a new `isFrozen`
+  input that refuses everything and fails closed. Found and closed a real gap:
+  `elevenlabs__voice_clone` ran in read-only mode because ElevenLabs is allowlisted.
+  Checkout/purchase/withdraw tools now stay refused with writes on (six gate-table
+  cases updated). Added LIMITS lines to the voice and worker prompts (say it is an AI,
+  never claim to be human, no payments, no licensed-style advice), pinned by tests.
+  `policy.test.mjs` and `taint.test.mjs` added to the release workflow's test list.
+  NEVER.md Today lines updated. Left: wiring `isFrozen` to the kill switch (plan 15),
+  the red-team suite for paths names can't see (browser clicks, shell; phase 4), and
+  linking NEVER.md from DISCLAIMER and the Privacy Centre.
