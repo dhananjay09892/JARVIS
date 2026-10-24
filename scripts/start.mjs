@@ -83,7 +83,13 @@ const paint = (tag, colour) => (line) =>
 
 const children = []
 
-function run(name, command, args, colour, env, excludeEnv = []) {
+/**
+ * The bridge exits with this code when the Settings banner asks it to restart
+ * (plan 39 phase 4); keep in step with RESTART_EXIT_CODE in bridge/restart.mjs.
+ */
+const RESTART_EXIT_CODE = 75
+
+function run(name, command, args, colour, env, excludeEnv = [], { restartable = false } = {}) {
   const label = paint(name, colour)
   const childEnv = { ...process.env, ...env }
   for (const key of excludeEnv) delete childEnv[key]
@@ -94,6 +100,12 @@ function run(name, command, args, colour, env, excludeEnv = []) {
   child.stdout.on('data', (d) => process.stdout.write(label(d) + '\n'))
   child.stderr.on('data', (d) => process.stderr.write(label(d) + '\n'))
   child.on('exit', (code) => {
+    if (restartable && code === RESTART_EXIT_CODE && !stopping) {
+      console.log(`\x1b[${colour}m${name}\x1b[0m restarting to apply settings.`)
+      children.splice(children.indexOf(child), 1)
+      run(name, command, args, colour, env, excludeEnv, { restartable })
+      return
+    }
     // If either half dies the other is useless, so take the whole thing down
     // rather than leave a half-running app that looks alive but cannot answer.
     console.log(`\x1b[${colour}m${name}\x1b[0m exited (${code}); stopping the rest.`)
@@ -155,7 +167,9 @@ vendorWasm()
 vendorOrt()
 
 console.log('\nJ.A.R.V.I.S. starting — the brain and the face.\n')
-run('bridge', 'node', ['bridge/server.mjs'], '36', bridgeEnv)
+// JARVIS_SUPERVISED tells the bridge that this launcher will start it again
+// when it exits to apply settings (bridge/restart.mjs).
+run('bridge', 'node', ['bridge/server.mjs'], '36', { ...bridgeEnv, JARVIS_SUPERVISED: '1' }, [], { restartable: true })
 // npm is a shell script on most systems; call the vite binary directly so we do
 // not need shell:true (which would break the argument handling above).
 run(

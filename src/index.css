@@ -68,6 +68,18 @@
 .mem-tabs button { margin: 0; padding: 6px 12px; text-transform: capitalize; }
 .mem-tabs button[aria-pressed='true'] { outline: 1px solid var(--accent); }
 .mem-note { opacity: 0.8; font-size: 12px; }
+/* "Restart JARVIS to apply" (plan 39 phase 4). */
+.restart-banner {
+  opacity: 1;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+}
+.restart-banner button { margin: 0 0 0 8px; padding: 4px 10px; cursor: pointer; }
+.restart-float {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+  z-index: 40; max-width: calc(100vw - 32px);
+}
 .mem-facts { padding-left: 18px; }
 .mem-list { list-style: none; margin: 8px 0; padding: 0; }
 .mem-list li {

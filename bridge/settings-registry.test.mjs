@@ -79,7 +79,9 @@ for (const def of REGISTRY) {
     const v = sample(def)
     const r = updateSettings({ [def.id]: v })
     assert.deepEqual(r.changed, [def.id])
-    assert.deepEqual(def.apply === 'live' ? r.appliedLive : r.needsRestart, [def.id])
+    const when = { live: r.appliedLive, reconnect: r.nextConversation, restart: r.needsRestart }
+    assert.deepEqual(when[def.apply], [def.id])
+    assert.deepEqual(r.restartPending, def.apply === 'restart' ? [def.id] : [])
     assert.equal(setting(def.id), v)
     const pub = publicSettings()
     if (def.secret) {
@@ -133,4 +135,13 @@ test('the bridge serves the schema and PATCH, and takes its defaults from the re
 test('the page keeps its own copy of the shapes it reads in step with the registry', () => {
   const ts = readFileSync(new URL('../src/lib/settings.ts', import.meta.url), 'utf8')
   for (const d of REGISTRY) assert.ok(ts.includes(d.secret ? `${d.id}_set` : d.id), `${d.id} missing from PublicSettings`)
+})
+
+test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
+  const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
+  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
+  assert.deepEqual(by('reconnect'), ['JARVIS_EFFORT', 'JARVIS_MODEL'])
+  // The writes switch stays restart-only until the Safety section (phase 5)
+  // adds confirmation for dangerous changes; the audit log stays on until then too.
+  assert.deepEqual(by('restart'), ['JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD'])
 })

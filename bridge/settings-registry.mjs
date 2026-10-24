@@ -15,7 +15,11 @@
  *   default    effective value when nothing is set ('' for secrets: no default)
  *   scope      'global' | 'person' | 'device' (all 'global' until plans 01/30)
  *   risk       'normal' | 'sensitive' | 'dangerous'
- *   apply      'live' | 'restart' | 'reconnect' — when a change takes effect
+ *   apply      when a change takes effect (plan 39 phase 4):
+ *                'live'       at once; the subsystem listens for the change
+ *                'reconnect'  from the next conversation or task; nothing
+ *                             already running is switched mid-answer
+ *                'restart'    after JARVIS restarts (the Settings banner)
  *   visibleIn  'simple' | 'advanced'
  *
  * Values are stored as strings, exactly as before the registry existed;
@@ -68,7 +72,7 @@ const DEFS = [
     pattern: /^[\w-]{8,64}$/,
     default: 'JBFqnCBsd6RMkjVDRZzb',
     risk: 'normal',
-    apply: 'restart',
+    apply: 'live',
     visibleIn: 'advanced',
   },
   {
@@ -104,7 +108,7 @@ const DEFS = [
     pattern: /^[\w.-]{1,80}$/,
     default: 'claude-opus-5',
     risk: 'normal',
-    apply: 'restart',
+    apply: 'reconnect',
     visibleIn: 'simple',
   },
   {
@@ -116,7 +120,7 @@ const DEFS = [
     options: ['low', 'medium', 'high', 'xhigh'],
     default: 'high',
     risk: 'normal',
-    apply: 'restart',
+    apply: 'reconnect',
     visibleIn: 'simple',
   },
   {
@@ -149,7 +153,7 @@ const DEFS = [
     type: 'boolean',
     default: '1',
     risk: 'normal',
-    apply: 'restart',
+    apply: 'live',
     visibleIn: 'advanced',
   },
   {
