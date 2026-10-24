@@ -15,6 +15,10 @@ export type PublicSettings = {
   JARVIS_WAKE_SENSITIVITY: string
   setupDone: string
   storage: string
+  /** Where API keys are kept, e.g. "Windows protected storage (DPAPI)" — plan 39 phase 3. */
+  secretStorage?: string
+  /** False when this computer has no secure store: keys can then only come from the environment. */
+  secretStorageAvailable?: boolean
 }
 
 /** One entry of the bridge's settings registry (plan 39), as GET /settings/schema serves it. */

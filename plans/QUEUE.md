@@ -218,7 +218,7 @@ this file decides *in what order*.
 - **Done when:** settings are declared once and the existing UI still works.
 
 ### Q20 · Plan 39 · Secrets to the OS keychain
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q19
 - **Scope:** 39 phase 3. Move the ElevenLabs key (and future provider keys) to the OS keychain/DPAPI, with a migration that backs up first; the DB keeps only `*_set` flags.
 - **Done when:** no secret is stored in plain settings or logs.

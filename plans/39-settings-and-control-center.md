@@ -1,6 +1,6 @@
 # 39 · Settings and control center
 
-**Status:** Partial (basic Settings + 3-step wizard exist; phase 1 done) · **Priority:** P1 (grows with every plan) · **Effort:** 3–5 weeks for the framework and first sections, then incremental · **Depends on:** 15 (secrets, policy), 21 (brains), 38 (contracts), 29 (onboarding)
+**Status:** Partial (basic Settings + 3-step wizard exist; phases 1 and 3 done) · **Priority:** P1 (grows with every plan) · **Effort:** 3–5 weeks for the framework and first sections, then incremental · **Depends on:** 15 (secrets, policy), 21 (brains), 38 (contracts), 29 (onboarding)
 
 ## End state
 One place to see and control everything JARVIS is and does: which brain, which voice, who
@@ -60,7 +60,7 @@ Not in Settings (live in the HUD, Settings only configures them): approvals inbo
 ## Phases
 1. **Registry and API (1 w):** ✅ done (Q19). Extract today's 6 settings into the registry; schema endpoint; PATCH with validation; keep current UI working through the schema.
 2. **New shell (1 w):** left rail, search, Simple/Advanced, status dots; migrate Claude/Voice/Brain/Actions into Brains, Voice, Safety.
-3. **Secrets to keychain (3 d):** move the ElevenLabs key and future provider keys; migration with backup (17).
+3. **Secrets to keychain (3 d):** ✅ done (Q20). Move the ElevenLabs key and future provider keys; migration with backup (17).
 4. **Live apply + restart banner (3 d):** event on settings change; remove restart where possible.
 5. **Safety section (1 w):** risk-tier table, standing grants, PIN/freeze setup, change confirmation + audit entries (15).
 6. **Brains section (1 w)** alongside the first extra provider (21, 25).
@@ -106,6 +106,35 @@ All current settings live in the registry; the new shell ships with search and s
   phases 5 and 7. Restart-only settings are unchanged (phase 4, Q23). The registry is plain
   `.mjs`, not a `shared/contracts.ts` schema, for the same reason as plan 38 phase 3: the bridge
   cannot import `.ts` on Node 22.13.
+- **2026-10-24 — Phase 3 (Q20).** New `bridge/secrets.mjs`: a vault (one JSON object of
+  name → value) handed to the OS to protect — Windows DPAPI (CurrentUser scope, app entropy,
+  through Windows PowerShell; the ciphertext is `secrets.dpapi` beside the settings), the macOS
+  Keychain (`security`, one generic password) and the Linux Secret Service (`secret-tool`).
+  The secret always travels on the tool's stdin/stdout, never its command line, and no value
+  reaches an error message, log line or JSON. With no OS store (Linux without `secret-tool`)
+  the vault is `unavailable`: saving a key is refused with a readable message, never stored
+  in plain text; environment variables still win everywhere. `bridge/settings.mjs` sends every
+  registry `secret` to the vault (`settings/<ID>`) and the DB never stores one; `publicSettings`
+  still reports only `*_set` (computed from the vault rather than a DB flag row) plus
+  `secretStorage` / `secretStorageAvailable`, shown next to the key in Settings. Migration on
+  first start (`migrateSecrets`): back up with `VACUUM INTO settings.db.pre-keychain.bak`,
+  write to the vault, read it back from the OS, delete the rows (`secure_delete` on) and
+  `VACUUM`, then delete the backup (it holds plain keys); an interrupted run finishes from
+  the backup next start; on any failure the rows stay and are still read. Secret fields are
+  also removed from the old `settings.json.migrated`. Connector credentials (plan connectors,
+  C01) now use the vault as their `keychain` backend (`connector/<id>/<key>`), so the dev-only
+  file store is no longer needed where an OS store exists. Tests: `bridge/secrets.test.mjs`
+  (each backend against a fake OS tool: round trip, ciphertext only on disk, nothing on a
+  command line, failures quote no data) and `bridge/settings-secrets.test.mjs` (the plan's
+  "secrets in plain storage = 0" scan over every file in the settings folder, migration,
+  crash recovery, no-store behaviour, rollback, env precedence).
+  **Left:** DPAPI, Keychain and Secret Service are exercised only through fakes here; the
+  first real check is a Windows install (save a key in Settings, confirm `secrets.dpapi`
+  appears and `settings.db` has no `ELEVENLABS_API_KEY` row). Developer paths that are plain
+  text by design are unchanged: `.env.local` read by `npm start`, and the key borrowed from the
+  `elevenlabs` MCP entry in `~/.claude.json`. The connector store's "unavailable" message still
+  says the keychain "arrives with Q20"; it now only shows where no OS store exists. Settings
+  writes are not yet in the audit log (phase 5).
 - **2026-10-24 — Section 6, first slice (connector task C03).** Settings now has a Connectors part: one card per registered connector with status dot, what it can see, scopes, last sync, Test, Disconnect, Erase data, on/off switch, permissions and Freeze all, served by `bridge/connectors/routes.mjs`. Grants are saved in `connectors.json` (no secrets); tokens go only to the credential store. It sits in the current single-page dialog until the phase 2 shell.
 
 ## Related plans
