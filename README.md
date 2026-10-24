@@ -498,7 +498,15 @@ the browser. `JARVIS_MODEL` and `JARVIS_EFFORT` can also be set there when using
 
 ### Adding an ElevenLabs key
 
-You do not have to touch a flag when using `npm start`. Add the key to
+The easiest way is **Settings → Voice**: paste the key and press Save. JARVIS
+keeps it in your operating system's protected storage — Windows DPAPI (the same
+protection Windows uses for saved passwords), the macOS Keychain, or the Linux
+Secret Service through `secret-tool` — never in the settings file. A key saved by
+an older version is moved there automatically on first start (the settings file
+is backed up first, and the backup is deleted once the move is checked). On a
+Linux machine without `secret-tool`, a key can only come from the environment.
+
+For development, you do not have to touch a flag when using `npm start`. Add the key to
 `.env.local` (or set `ELEVENLABS_API_KEY` in the environment), then restart
 JARVIS. The combined launcher passes the key only to the bridge; it is not
 compiled into the browser bundle. If running the bridge by itself with

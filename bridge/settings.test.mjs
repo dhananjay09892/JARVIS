@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 process.env.JARVIS_HOME = mkdtempSync(join(tmpdir(), 'jarvis-settings-'))
-const { onSettingsChange, restartPending, updateSettings, publicSettings, setting } = await import('./settings.mjs')
+const { onSettingsChange, restartPending, updateSettings, publicSettings, setting, useSecretVault } = await import('./settings.mjs')
+const { createVault, memoryBackend } = await import('./secrets.mjs')
+useSecretVault(createVault(memoryBackend()))
 
 test('secrets are stored but never exposed, only reported as set', () => {
   updateSettings({ ELEVENLABS_API_KEY: 'abcdefgh12345678' })

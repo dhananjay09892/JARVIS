@@ -7,7 +7,10 @@ import { join } from 'node:path'
 process.env.JARVIS_HOME = mkdtempSync(join(tmpdir(), 'jarvis-registry-'))
 const { REGISTRY, SECTIONS, checkRegistry, isValid, settingDef, settingDefault, settingsSchema } =
   await import('./settings-registry.mjs')
-const { updateSettings, publicSettings, setting } = await import('./settings.mjs')
+const { updateSettings, publicSettings, setting, useSecretVault } = await import('./settings.mjs')
+const { createVault, memoryBackend } = await import('./secrets.mjs')
+// Secrets go to the OS store; the tests use an in-memory one (Q20).
+useSecretVault(createVault(memoryBackend()))
 
 // Plan 39: the tests follow from the registry, so a new entry is tested by
 // being declared. Every loop below covers every setting there is.

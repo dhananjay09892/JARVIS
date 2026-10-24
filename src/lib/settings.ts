@@ -19,6 +19,10 @@ export type PublicSettings = {
   restartPending?: string[]
   /** Whether the bridge can restart itself (it was started by the launcher or `npm start`). */
   canRestart?: boolean
+  /** Where API keys are kept, e.g. "Windows protected storage (DPAPI)" — plan 39 phase 3. */
+  secretStorage?: string
+  /** False when this computer has no secure store: keys can then only come from the environment. */
+  secretStorageAvailable?: boolean
 }
 
 /** One entry of the bridge's settings registry (plan 39), as GET /settings/schema serves it. */
