@@ -57,10 +57,16 @@ for *what* to build; this file decides *in what order*. The main roadmap queue i
 - **Done when:** fixture documents can be stored, searched and erased per connector, with tests.
 
 ### C03 · connectors · Settings → Connectors card
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C01, Q19
 - **Scope:** Plan 39 section 6 (no Q task covers it yet). A Connectors section on the settings registry: one card per registered connector with status dot, scopes / "what this connector can see", last sync, Test, Disconnect, Erase data and the kill switch; the three connect patterns (guided OAuth, paste a token, grant local access) as reusable UI flows. Tokens are written only through the credential store, never into settings.
 - **Done when:** the fake connector from the framework task can be connected, tested, disconnected and erased from Settings, with tests.
+
+### C95 · connectors · Connectors card: vault and retention controls
+- **Status:** todo
+- **Depends on:** C03
+- **Scope:** Follow-up from C03. On the Settings → Connectors card: the documents connector's "show health and finance documents to the brain" switch (`allowVault`, off by default, confirmation to turn on) and per-class / per-connector retention from the C02 store, saved beside the grants (no secrets), plus a per-connector document count. Also write a plan 16 metric for connector health (cards in `attention`/`error`).
+- **Done when:** the vault switch and a retention change survive a restart and take effect in the store and the documents tools, with tests.
 
 ## Data connectors (OpenJarvis list)
 

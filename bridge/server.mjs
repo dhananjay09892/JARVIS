@@ -45,7 +45,7 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
-import { setting, updateSettings, publicSettings, readSettings } from './settings.mjs'
+import { setting, updateSettings, publicSettings, readSettings, settingsDir } from './settings.mjs'
 import { settingDefault, settingsSchema } from './settings-registry.mjs'
 import { createClaudeBrain } from './brains/claude.mjs'
 import { createBrainRegistry } from './brains/registry.mjs'
@@ -54,6 +54,7 @@ import { createCredentialStore, createUnavailableCredentialStore } from './conne
 import { openDocumentStore } from './connectors/store.mjs'
 import { documentsConnector } from './connectors/documents.mjs'
 import { connectorsServer } from './connectors/mcp.mjs'
+import { createConnectorRoutes, createGrantsFile } from './connectors/routes.mjs'
 import { checkForUpdate } from './update.mjs'
 import { fileURLToPath } from 'node:url'
 
@@ -334,6 +335,19 @@ connectors.registerAll([
       }]
     : []),
 ])
+
+/**
+ * Settings → Connectors (task C03). Grants and kill switches the owner sets on
+ * the card are kept in connectors.json beside settings (no secrets in it) and
+ * restored here, after every connector has registered.
+ */
+const connectorGrantsFile = createGrantsFile(join(settingsDir(), 'connectors.json'))
+try {
+  connectors.grants.restore(connectorGrantsFile.load())
+} catch (err) {
+  console.error('[jarvis] could not restore connector switches:', err?.message ?? err)
+}
+const connectorRoutes = createConnectorRoutes({ registry: connectors, persist: connectorGrantsFile.save })
 
 /** `{ jarvis_connectors }` for a session, or nothing when no connector tool is available. */
 function connectorServerEntry() {
@@ -1075,6 +1089,40 @@ const handleRequest = async (req, res) => {
         needsRestart: result.needsRestart,
         overridden: result.overridden,
       }))
+    }
+  }
+
+  // ---- Settings → Connectors (task C03) -------------------------------
+  // The card reads GET /connectors (no secrets in it). Every change needs a
+  // real, allowed Origin, as settings writes do. A pasted token goes straight
+  // to the adapter's connect(), which keeps it in the credential store.
+  if (requestUrl.pathname === '/connectors' || requestUrl.pathname.startsWith('/connectors/')) {
+    if (req.method !== 'GET' && !origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    let body
+    if (req.method === 'POST') {
+      let raw = ''
+      for await (const chunk of req) {
+        raw += chunk
+        if (raw.length > 32 * 1024) {
+          req.destroy()
+          res.writeHead(400, cors)
+          return res.end('body too large')
+        }
+      }
+      try {
+        body = raw ? JSON.parse(raw) : {}
+      } catch {
+        res.writeHead(400, { ...cors, 'content-type': 'application/json' })
+        return res.end(JSON.stringify({ ok: false, reason: 'Send JSON.' }))
+      }
+    }
+    const out = await connectorRoutes.handle({ method: req.method, path: requestUrl.pathname, body })
+    if (out) {
+      res.writeHead(out.status, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+      return res.end(JSON.stringify(out.body))
     }
   }
 
