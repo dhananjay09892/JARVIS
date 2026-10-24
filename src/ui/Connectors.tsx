@@ -4,15 +4,20 @@ import {
   disconnectConnector,
   eraseConnector,
   listConnectors,
+  setClassRetention,
   setConnectorEnabled,
   setConnectorGrant,
+  setConnectorRetention,
   setConnectorsFrozen,
+  setVaultAllowed,
   testConnector,
   type Capability,
   type ConnectorCard,
   type ConnectorReply,
   type ConnectorsList,
   type CredentialBackend,
+  type DocumentPrefs,
+  type SensitivityClass,
 } from '../lib/connectors'
 
 /**
@@ -47,6 +52,104 @@ function backendNote(b: CredentialBackend) {
 }
 
 const when = (ms?: number) => (ms ? new Date(ms).toLocaleString() : 'never')
+
+type Act = (fn: () => Promise<ConnectorReply>, done?: (r: ConnectorReply) => string) => Promise<ConnectorReply | null>
+
+/** Retention choices offered (days); the current value is added if it is not one of them. */
+const RETENTION_CHOICES = [7, 30, 90, 180, 365, 730, 1825]
+
+const CLASS_LABEL: Record<SensitivityClass, string> = {
+  public: 'Public pages and feeds',
+  personal: 'Personal notes and files',
+  work: 'Work documents',
+  messages: 'Messages from other people',
+  contacts: 'Contacts',
+  finance: 'Money (vault)',
+  health: 'Health (vault)',
+  location: 'Places and location',
+}
+
+const daysLabel = (d: number) => (d % 365 === 0 ? `${d / 365} year${d === 365 ? '' : 's'}` : `${d} days`)
+const removedNote = (r: ConnectorReply) => (r.removed ? `Saved. ${r.removed} older document${r.removed === 1 ? '' : 's'} deleted.` : 'Saved.')
+
+/** A days picker; `defaultLabel` adds a "use the default" choice (value ''). */
+function DaysSelect({
+  value,
+  label,
+  defaultLabel,
+  busy,
+  onPick,
+}: {
+  value: number | null
+  label: string
+  defaultLabel?: string
+  busy: boolean
+  onPick: (days: number | null) => void
+}) {
+  const choices = value !== null && !RETENTION_CHOICES.includes(value) ? [...RETENTION_CHOICES, value].sort((a, b) => a - b) : RETENTION_CHOICES
+  return (
+    <select
+      aria-label={label}
+      disabled={busy}
+      value={value === null ? '' : String(value)}
+      onChange={(e) => onPick(e.target.value === '' ? null : Number(e.target.value))}
+    >
+      {defaultLabel && <option value="">{defaultLabel}</option>}
+      {choices.map((d) => (
+        <option key={d} value={String(d)}>
+          {daysLabel(d)}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+/**
+ * Synced documents (task C95): whether the brain may read health and finance
+ * documents (off by default, confirmed to turn on), and how long each kind of
+ * document is kept. A shorter time deletes older documents at once, so it asks.
+ */
+function DocumentsSection({ docs, busy, act }: { docs: DocumentPrefs; busy: boolean; act: Act }) {
+  const vault = (on: boolean) => {
+    if (on) {
+      const sure = window.confirm(
+        'Let the brain read your synced health and finance documents? With a cloud brain, the parts it reads leave this computer. You can turn this off at any time.',
+      )
+      if (!sure) return
+    }
+    void act(() => setVaultAllowed(on, on), () => (on ? 'Health and finance documents may be read.' : 'Health and finance documents stay on this computer.'))
+  }
+  const classDays = (cls: SensitivityClass, days: number | null) => {
+    const next = days ?? docs.retention.defaults[cls]
+    const shorter = next < docs.retention.classes[cls]
+    if (shorter && !window.confirm(`Keep ${CLASS_LABEL[cls].toLowerCase()} for ${daysLabel(next)}? Older ones are deleted now.`)) return
+    void act(() => setClassRetention(cls, days, shorter), removedNote)
+  }
+  return (
+    <section className="conn-card" aria-labelledby="conn-docs">
+      <h4 id="conn-docs">Synced documents</h4>
+      <label>
+        <input type="checkbox" checked={docs.allowVault} disabled={busy} onChange={(e) => vault(e.target.checked)} /> Show health
+        and finance documents to the brain
+      </label>
+      <p className="mem-note">Off by default: they stay on this computer and searches say how many were left out.</p>
+      <fieldset className="conn-grants">
+        <legend className="mem-note">Keep documents for</legend>
+        {(Object.keys(CLASS_LABEL) as SensitivityClass[]).map((cls) => (
+          <label key={cls}>
+            {CLASS_LABEL[cls]}{' '}
+            <DaysSelect
+              value={docs.retention.classes[cls]}
+              label={`Keep ${CLASS_LABEL[cls]} for`}
+              busy={busy}
+              onPick={(d) => classDays(cls, d === docs.retention.defaults[cls] ? null : d)}
+            />
+          </label>
+        ))}
+      </fieldset>
+    </section>
+  )
+}
 
 /** Paste a token or key (pattern 2). */
 function TokenFlow({ card, busy, onConnect }: FlowProps) {
@@ -141,7 +244,7 @@ function Card({
   card: ConnectorCard
   frozen: boolean
   busy: boolean
-  act: (fn: () => Promise<ConnectorReply>, done?: (r: ConnectorReply) => string) => Promise<ConnectorReply | null>
+  act: Act
 }) {
   const [signInUrl, setSignInUrl] = useState<string | null>(null)
   const state = card.status.state
@@ -219,6 +322,26 @@ function Card({
           )}
           {flow}
         </>
+      )}
+
+      {card.documents && (
+        <div className="mem-add">
+          <span className="mem-note">
+            {card.documents.count} document{card.documents.count === 1 ? '' : 's'} kept here · keep for
+          </span>{' '}
+          <DaysSelect
+            value={card.documents.retentionDays}
+            label={`Keep ${card.name} documents for`}
+            defaultLabel="each kind’s default"
+            busy={busy}
+            onPick={(days) => {
+              const current = card.documents?.retentionDays ?? null
+              const mayDelete = days === null ? current !== null : current === null || days < current
+              if (mayDelete && !window.confirm(`Change how long ${card.name} documents are kept? Older ones may be deleted now.`)) return
+              void act(() => setConnectorRetention(card.id, days, mayDelete), removedNote)
+            }}
+          />
+        </div>
       )}
 
       {connected && setup?.testQuestion && (
@@ -335,6 +458,13 @@ export function Connectors() {
         {list.frozen ? 'Unfreeze all connectors' : 'Freeze all connectors'}
       </button>
       {note && <p role="status" className="mem-note">{note}</p>}
+      {list.health && list.health.needsAttention > 0 && (
+        <p className="mem-note" role="status">
+          {list.health.needsAttention} connector{list.health.needsAttention === 1 ? ' needs' : 's need'} attention:{' '}
+          {list.health.ids.join(', ')}
+        </p>
+      )}
+      {list.documents?.available && <DocumentsSection docs={list.documents} busy={busy} act={act} />}
       {list.connectors.length === 0 && <p className="mem-note">No connectors yet.</p>}
       {list.connectors.map((c) => (
         <Card key={c.id} card={c} frozen={list.frozen} busy={busy} act={act} />

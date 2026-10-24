@@ -24,7 +24,8 @@
  *     people's messages, health, finance and location), changeable per
  *     connector. `prune()` runs on open and after every ingest.
  *   - Erase per connector: rows, index entries and the sync cursor, with
- *     `secure_delete` on so the pages are overwritten, not just unlinked.
+ *     `secure_delete` on so the pages are overwritten, not just unlinked. The
+ *     owner's retention choice for that connector is a setting and stays.
  */
 import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
@@ -163,7 +164,10 @@ export function openDocumentStore({ file, dir = defaultMemoryDir(), now = Date.n
       WHERE excluded.updated_at >= connector_documents.updated_at`),
     get: db.prepare('SELECT * FROM connector_documents WHERE connector_id = ? AND doc_id = ?'),
     eraseDocs: db.prepare('DELETE FROM connector_documents WHERE connector_id = ?'),
-    eraseState: db.prepare('DELETE FROM connector_state WHERE connector_id = ?'),
+    // Erase forgets the cursor and last sync but keeps the owner's retention
+    // choice: that is a setting, not synced data.
+    eraseState: db.prepare('DELETE FROM connector_state WHERE connector_id = ? AND retention_days IS NULL'),
+    eraseCursor: db.prepare('UPDATE connector_state SET cursor = NULL, last_sync = NULL WHERE connector_id = ?'),
     state: db.prepare('SELECT * FROM connector_state WHERE connector_id = ?'),
     saveState: db.prepare(`
       INSERT INTO connector_state (connector_id, cursor, last_sync) VALUES (?, ?, ?)
@@ -322,6 +326,7 @@ export function openDocumentStore({ file, dir = defaultMemoryDir(), now = Date.n
       return tx(() => {
         const { changes } = q.eraseDocs.run(connectorId)
         q.eraseState.run(connectorId)
+        q.eraseCursor.run(connectorId)
         return { erased: Number(changes) }
       })
     },
@@ -333,7 +338,31 @@ export function openDocumentStore({ file, dir = defaultMemoryDir(), now = Date.n
         throw new Error('Retention must be a whole number of days from 1 to 3650, or null.')
       }
       q.saveRetention.run(connectorId, days)
-      store.prune()
+      return store.prune()
+    },
+
+    /**
+     * Keep documents of one sensitivity class for `days` (null goes back to
+     * DEFAULT_RETENTION_DAYS). Connectors with their own retention keep it.
+     * Prunes at once, so a shorter retention deletes now; returns how many went.
+     */
+    setClassRetention(cls, days) {
+      if (!SENSITIVITY_CLASSES.includes(cls)) throw new Error(`Unknown sensitivity class: ${String(cls)}`)
+      if (days !== null && !(Number.isInteger(days) && days > 0 && days <= 3650)) {
+        throw new Error('Retention must be a whole number of days from 1 to 3650, or null.')
+      }
+      retention[cls] = days === null ? DEFAULT_RETENTION_DAYS[cls] : days
+      return store.prune()
+    },
+
+    /**
+     * The retention in force: days per class, and the connectors that have
+     * their own (`{ connectorId: days }`).
+     */
+    retention() {
+      const connectors = {}
+      for (const r of q.customRetention.all()) connectors[r.connector_id] = Number(r.retention_days)
+      return { classes: { ...retention }, connectors }
     },
 
     /** Delete documents older than their retention. Returns how many went. */
