@@ -111,3 +111,15 @@ test('the bridge needs the policy engine, a known actor and handler functions', 
   assert.throws(() => createToolBridge({ policy, actor: 'voice', tools: { Read: 'yes' } }), /handler/)
   assert.throws(() => createToolBridge({ policy, actor: 'voice', tools: [] }), /object/)
 })
+
+test('the whole output is there for the brain, but never on the event itself', async () => {
+  const long = `first\n${'y'.repeat(3000)}`
+  const { bridge } = setup({ tools: { Read: async () => long, mcp__calendar__list_events: async () => { throw new Error('disk on fire') } } })
+  const r = await bridge.run({ id: 'c1', name: 'Read', args: {} })
+  assert.equal(r.content, long)
+  assert.ok(r.detail.length <= 2000)
+  assert.equal(Object.keys(r).includes('content'), false)
+  assert.equal(JSON.stringify({ ...r }).includes('yyyy'.repeat(600)), false)
+  const failed = await bridge.run({ id: 'c2', name: 'mcp__calendar__list_events', args: {} })
+  assert.equal(failed.content, 'disk on fire')
+})

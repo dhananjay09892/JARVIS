@@ -19,6 +19,15 @@
  */
 import { detailOf, summarise } from './events.mjs'
 
+/** A tool's output as one string (MCP-style content blocks joined). */
+function flatText(content) {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content.map((b) => (typeof b === 'string' ? b : b?.type === 'text' && typeof b.text === 'string' ? b.text : '')).join('\n')
+  }
+  return ''
+}
+
 const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
 /**
@@ -48,7 +57,7 @@ export function createToolBridge({ policy, actor, tools = {}, guard = null, tain
 
   const result = (id, name, ok, content) => {
     outcomes.set(id, ok)
-    return {
+    const event = {
       t: 'tool_result',
       id,
       ok,
@@ -56,6 +65,11 @@ export function createToolBridge({ policy, actor, tools = {}, guard = null, tain
       tainted: ok && Boolean(name && tainted(name)),
       detail: detailOf(content),
     }
+    // The whole output, for the brain to hand back to its model. Not
+    // enumerable, so it never rides along when the event is copied, logged
+    // or sent to the HUD; only the brain that asked reads it.
+    Object.defineProperty(event, 'content', { value: flatText(content), enumerable: false })
+    return event
   }
 
   return Object.freeze({
