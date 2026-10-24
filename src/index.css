@@ -2078,3 +2078,14 @@ kbd {
 .mission-ask input { min-width: 0; }
 .mission-ask button { font-size: 9px; letter-spacing: 0.2em; cursor: pointer; }
 .mission-interrupted { border-color: #ffb300; opacity: 0.8; }
+
+/* Settings → Connectors (task C03) */
+.conn-card { border-top: 1px solid rgba(255, 255, 255, 0.12); padding: 8px 0; }
+.conn-card h4 { margin: 4px 0; font-size: 13px; }
+.conn-list { margin: 2px 0 6px 18px; padding: 0; font-size: 12px; opacity: 0.85; }
+.conn-grants { border: 0; margin: 4px 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.conn-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #888; vertical-align: middle; }
+.conn-ok { background: #3ddc84; }
+.conn-attention { background: #f5b942; }
+.conn-error { background: #ff5c5c; }
+.conn-disconnected { background: #888; }

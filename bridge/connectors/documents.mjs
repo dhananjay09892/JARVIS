@@ -68,6 +68,12 @@ export function documentsConnector({ store, isActive, allowVault = () => false }
     risk: 'R1',
     platforms: ['win', 'mac', 'linux'],
     capabilities: { read: true, write: false, subscribe: false },
+    setup: {
+      sees: [
+        'Documents your other connectors synced to this computer, only from connectors that are on and allowed to read.',
+        'Health and finance documents stay out unless you allow them.',
+      ],
+    },
     async connect() {
       return { ok: true }
     },

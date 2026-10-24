@@ -26,7 +26,7 @@
  *   - Errors are ConnectorErrors with owner-readable messages; anything an
  *     adapter throws is scrubbed of its own credential values before logging.
  */
-import { CAPABILITIES, connectorProblems, normaliseDocument, toolProblems, travelOf } from './interface.mjs'
+import { CAPABILITIES, connectorProblems, normaliseDocument, patternOf, toolProblems, travelOf } from './interface.mjs'
 import { createGrants } from './grants.mjs'
 import { createMemoryCredentialStore } from './credentials.mjs'
 import { ConnectorError, ERROR_MESSAGES } from './http.mjs'
@@ -246,6 +246,11 @@ export function createConnectorRegistry({
       return [...connectors.values()].map((c) => ({
         id: c.id, name: c.name, kind: c.kind, auth: c.auth, risk: c.risk, platforms: [...c.platforms],
         capabilities: { ...c.capabilities },
+        pattern: patternOf(c.auth),
+        setup: c.setup ? structuredClone(c.setup) : null,
+        canTest: typeof c.test === 'function' || typeof c.sync === 'function',
+        // A tool provider (like the built-in documents search) keeps nothing of its own.
+        erasable: typeof onErase === 'function' && c.kind !== 'tool-provider',
         grants: grants.of(c.id),
         disabled: grants.isDisabled(c.id),
         credentials: credentials.describe(c.id),
@@ -293,6 +298,63 @@ export function createConnectorRegistry({
       if (!error) health.set(id, { error: null })
       return { ok: !error, erased, ...(error ? { error } : {}) }
     },
+
+    /**
+     * The card's Test button (task C03). Never throws. Uses the adapter's own
+     * `test()` probe when it has one; otherwise reads the first synced item
+     * (through the same gate as sync, so it needs the read grant) and keeps
+     * nothing. Returns `{ ok, detail }` or `{ ok: false, error }`.
+     */
+    async test(id) {
+      if (!connectors.has(id)) return { ok: false, error: blocked('other') }
+      const c = connectors.get(id)
+      if (grants.isFrozen()) return { ok: false, error: blocked('frozen') }
+      if (grants.isDisabled(id)) return { ok: false, error: blocked('disabled') }
+      try {
+        if (typeof c.test === 'function') {
+          const r = (await c.test()) ?? {}
+          health.set(id, { ...health.get(id), error: null })
+          const detail = typeof r.detail === 'string' ? cleanLabel(scrubSecrets(r.detail, secretsOf(id))).slice(0, 300) : ''
+          return { ok: true, detail: detail || 'Working.' }
+        }
+        if (typeof c.sync === 'function') {
+          const stop = gate(id, 'read')
+          if (stop) return { ok: false, error: stop }
+          let found = false
+          for await (const item of c.sync({})) {
+            if (item && typeof item === 'object' && 'text' in item) {
+              found = true
+              break
+            }
+          }
+          health.set(id, { ...health.get(id), error: null })
+          return { ok: true, detail: found ? 'Working: it can read at least one item.' : 'Working, but there is nothing to read yet.' }
+        }
+        const s = registry.status(id)
+        return s.state === 'ok' ? { ok: true, detail: s.detail || 'Working.' } : { ok: false, error: { code: 'other', message: s.detail || ERROR_MESSAGES.other } }
+      } catch (err) {
+        return { ok: false, error: failure(id, err) }
+      }
+    },
+
+    /**
+     * Erase what JARVIS keeps from this connector (the document store, via
+     * `onErase`) without disconnecting it. Works while frozen or switched
+     * off: erasing must always be possible.
+     */
+    async erase(id) {
+      registry.get(id)
+      if (typeof onErase !== 'function') return { ok: false, erased: false, error: { code: 'other', message: 'There is no local store to erase.' } }
+      try {
+        await onErase(id)
+        return { ok: true, erased: true }
+      } catch (err) {
+        return { ok: false, erased: false, error: failure(id, err) }
+      }
+    },
+
+    /** Where credentials are kept: 'keychain' | 'dev-file' | 'memory' | 'unavailable'. */
+    credentialBackend: () => credentials.backend,
 
     /**
      * Pull documents. Never throws. Each document is validated (bad ones are

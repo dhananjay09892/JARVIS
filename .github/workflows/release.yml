@@ -18,10 +18,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Test files are found by pattern, so a new test runs without editing
+      # this file (and two PRs adding tests never conflict here).
       - name: Bridge tests
-        run: node --test bridge/settings.test.mjs bridge/settings-registry.test.mjs bridge/secrets.test.mjs bridge/settings-secrets.test.mjs bridge/update.test.mjs bridge/node-version.test.mjs bridge/approvals.test.mjs bridge/apps.test.mjs bridge/development.test.mjs bridge/memory.test.mjs bridge/workspace.test.mjs bridge/disclosure.test.mjs bridge/never-list.test.mjs bridge/policy.test.mjs bridge/taint.test.mjs bridge/brains/claude.test.mjs bridge/brains/registry.test.mjs bridge/brains/events.test.mjs bridge/brains/conformance.test.mjs bridge/connectors/interface.test.mjs bridge/connectors/credentials.test.mjs bridge/connectors/http.test.mjs bridge/connectors/registry.test.mjs bridge/connectors/fake.test.mjs bridge/connectors/store.test.mjs bridge/connectors/documents.test.mjs bridge/connectors/mcp.test.mjs
+        run: node --test "bridge/**/*.test.mjs"
       - name: Contract tests
-        run: node --test shared/contracts.test.ts src/lib/wake/router.test.ts src/lib/wake/openwakeword.test.ts scripts/wake/recipe.test.mjs
+        run: node --test "shared/**/*.test.ts" "src/**/*.test.ts" "scripts/**/*.test.mjs"
       - run: node scripts/package.mjs
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y

@@ -206,7 +206,7 @@ this file decides *in what order*.
 - **Done when:** neither `server.mjs` nor `tasks.mjs` reads an SDK message type, the existing tests pass, and the conformance suite still passes.
 
 ### Q18 · Plan 21 · Every tool call through the policy engine
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q16, Q04
 - **Scope:** 21 phase 3. Route all brain tool calls through `policy.decide()`; brains without a pre-execution hook are forced to read-only or tool-loop mode; tests on every brain.
 - **Done when:** no brain can run a tool without a policy decision.
