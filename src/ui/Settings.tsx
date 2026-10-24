@@ -193,7 +193,11 @@ export function Settings() {
         Optional. An ElevenLabs key gives JARVIS a much better voice and sharper hearing. Without it he uses your
         browser&apos;s own speech. The key stays on this computer.
       </p>
-      <p className="mem-note">Key: {s?.ELEVENLABS_API_KEY_set ? 'saved ✓' : 'not set'}</p>
+      <p className="mem-note">
+        Key: {s?.ELEVENLABS_API_KEY_set ? 'saved ✓' : 'not set'}
+        {s?.secretStorageAvailable && s.secretStorage ? ` · kept in ${s.secretStorage}` : ''}
+        {s?.secretStorageAvailable === false ? ' · this computer has no secure key storage, so a key cannot be saved here' : ''}
+      </p>
       <div className="mem-add">
         <input
           type="password"

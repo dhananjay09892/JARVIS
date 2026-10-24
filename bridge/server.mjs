@@ -45,7 +45,8 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
-import { setting, updateSettings, publicSettings, readSettings } from './settings.mjs'
+import { setting, updateSettings, publicSettings, readSettings, secretVault } from './settings.mjs'
+import { connectorKeychain } from './secrets.mjs'
 import { settingDefault, settingsSchema } from './settings-registry.mjs'
 import { createClaudeBrain } from './brains/claude.mjs'
 import { createBrainRegistry } from './brains/registry.mjs'
@@ -289,12 +290,14 @@ const MCP_SERVERS = configuredServers()
 /**
  * Connectors (plans/connectors, task C01). Only the built-in documents
  * connector (C02) is registered so far; each connector task adds its adapter here, inside the registry's own try/catch,
- * so one that fails cannot stop the bridge. Credentials stay unavailable until
- * the OS keychain (Q20) unless a developer opts into the dev-only store.
+ * so one that fails cannot stop the bridge. Credentials go to the OS secret
+ * store (Q20: DPAPI, Keychain or Secret Service). Where there is none, they stay
+ * unavailable unless a developer opts into the dev-only store.
  */
 function connectorCredentials() {
   try {
-    return createCredentialStore()
+    const vault = secretVault()
+    return createCredentialStore({ keychain: vault.available ? connectorKeychain(vault) : null })
   } catch (err) {
     // A misconfigured dev-only store must not stop the bridge; nothing is stored instead.
     console.error('[jarvis] connector credentials unavailable:', err?.message ?? err)
