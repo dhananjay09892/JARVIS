@@ -294,6 +294,27 @@ test('preToolUse allows by returning nothing and denies with the hook message', 
   assert.deepEqual(await writesPolicy.preToolUse().hooks[0]({ tool_name: 'Bash' }), {})
 })
 
+test('authorize is the decision the hook takes, with the stage it was asked from (plan 21 phase 3)', async () => {
+  const audit = []
+  const policy = createPolicy({ allowWrites: false, isMemoryTool: () => false, isWorkflowTool: () => false, isTaskTool: () => false, audit: (e) => audit.push(e) })
+  const ok = await policy.authorize({ name: 'Read', input: {}, actor: 'worker', stage: 'tool-bridge' })
+  assert.equal(ok.refusal, null)
+  assert.equal(ok.decision.verdict, 'allow')
+  const no = await policy.authorize({ name: 'Bash', input: {}, actor: 'worker', stage: 'tool-bridge' })
+  assert.equal(no.refusal, DENY_MESSAGES.hook)
+  assert.equal(no.decision.rule, 'write-builtin')
+  const held = await policy.authorize({ name: 'WebFetch', input: {}, guard: async () => 'held', log: null })
+  assert.deepEqual([held.refusal, held.decision.rule], ['held', 'guard-refused'])
+  const [hook] = policy.preToolUse({ actor: 'voice', log: null }).hooks
+  await hook({ tool_name: 'Bash', tool_input: {} })
+  assert.deepEqual(audit.map((e) => [e.actor, e.stage, e.request.name, e.decision.verdict]), [
+    ['worker', 'tool-bridge', 'Read', 'allow'],
+    ['worker', 'tool-bridge', 'Bash', 'deny'],
+    ['voice', 'pre-tool-use', 'WebFetch', 'deny'],
+    ['voice', 'pre-tool-use', 'Bash', 'deny'],
+  ])
+})
+
 test('preToolUse runs the guard only after the gate allows, and refuses if it throws', async () => {
   const calls = []
   const guard = async (name, input) => {

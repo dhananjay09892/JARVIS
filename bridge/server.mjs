@@ -1504,6 +1504,9 @@ const RESULT_FAILURES = {
   max_turns: 'The turn ran too long and was stopped.',
   budget: 'The budget for this turn ran out.',
   structured_output: 'The answer could not be assembled.',
+  // The brain registry stopped a turn in which a tool ran around the policy
+  // engine (brains/registry.mjs, plan 21 phase 3).
+  policy_bypass: 'I stopped that turn because a tool ran without a safety check.',
   default: 'The turn ended without an answer.',
 }
 

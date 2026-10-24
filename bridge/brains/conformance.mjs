@@ -2,8 +2,9 @@
  * The brain conformance suite (plan 21, phase 2).
  *
  * Scripted scenarios every brain must pass before JARVIS will use it: a plain
- * answer, one tool call, a denied tool, cancel mid-stream, a long answer, a
- * tool error and a second turn in the same session. The suite only ever sees
+ * answer, one tool call, a denied tool, write and never-list tools refused
+ * with writes off (phase 3), cancel mid-stream, a long answer, a tool error
+ * and a second turn in the same session. The suite only ever sees
  * BrainEvents (events.mjs), so the same scenarios hold every brain to the same
  * behaviour whatever its vendor's stream looks like.
  *
@@ -17,7 +18,9 @@
  *   { brain, params, executed }
  * where `brain.converse({ prompt, ...params })` plays the script through the
  * brain's own adapter against a stand-in for its provider, and `executed` is
- * the list of tool names that actually ran. The stand-in must ask the policy
+ * the list of tool names that actually ran. A harness may hand back the brain
+ * as the registry returns it (registry.mjs), so the policy contract for its
+ * tool mode is tested along with it. The stand-in must ask the policy
  * through the same hooks the real provider does, so a refusal is the policy's
  * and not the harness's.
  *
@@ -106,6 +109,34 @@ export const SCENARIOS = Object.freeze([
       assert.ok(
         r.audit.some((e) => e.request?.name === 'mcp__gmail__send_email' && e.decision?.verdict === 'deny'),
         'the policy engine was not asked',
+      )
+      assert.equal(r.done(0), 'complete')
+    },
+  },
+  {
+    // Plan 21 phase 3: the `disallowedTools` list, and the never-list, hold on
+    // every brain however its tools reach the policy engine.
+    id: 'write-tools-refused',
+    title: 'With writes off, write tools and never-list tools never run',
+    needs: 'tools',
+    prompt: 'Clear out my temp folder, save a note, and pay the electricity bill.',
+    script: [[
+      { tool: { id: 'call-1', name: 'Bash', args: { command: 'rm -rf ~/tmp' }, output: 'removed' } },
+      { tool: { id: 'call-2', name: 'Write', args: { file_path: '/home/tony/note.txt', content: 'hi' }, output: 'written' } },
+      { tool: { id: 'call-3', name: 'mcp__bank__transfer_money', args: { to: 'Power Co', amount: 120 }, output: 'paid' } },
+      { say: 'I cannot do any of those with writes off, sir.' },
+      usage,
+    ]],
+    check(r) {
+      const calls = r.of(0, 'tool_call')
+      assert.deepEqual(calls.map((c) => c.name), ['Bash', 'Write', 'mcp__bank__transfer_money'])
+      const results = r.of(0, 'tool_result')
+      assert.deepEqual(results.map((x) => [x.id, x.ok]), calls.map((c) => [c.id, false]))
+      assert.deepEqual(r.executed, [], 'no write or never-list tool may run')
+      // The never-list refusal is the policy engine's and is on the audit trail.
+      assert.ok(
+        r.audit.some((e) => e.request?.name === 'mcp__bank__transfer_money' && e.decision?.rule === 'never-move-money'),
+        'the never-list was not asked',
       )
       assert.equal(r.done(0), 'complete')
     },
