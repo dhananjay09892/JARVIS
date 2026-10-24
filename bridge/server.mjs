@@ -57,6 +57,7 @@ import { openDocumentStore } from './connectors/store.mjs'
 import { documentsConnector } from './connectors/documents.mjs'
 import { connectorsServer } from './connectors/mcp.mjs'
 import { createConnectorRoutes, createGrantsFile } from './connectors/routes.mjs'
+import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { checkForUpdate } from './update.mjs'
 import { fileURLToPath } from 'node:url'
 
@@ -324,15 +325,28 @@ function connectorCredentials() {
  * opened, connectors still register; there is just nowhere to keep documents,
  * and the documents connector is not offered.
  */
+/**
+ * Grants, kill switches and document preferences (vault switch, retention)
+ * live in connectors.json beside settings (no secrets). Class retention is
+ * read before the store opens, so its first prune already honours it.
+ */
+const connectorGrantsFile = createGrantsFile(join(settingsDir(), 'connectors.json'))
+const savedDocumentPrefs = normaliseDocumentPrefs(connectorGrantsFile.loadDocuments())
 function connectorDocuments() {
   try {
-    return openDocumentStore()
+    return openDocumentStore({ retentionDays: savedDocumentPrefs.classes })
   } catch (err) {
     console.error('[jarvis] connector document store unavailable:', err?.message ?? err)
     return null
   }
 }
 const connectorStore = connectorDocuments()
+let documentPrefs = null
+try {
+  documentPrefs = createDocumentPrefs({ store: connectorStore, initial: savedDocumentPrefs, persist: connectorGrantsFile.saveDocuments })
+} catch (err) {
+  console.error('[jarvis] could not apply document preferences:', err?.message ?? err)
+}
 const connectors = createConnectorRegistry({
   credentials: connectorCredentials(),
   // Disconnect → Erase data erases what the store kept for that connector.
@@ -348,6 +362,8 @@ connectors.registerAll([
           store: connectorStore,
           isActive: (id) => connectors.has(id) && !connectors.grants.isFrozen()
             && !connectors.grants.isDisabled(id) && connectors.grants.has(id, 'read'),
+          // The owner's switch on the Settings card (task C95); off by default.
+          allowVault: () => documentPrefs?.allowVault() === true,
         }),
       }]
     : []),
@@ -358,13 +374,16 @@ connectors.registerAll([
  * the card are kept in connectors.json beside settings (no secrets in it) and
  * restored here, after every connector has registered.
  */
-const connectorGrantsFile = createGrantsFile(join(settingsDir(), 'connectors.json'))
 try {
   connectors.grants.restore(connectorGrantsFile.load())
 } catch (err) {
   console.error('[jarvis] could not restore connector switches:', err?.message ?? err)
 }
-const connectorRoutes = createConnectorRoutes({ registry: connectors, persist: connectorGrantsFile.save })
+const connectorRoutes = createConnectorRoutes({
+  registry: connectors,
+  persist: connectorGrantsFile.save,
+  documents: documentPrefs,
+})
 
 /** `{ jarvis_connectors }` for a session, or nothing when no connector tool is available. */
 function connectorServerEntry() {

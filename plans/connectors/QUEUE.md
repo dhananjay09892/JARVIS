@@ -63,7 +63,7 @@ for *what* to build; this file decides *in what order*. The main roadmap queue i
 - **Done when:** the fake connector from the framework task can be connected, tested, disconnected and erased from Settings, with tests.
 
 ### C95 · connectors · Connectors card: vault and retention controls
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C03
 - **Scope:** Follow-up from C03. On the Settings → Connectors card: the documents connector's "show health and finance documents to the brain" switch (`allowVault`, off by default, confirmation to turn on) and per-class / per-connector retention from the C02 store, saved beside the grants (no secrets), plus a per-connector document count. Also write a plan 16 metric for connector health (cards in `attention`/`error`).
 - **Done when:** the vault switch and a retention change survive a restart and take effect in the store and the documents tools, with tests.

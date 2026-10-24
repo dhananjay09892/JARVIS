@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { fetchTraceStats, traceDiag, type TraceStats } from '../lib/trace'
+import { listConnectors, type ConnectorHealth } from '../lib/connectors'
 
 /**
  * The "why can't he hear me / why can't I hear him" panel.
@@ -115,6 +116,24 @@ export function Diagnostics() {
     }
   }, [open])
 
+  // Plan 16 connector health (task C95): cards in attention or error.
+  const [health, setHealth] = useState<ConnectorHealth | null | undefined>(undefined)
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    const load = () => {
+      listConnectors()
+        .then((l) => alive && setHealth(l.health ?? null))
+        .catch(() => alive && setHealth(null))
+    }
+    load()
+    const id = setInterval(load, 10_000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [open])
+
   if (!open) return null
 
   const w = window as unknown as Record<string, unknown>
@@ -202,6 +221,21 @@ export function Diagnostics() {
       )}
       <Row k="last turn" v={secs(traceDiag.lastLatencyMs)} bad={(traceDiag.lastLatencyMs ?? 0) > LATENCY_TARGET_MS} />
       <Row k="traces not saved" v={String(traceDiag.postFailures)} bad={traceDiag.postFailures > 0} />
+
+      <div className="diag-sec">CONNECTORS · plan 16</div>
+      {health ? (
+        <>
+          <Row
+            k="need attention"
+            v={`${health.needsAttention} of ${health.total}${health.ids.length ? ` (${health.ids.join(', ')})` : ''}`}
+            bad={health.needsAttention > 0}
+          />
+          <Row k="working / not connected / off" v={`${health.ok} / ${health.disconnected} / ${health.off}`} />
+          <Row k="frozen" v={health.frozen ? 'yes, all connectors' : 'no'} bad={health.frozen} />
+        </>
+      ) : (
+        <Row k="status" v={health === undefined ? '…' : 'bridge unreachable'} bad={health === null} />
+      )}
 
       <div className="diag-sec">SPEAKING · press T to test</div>
       <Row k="engine" v={String(t.engine ?? 'system')} />

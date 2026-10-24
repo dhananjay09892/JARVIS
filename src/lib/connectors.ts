@@ -39,6 +39,34 @@ export type ConnectorCard = {
   tools: { name: string; capability: Capability }[]
   status: { state: ConnectorState; detail: string; lastSync?: number; code?: string }
   credentialBackend: CredentialBackend
+  /** Synced documents kept for this connector (task C95); null when it keeps none. */
+  documents?: { count: number; classes: Record<string, number>; retentionDays: number | null } | null
+}
+
+export type SensitivityClass = 'public' | 'personal' | 'work' | 'messages' | 'contacts' | 'finance' | 'health' | 'location'
+
+/** The owner's document choices (task C95): the vault switch and retention. */
+export type DocumentPrefs = {
+  available: boolean
+  allowVault: boolean
+  retention: {
+    defaults: Record<SensitivityClass, number>
+    classes: Record<SensitivityClass, number>
+    connectors: Record<string, number>
+  }
+}
+
+/** Plan 16's connector-health metric: cards per state; target 0 needing attention. */
+export type ConnectorHealth = {
+  total: number
+  ok: number
+  attention: number
+  error: number
+  disconnected: number
+  off: number
+  needsAttention: number
+  ids: string[]
+  frozen: boolean
 }
 
 export type ConnectorsList = {
@@ -46,6 +74,8 @@ export type ConnectorsList = {
   credentialBackend: CredentialBackend
   connectors: ConnectorCard[]
   failures: { id: string; error: string }[]
+  documents?: DocumentPrefs | null
+  health?: ConnectorHealth
 }
 
 /** What every change returns: the changed card, or a plain-language reason. */
@@ -58,6 +88,8 @@ export type ConnectorReply = {
   erased?: boolean
   result?: { account?: string; detail?: string; url?: string }
   connector?: ConnectorCard
+  removed?: number
+  documents?: DocumentPrefs
 }
 
 export async function listConnectors(): Promise<ConnectorsList> {
@@ -88,3 +120,8 @@ export const setConnectorEnabled = (id: string, enabled: boolean) => post(at(id,
 export const setConnectorGrant = (id: string, capability: Capability, granted: boolean, confirm = false) =>
   post(at(id, 'grants'), { capability, granted, confirm })
 export const setConnectorsFrozen = (frozen: boolean, confirm = false) => post('/freeze', { frozen, confirm })
+export const setConnectorRetention = (id: string, days: number | null, confirm = false) =>
+  post(at(id, 'retention'), { days, confirm })
+export const setVaultAllowed = (allow: boolean, confirm = false) => post('/vault', { allow, confirm })
+export const setClassRetention = (cls: SensitivityClass, days: number | null, confirm = false) =>
+  post('/retention', { class: cls, days, confirm })

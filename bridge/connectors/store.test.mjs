@@ -218,3 +218,27 @@ test('a reopened store keeps its documents', () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('class retention can change while open: shorter prunes now, null goes back to the default (C95)', () => {
+  const s = openDocumentStore({ file: ':memory:', now: () => NOW })
+  s.save('notion', [doc('notion', { id: 'old', text: 'old', updatedAt: NOW - 40 * DAY })])
+  s.save('gmail', [doc('gmail', { id: 'own', text: 'own', updatedAt: NOW - 40 * DAY })])
+  s.setRetention('gmail', 100)
+  assert.equal(s.setClassRetention('personal', 30), 1, 'only the connector that follows the classes is pruned')
+  assert.equal(s.get('notion', 'old'), null)
+  assert.ok(s.get('gmail', 'own'))
+  assert.deepEqual(s.retention(), { classes: { ...DEFAULT_RETENTION_DAYS, personal: 30 }, connectors: { gmail: 100 } })
+  s.setClassRetention('personal', null)
+  assert.equal(s.retention().classes.personal, DEFAULT_RETENTION_DAYS.personal)
+  assert.throws(() => s.setClassRetention('nonsense', 5), /Unknown/)
+  assert.throws(() => s.setClassRetention('personal', 0), /Retention/)
+})
+
+test('erase keeps the owner’s per-connector retention but forgets the cursor (C95)', () => {
+  const s = openDocumentStore({ file: ':memory:', now: () => NOW })
+  s.ingest('gmail', { ok: true, documents: [doc('gmail', { id: 'a', text: 'a' })], cursor: 'c1' })
+  s.setRetention('gmail', 14)
+  s.erase('gmail')
+  assert.deepEqual(s.state('gmail'), { cursor: null, lastSync: null, retentionDays: 14 })
+  assert.equal(s.stats().gmail, undefined)
+})

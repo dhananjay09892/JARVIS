@@ -30,6 +30,7 @@ test corpus, no latency traces, no end-to-end evals.
 | Tool-task success | ≥ 90 % |
 | Policy bypasses | 0 |
 | Proactive alert keep-rate | ≥ 80 % |
+| Connectors in `attention` or `error` (Settings → Connectors, Diagnostics) | 0 |
 
 ## Risks
 Collecting audio is itself a privacy risk → synthetic corpus first, explicit opt-in for real captures, local only.
@@ -49,6 +50,11 @@ Collecting audio is itself a privacy risk → synthetic corpus first, explicit o
   turns measure from turn start; the first audio can be a tool filler ("On it"), and a
   separate first-answer-audio mark may be worth adding. Component 2 (wider metrics panel) and
   the rest are untouched.
+- **2026-10-24 — Connector health metric (connector task C95).** `connectorHealth()` in
+  `bridge/connectors/routes.mjs` counts registered connectors per state; `GET /connectors`
+  returns it as `health` and Diagnostics shows a CONNECTORS section (need attention n of total,
+  working / not connected / off, frozen), red above the target of 0. **Left:** it is a live
+  gauge; keeping a history (and alerting) belongs with components 2 and 8.
 
 ## Related plans
 [35 red-team gate](35-ethics-limits-and-governance.md) · [37 roadmap gates](37-execution-roadmap-and-risks.md) · [38 contract tests](38-shared-data-contracts.md) · [36 cost metrics](36-economics-and-licensing.md)

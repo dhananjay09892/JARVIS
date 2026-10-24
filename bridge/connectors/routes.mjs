@@ -11,6 +11,13 @@
  *   POST /connectors/:id/erase             { confirm: true }  erase local data, stay connected
  *   POST /connectors/:id/enabled           { enabled: boolean }  the per-connector kill switch
  *   POST /connectors/:id/grants            { capability, granted, confirm? }  write needs confirm
+ *   POST /connectors/:id/retention         { days: number|null, confirm? }  shorter needs confirm
+ *   POST /connectors/vault                 { allow: boolean, confirm? }  allow needs confirm
+ *   POST /connectors/retention             { class, days: number|null, confirm? }  shorter needs confirm
+ *
+ * GET also carries `documents` (the vault switch and retention, task C95), a
+ * document count on each card, and `health`, the plan 16 connector-health
+ * metric (how many cards are in `attention` or `error`).
  *
  * Rules this module keeps:
  *   - Tokens go only to the adapter's connect(), which stores them through the
@@ -29,9 +36,11 @@
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { CAPABILITIES, CONNECTOR_ID } from './interface.mjs'
+import { CAPABILITIES, CONNECTOR_ID, SENSITIVITY_CLASSES } from './interface.mjs'
 import { ERROR_MESSAGES } from './http.mjs'
 import { scrubSecrets } from './registry.mjs'
+import { validDays } from './prefs.mjs'
+import { DEFAULT_RETENTION_DAYS } from './store.mjs'
 
 const MAX_TOKEN = 16_384
 const MAX_PATH = 1024
@@ -87,19 +96,49 @@ export function connectResultForPage(result, secrets = []) {
   return out
 }
 
+/**
+ * Plan 16's connector-health metric: how many registered connectors are in
+ * each state, and how many need the owner (`attention` or `error`). Counted
+ * from the cards, so it is what Settings shows. Target: 0 needing attention.
+ * @param {{ id: string, status: { state: string }, disabled?: boolean }[]} cards
+ */
+export function connectorHealth(cards, { frozen = false } = {}) {
+  const out = { total: 0, ok: 0, attention: 0, error: 0, disconnected: 0, off: 0, needsAttention: 0, ids: [] }
+  for (const c of cards ?? []) {
+    out.total++
+    const state = c?.status?.state
+    if (['ok', 'attention', 'error', 'disconnected'].includes(state)) out[state]++
+    if (c?.disabled) out.off++
+    if (state === 'attention' || state === 'error') {
+      out.needsAttention++
+      out.ids.push(c.id)
+    }
+  }
+  out.frozen = frozen === true
+  return out
+}
+
 /** One card, as the page sees it. registry.list() already holds no secrets. */
-function card(summary, backend) {
-  return { ...summary, credentialBackend: backend }
+function card(summary, backend, docs = null) {
+  const extra = {}
+  if (docs) {
+    const stats = docs.stats()[summary.id]
+    extra.documents = summary.erasable
+      ? { count: stats?.total ?? 0, classes: stats?.classes ?? {}, retentionDays: docs.connectorDays(summary.id) }
+      : null
+  }
+  return { ...summary, credentialBackend: backend, ...extra }
 }
 
 /**
  * @param {{
  *   registry: ReturnType<typeof import('./registry.mjs').createConnectorRegistry>,
  *   persist?: (snapshot: object) => void,     save grants and switches
+ *   documents?: ReturnType<typeof import('./prefs.mjs').createDocumentPrefs> | null,
  *   log?: Pick<Console, 'warn' | 'error'>,
  * }} opts
  */
-export function createConnectorRoutes({ registry, persist = null, log = console }) {
+export function createConnectorRoutes({ registry, persist = null, documents = null, log = console }) {
   const save = () => {
     if (typeof persist !== 'function') return
     try {
@@ -111,14 +150,35 @@ export function createConnectorRoutes({ registry, persist = null, log = console 
 
   const cards = () => {
     const backend = registry.credentialBackend()
+    const list = registry.list().map((s) => card(s, backend, documents))
+    const frozen = registry.grants.isFrozen()
     return {
-      frozen: registry.grants.isFrozen(),
+      frozen,
       credentialBackend: backend,
-      connectors: registry.list().map((s) => card(s, backend)),
+      connectors: list,
       failures: registry.failures(),
+      documents: documents ? documents.view() : null,
+      health: connectorHealth(list, { frozen }),
     }
   }
-  const one = (id) => card(registry.list().find((c) => c.id === id), registry.credentialBackend())
+  const one = (id) => card(registry.list().find((c) => c.id === id), registry.credentialBackend(), documents)
+
+  /** `days` from a body: a whole number of days, or null for "the default". */
+  const daysOf = (body) => {
+    if (body.days === null) return { days: null }
+    if (!validDays(body.days)) return { error: 'Keep documents for 1 to 3650 whole days, or choose the default.' }
+    return { days: body.days }
+  }
+  const noStore = () => bad('Synced documents are not available on this computer.', 409)
+  /** A store failure (disk, lock) becomes a plain 500, never a thrown request. */
+  const guarded = (what, fn) => {
+    try {
+      return fn()
+    } catch (err) {
+      log?.error?.(`[jarvis] connector ${what}:`, scrubSecrets(err?.message ?? String(err)))
+      return { status: 500, body: { ok: false, reason: ERROR_MESSAGES.other } }
+    }
+  }
 
   /** What the page sees after any change: the changed card and the freeze. */
   const after = (id, extra = {}) => ok({ ...extra, frozen: registry.grants.isFrozen(), connector: one(id) })
@@ -174,6 +234,22 @@ export function createConnectorRoutes({ registry, persist = null, log = console 
       save()
       return after(id)
     },
+    async retention(id, body) {
+      if (!documents?.available()) return noStore()
+      const c = registry.list().find((x) => x.id === id)
+      if (!c.erasable) return bad('This connector keeps no documents.')
+      const { days, error } = daysOf(body)
+      if (error) return bad(error)
+      // A shorter time, the first one set, or going back to the class
+      // defaults can each delete documents at once.
+      const current = documents.connectorDays(id)
+      const mayDelete = days === null ? current !== null : current === null || days < current
+      if (mayDelete && body.confirm !== true) {
+        return bad('A shorter retention deletes older documents now; confirm first.')
+      }
+      const removed = documents.setConnectorRetention(id, days)
+      return after(id, { removed })
+    },
   }
 
   return {
@@ -190,6 +266,30 @@ export function createConnectorRoutes({ registry, persist = null, log = console 
       if (method !== 'POST') return bad('Use POST.', 405)
       const input = body === undefined || body === null ? {} : body
       if (!isObject(input)) return bad('Send a JSON object.')
+
+      if (path === '/connectors/vault') {
+        if (!documents?.available()) return noStore()
+        if (typeof input.allow !== 'boolean') return bad('allow must be true or false.')
+        if (input.allow && input.confirm !== true) {
+          return bad('Letting the brain read health and finance documents needs your confirmation.')
+        }
+        return guarded('vault', () => {
+          documents.setVault(input.allow)
+          return ok({ documents: documents.view() })
+        })
+      }
+
+      if (path === '/connectors/retention') {
+        if (!documents?.available()) return noStore()
+        if (!SENSITIVITY_CLASSES.includes(input.class)) return bad('Unknown kind of document.')
+        const { days, error } = daysOf(input)
+        if (error) return bad(error)
+        const next = days ?? DEFAULT_RETENTION_DAYS[input.class]
+        if (next < documents.classDays(input.class) && input.confirm !== true) {
+          return bad('A shorter retention deletes older documents now; confirm first.')
+        }
+        return guarded('retention', () => ok({ removed: documents.setClassRetention(input.class, days), documents: documents.view() }))
+      }
 
       if (path === '/connectors/freeze') {
         if (typeof input.frozen !== 'boolean') return bad('frozen must be true or false.')
@@ -220,29 +320,37 @@ export function createConnectorRoutes({ registry, persist = null, log = console 
 }
 
 /**
- * Where grants and kill switches are kept between runs: a small JSON file
- * beside settings (no secrets in it — only which connector may read, write or
- * subscribe, which are switched off, and the freeze).
+ * Where grants, kill switches and document preferences are kept between runs:
+ * a small JSON file beside settings. No secrets in it — only which connector
+ * may read, write or subscribe, which are switched off, the freeze, whether
+ * health and finance documents may reach the brain, and retention days.
+ * `save()` and `saveDocuments()` each replace only their own part.
  * @param {string} file
  */
 export function createGrantsFile(file) {
+  const read = () => {
+    if (!existsSync(file)) return null
+    try {
+      const parsed = JSON.parse(readFileSync(file, 'utf8'))
+      return isObject(parsed) && parsed.v === 1 ? parsed : null
+    } catch {
+      return null
+    }
+  }
+  const write = (patch) => {
+    const current = read() ?? {}
+    const next = { v: 1, grants: current.grants ?? null, documents: current.documents ?? null, ...patch }
+    mkdirSync(dirname(file), { recursive: true })
+    const tmp = `${file}.tmp`
+    writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 })
+    try { chmodSync(tmp, 0o600) } catch { /* Windows: mode is advisory */ }
+    renameSync(tmp, file)
+  }
   return {
     file,
-    load() {
-      if (!existsSync(file)) return null
-      try {
-        const parsed = JSON.parse(readFileSync(file, 'utf8'))
-        return isObject(parsed) && parsed.v === 1 ? parsed.grants : null
-      } catch {
-        return null
-      }
-    },
-    save(snapshot) {
-      mkdirSync(dirname(file), { recursive: true })
-      const tmp = `${file}.tmp`
-      writeFileSync(tmp, JSON.stringify({ v: 1, grants: snapshot }, null, 2), { mode: 0o600 })
-      try { chmodSync(tmp, 0o600) } catch { /* Windows: mode is advisory */ }
-      renameSync(tmp, file)
-    },
+    load: () => read()?.grants ?? null,
+    loadDocuments: () => read()?.documents ?? null,
+    save: (snapshot) => write({ grants: snapshot }),
+    saveDocuments: (prefs) => write({ documents: prefs }),
   }
 }
