@@ -18,6 +18,8 @@
  *   tools?()             → ConnectorTool[]    offered to brains, policy-gated
  *   receive?()           → AsyncIterable<ChannelMessage>   channels
  *   send?(msg)           → void               channels, approval-gated
+ *   test?()              → { detail? }        a cheap "is it working" probe (task C03)
+ *   setup?               ConnectorSetup       what the Settings card shows (task C03)
  *
  * Like brains/events.mjs this is the bridge's own copy of a contract, in plain
  * JavaScript so the bridge needs no TypeScript at runtime.
@@ -80,7 +82,7 @@ export function connectorProblems(c) {
   for (const method of ['connect', 'disconnect', 'status']) {
     if (!isFn(c[method])) p.push(`${who} needs ${method}()`)
   }
-  for (const method of ['sync', 'tools', 'receive', 'send']) {
+  for (const method of ['sync', 'tools', 'receive', 'send', 'test']) {
     if (c[method] !== undefined && !isFn(c[method])) p.push(`${who}.${method} must be a function`)
   }
   if (isObject(caps)) {
@@ -89,6 +91,54 @@ export function connectorProblems(c) {
     }
     if (c.kind === 'channel' && !isFn(c.receive)) p.push(`${who} is a channel but has no receive()`)
     if (isFn(c.send) && !caps.write) p.push(`${who} has send() but no write capability`)
+  }
+  if (c.setup !== undefined) p.push(...setupProblems(c.setup).map((e) => `${who}: ${e}`))
+  return p
+}
+
+/**
+ * How a user connects a connector (connector index, "the three patterns"),
+ * from its auth kind. The Settings card draws one reusable flow per pattern.
+ */
+export const CONNECT_PATTERNS = Object.freeze({
+  oauth: 'oauth', // guided sign-in in the browser
+  token: 'token', // paste a token or key
+  local: 'local', // grant local access (macOS databases, folders)
+  filesystem: 'local',
+  none: 'none', // nothing to sign in to
+})
+export const patternOf = (auth) => CONNECT_PATTERNS[auth] ?? 'none'
+
+const SETUP_TEXT = 300
+const isText = (v, max = SETUP_TEXT) => typeof v === 'string' && v.trim().length > 0 && v.length <= max
+const isTextList = (v, maxItems) => Array.isArray(v) && v.length <= maxItems && v.every((x) => isText(x))
+
+/**
+ * What the Settings → Connectors card shows about a connector. All plain
+ * text written by the adapter's author (never fetched from the service), so
+ * the card can show it as is:
+ *
+ *   sees          1–12 lines: "what this connector can see", in plain words
+ *   scopes?       the provider scopes / permissions it asks for, verbatim
+ *   steps?        a short numbered guide (create a token, register an OAuth client)
+ *   tokenLabel?   paste pattern: the name of the thing to paste
+ *   helpUrl?      an https link to the provider page the guide talks about
+ *   localWhy?     grant pattern: why it needs local access and exactly what it reads
+ *   testQuestion? something to ask JARVIS once it works ("What's on my calendar tomorrow?")
+ * @param {any} s
+ * @returns {string[]}
+ */
+export function setupProblems(s) {
+  if (!isObject(s)) return ['setup must be an object']
+  const p = []
+  if (!isTextList(s.sees, 12) || !s.sees.length) p.push('setup.sees needs 1–12 short lines')
+  if (s.scopes !== undefined && !isTextList(s.scopes, 20)) p.push('setup.scopes must be up to 20 short lines')
+  if (s.steps !== undefined && !isTextList(s.steps, 10)) p.push('setup.steps must be up to 10 short lines')
+  for (const k of ['tokenLabel', 'localWhy', 'testQuestion']) {
+    if (s[k] !== undefined && !isText(s[k])) p.push(`setup.${k} must be a short line`)
+  }
+  if (s.helpUrl !== undefined && !(isText(s.helpUrl, 500) && /^https:\/\/[^\s]+$/i.test(s.helpUrl))) {
+    p.push('setup.helpUrl must be an https link')
   }
   return p
 }
