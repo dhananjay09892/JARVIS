@@ -128,6 +128,7 @@ All current settings live in the registry; the new shell ships with search and s
   phase 5's confirmation and audit entry), the audit log, and the wake word and sensitivity
   (page-side; live once the wake engine can be swapped without re-initialising). No live test of
   the restart loop on Windows was possible in this run.
+- **2026-10-24 — Section 6, first slice (connector task C03).** Settings now has a Connectors part: one card per registered connector with status dot, what it can see, scopes, last sync, Test, Disconnect, Erase data, on/off switch, permissions and Freeze all, served by `bridge/connectors/routes.mjs`. Grants are saved in `connectors.json` (no secrets); tokens go only to the credential store. It sits in the current single-page dialog until the phase 2 shell.
 
 ## Related plans
 [15](15-policy-trust-and-privacy.md) · [17](17-deployment-and-resilience.md) · [21](21-multi-brain-framework.md) · [29](29-onboarding-and-first-run.md) · [35](35-ethics-limits-and-governance.md) · [36](36-economics-and-licensing.md) · [38](38-shared-data-contracts.md)

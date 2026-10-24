@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BACKEND } from '../config'
+import { Connectors } from './Connectors'
 import {
   getSettings,
   getSettingsSchema,
@@ -437,6 +438,9 @@ export function Settings() {
               Let JARVIS take real actions (run commands, change files, click and type in the browser)
             </label>
             <p className="mem-note">{writes.help} Applies after a restart (the banner above has the button).</p>
+
+            <h3>Connectors</h3>
+            <Connectors />
 
             <p className="mem-note">Saved in {s.storage}</p>
             <button

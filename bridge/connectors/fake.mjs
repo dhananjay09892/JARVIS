@@ -7,6 +7,7 @@
  * It is shaped like a real paste-a-token data connector:
  *   connect({ token })  checks the token with GET /v1/me, then stores it
  *   sync({ cursor })    pages through GET /v1/items?cursor=…
+ *   test()              GET /v1/me again: the Settings card's Test button (C03)
  *   tools               read:  search_items   (GET /v1/search?q=)
  *                       write: create_note    (POST /v1/notes) — denied by default
  */
@@ -38,6 +39,14 @@ export const fakeConnector = Object.freeze({
       risk: 'R1',
       capabilities: { read: true, write: true, subscribe: false },
       defaultSensitivity: 'personal',
+      setup: {
+        sees: ['Your fake items: title, text, author and when each was last changed.'],
+        scopes: ['items:read', 'notes:write (only if you grant write)'],
+        steps: ['Open the fake service settings.', 'Create an API token.', 'Paste it below and press Connect.'],
+        tokenLabel: 'Fake API token',
+        helpUrl: `https://${FAKE_HOST}/settings/tokens`,
+        testQuestion: 'What fake items do I have?',
+      },
 
       async connect({ token: pasted } = {}) {
         if (typeof pasted !== 'string' || !pasted.trim()) throw new ConnectorError('auth', { detail: 'empty token' })
@@ -48,6 +57,11 @@ export const fakeConnector = Object.freeze({
 
       async disconnect() {
         credentials.delete('api_token')
+      },
+
+      async test() {
+        const me = await get('/me')
+        return { detail: `Signed in as ${typeof me?.name === 'string' ? me.name.slice(0, 100) : 'someone'}.` }
       },
 
       status() {

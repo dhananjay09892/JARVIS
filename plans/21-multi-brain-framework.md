@@ -53,7 +53,7 @@ Two integration modes:
 ## Phases
 1. ✅ **Refactor behind an interface (4–5 d):** extract the current Claude code from `server.mjs` into `bridge/brains/claude.mjs` with no behaviour change; add a registry; add tests that pin current behaviour.
 2. ✅ **Event schema and conformance suite (3 d):** *(events, adapter and suite done in Q17; `server.mjs` and `tasks.mjs` read only BrainEvents since Q52)* normalise events; scripted scenarios every brain must pass (plain answer, one tool call, denied tool, cancel mid-stream, long answer, tool error, resume).
-3. **Policy contract (2 d):** all tool calls flow through `policy.decide()` (15); brains without a pre-execution hook are forced to read-only or tool-loop mode; test that `disallowedTools`-equivalents hold on every brain.
+3. ✅ **Policy contract (2 d):** *(done in Q18: tool modes and checks in `brains/registry.mjs`, the tool-loop executor in `brains/tool-bridge.mjs`)* all tool calls flow through `policy.decide()` (15); brains without a pre-execution hook are forced to read-only or tool-loop mode; test that `disallowedTools`-equivalents hold on every brain.
 4. **Brain settings UI (2 d):** pick default brain, per-person brain (01), per-task rules (06), connection status, "test this brain" button, clear subscription-vs-API-key labels and a cost/limit meter.
 5. **Router and fallback (3 d):** extend plan 06 routing with brain choice (reflex → fast → deep) and failover on outage/429/timeouts, with a spoken notice; sticky per conversation so tool state isn't lost.
 6. **Provider terms register (1 d):** *(research done: [ADR 001](adr/001-subscription-brain-terms.md) has the per-provider findings and a summary table to build the register from; waiting for the owner's decision)* `plans/brain-terms.md` or a doc listing per provider: auth mode, ToS stance for third-party apps, last verified date, risk level; surfaced in Settings before enabling a subscription login for that brain.
@@ -135,3 +135,26 @@ Conformance suite pass rate per brain; policy-bypass tests = 0 on all brains; fa
   its last tool call, as the SDK's `result` field was. Checked against a scripted fake SDK through
   the real bridge and a WebSocket: answer, tool badge, failed turn, and barge-in with no tail.
   Left: phase 3 (Q18, every tool call through `policy.decide()`).
+- **2026-10-24 · Q18 · Phase 3 done: no brain runs a tool without a policy decision.**
+  Each brain now declares `capabilities.toolGate`, and the registry puts it in a tool mode:
+  `hook` → agent mode (the vendor runs tools after asking a pre-execution hook; Claude, through
+  the PreToolUse hook and `canUseTool`), `loop` → tool-loop mode (the model only proposes calls;
+  each one runs through the new tool bridge, `bridge/brains/tool-bridge.mjs`), and anything else →
+  read-only mode (no MCP servers, no tool handlers, `readOnly: true` for the adapter). The
+  registry hands out `converse()` only (not the raw `startSession()`), refuses to start a
+  conversation without the policy engine, and watches every brain's events: a read-only brain
+  using any tool, a tool-loop brain reporting a result the bridge never produced (or a refusal as
+  a success), or an agent brain reporting a tool that ran with no allow from its hook stops the
+  turn with an `error` `policy_bypass` and `done` `error`, drops the rest of that turn and cancels
+  it; the HUD says "I stopped that turn because a tool ran without a safety check." The policy
+  engine gains `authorize()`, the one decision the PreToolUse hook and the tool bridge share (gate,
+  then guard, then an audit entry; audit stage `tool-bridge` added), so behaviour of the Claude
+  hook is unchanged. The bridge's `offered()` is the tool-loop equivalent of `disallowedTools`.
+  Conformance suite: new scenario `write-tools-refused` (Bash, Write and a never-list money tool
+  never run with writes off), and the whole suite now runs through the registry for Claude
+  (agent mode), a reference tool-loop brain and a read-only brain; it fails a Claude provider that
+  skips the hook and a tool-loop brain that runs tools around the bridge. Left: in tool-loop mode
+  the bridge takes plain handlers, so turning JARVIS's MCP servers into handlers, and labelling
+  tool-loop results as untrusted (`afterTool`), come with the first real tool-loop brain (Q21);
+  the agent-mode bypass check is a detector after the fact (the hook is what prevents), so it is
+  worth one real voice session with a few tools to confirm no false stops.
