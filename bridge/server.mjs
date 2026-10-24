@@ -45,9 +45,10 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
-import { setting, updateSettings, publicSettings, readSettings, secretVault, settingsDir } from './settings.mjs'
+import { onSettingsChange, publicSettings, readSettings, restartPending, secretVault, setting, settingsDir, updateSettings } from './settings.mjs'
 import { connectorKeychain } from './secrets.mjs'
 import { settingDefault, settingsSchema } from './settings-registry.mjs'
+import { createRestarter } from './restart.mjs'
 import { createClaudeBrain } from './brains/claude.mjs'
 import { createBrainRegistry } from './brains/registry.mjs'
 import { createConnectorRegistry } from './connectors/registry.mjs'
@@ -81,14 +82,27 @@ if (process.env.JARVIS_MEMORY !== 'off') {
  * JARVIS_TRACES=0 (or 'off') turns them off, and the store is then never opened.
  */
 let traces = null
-const tracesSetting = setting('JARVIS_TRACES')
-if (tracesSetting !== '0' && tracesSetting !== 'off') {
-  try {
-    traces = openTraces({ retentionDays: Number(process.env.JARVIS_TRACE_RETENTION_DAYS ?? 14) })
-  } catch (err) {
-    console.error('[jarvis] trace store unavailable — latency will not be recorded:', err.message)
+/** Open or close the trace store to match the setting. Live (plan 39 phase 4). */
+function applyTraces() {
+  const value = setting('JARVIS_TRACES')
+  const wanted = value !== '0' && value !== 'off'
+  if (wanted && !traces) {
+    try {
+      traces = openTraces({ retentionDays: Number(process.env.JARVIS_TRACE_RETENTION_DAYS ?? 14) })
+    } catch (err) {
+      console.error('[jarvis] trace store unavailable — latency will not be recorded:', err.message)
+    }
+  } else if (!wanted && traces) {
+    const old = traces
+    traces = null
+    try {
+      old.close()
+    } catch {
+      /* already closed */
+    }
   }
 }
+applyTraces()
 
 /**
  * The audit log (plan 15 phase 5; see bridge/audit.mjs): every policy
@@ -235,7 +249,7 @@ const ALLOW_WRITES = writesEnabled({ env: process.env, settings: readSettings() 
  * The orchestrator model. Override with JARVIS_MODEL to trade quality for pace
  * — claude-sonnet-5 is noticeably snappier on camera if Opus feels slow.
  */
-const MODEL = setting('JARVIS_MODEL') ?? settingDefault('JARVIS_MODEL')
+const currentModel = () => setting('JARVIS_MODEL') ?? settingDefault('JARVIS_MODEL')
 
 /**
  * How hard the model thinks before answering.
@@ -252,7 +266,7 @@ const MODEL = setting('JARVIS_MODEL') ?? settingDefault('JARVIS_MODEL')
  * matters more than pace; drop back to 'low' when filming and every second of
  * dead air shows.
  */
-const EFFORT = setting('JARVIS_EFFORT') ?? settingDefault('JARVIS_EFFORT')
+const currentEffort = () => setting('JARVIS_EFFORT') ?? settingDefault('JARVIS_EFFORT')
 
 /**
  * Every MCP server Claude Code has configured, read out of its own config.
@@ -665,8 +679,8 @@ function elevenKey() {
   }
 }
 
-const VOICE_ID = setting('JARVIS_VOICE_ID') ?? settingDefault('JARVIS_VOICE_ID')
-const HINDI_VOICE_ID = process.env.JARVIS_HINDI_VOICE_ID ?? VOICE_ID
+/** Read per request, so a new voice is heard on the next sentence (plan 39 phase 4). */
+const currentVoiceId = () => setting('JARVIS_VOICE_ID') ?? settingDefault('JARVIS_VOICE_ID')
 
 /**
  * Where /file is permitted to read from, and how big a read may get.
@@ -1059,7 +1073,7 @@ const handleRequest = async (req, res) => {
   if (requestUrl.pathname === '/settings') {
     if (req.method === 'GET') {
       res.writeHead(200, { ...cors, 'content-type': 'application/json' })
-      return res.end(JSON.stringify(publicSettings()))
+      return res.end(JSON.stringify({ ...publicSettings(), canRestart: restarter.available }))
     }
     // PATCH is the plan 39 API; POST stays for older pages. Both are one
     // validated, all-or-nothing batch.
@@ -1088,11 +1102,24 @@ const handleRequest = async (req, res) => {
       return res.end(JSON.stringify({
         ok: true,
         ...publicSettings(),
+        canRestart: restarter.available,
         appliedLive: result.appliedLive,
+        nextConversation: result.nextConversation,
         needsRestart: result.needsRestart,
         overridden: result.overridden,
       }))
     }
+  }
+  // The banner's one button (plan 39 phase 4). Same Origin rule as a save:
+  // only a page of ours may ask, never a script. See bridge/restart.mjs.
+  if (requestUrl.pathname === '/settings/restart' && req.method === 'POST') {
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    const out = restarter.request()
+    res.writeHead(out.ok ? 202 : 409, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ ...out, restartPending: restartPending() }))
   }
 
   // ---- Settings → Connectors (task C03) -------------------------------
@@ -1177,7 +1204,7 @@ const handleRequest = async (req, res) => {
     }
     try {
       const trace = JSON.parse(body || '{}')
-      traces.record(trace, { model: trace?.route === 'bridge' ? MODEL : null })
+      traces.record(trace, { model: trace?.route === 'bridge' ? currentModel() : null })
     } catch (err) {
       res.writeHead(400, { ...cors, 'content-type': 'application/json' })
       return res.end(JSON.stringify({ ok: false, reason: String(err?.message ?? err) }))
@@ -1274,7 +1301,7 @@ const handleRequest = async (req, res) => {
       res.writeHead(400, cors)
       return res.end('unsupported ElevenLabs speech language')
     }
-    const voiceId = language === 'hi' ? HINDI_VOICE_ID : VOICE_ID
+    const voiceId = (language === 'hi' && process.env.JARVIS_HINDI_VOICE_ID) || currentVoiceId()
     try {
       const upstream = await fetch(
         `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream` +
@@ -1459,11 +1486,24 @@ const wss = new WebSocketServer({
 })
 server.listen(PORT)
 
+/**
+ * Live apply (plan 39 phase 4). Settings marked `live` reconfigure here the
+ * moment they are saved; `reconnect` ones (model, effort) are read when the
+ * next conversation or task starts; `restart` ones wait for the banner.
+ */
+const restarter = createRestarter({ beforeExit: () => server.close() })
+onSettingsChange(({ changed, appliedLive, nextConversation, needsRestart }) => {
+  if (changed.includes('JARVIS_TRACES')) applyTraces()
+  if (appliedLive.length) console.log(`[jarvis] settings applied: ${appliedLive.join(', ')}`)
+  if (nextConversation.length) console.log(`[jarvis] settings apply from the next conversation: ${nextConversation.join(', ')}`)
+  if (needsRestart.length) console.log(`[jarvis] settings waiting for a restart: ${needsRestart.join(', ')}`)
+})
+
 console.log(`[jarvis] bridge listening on ws://localhost:${PORT}`)
 console.log(
   `[jarvis] speech ${elevenKey() ? 'via ElevenLabs' : 'using browser fallback voice'}`,
 )
-console.log(`[jarvis] model ${MODEL} · effort ${EFFORT}`)
+console.log(`[jarvis] model ${currentModel()} · effort ${currentEffort()}`)
 console.log(
   `[jarvis] general writes ${ALLOW_WRITES ? 'ENABLED' : 'disabled'}` +
     (ALLOW_WRITES ? '' : ' — set JARVIS_ALLOW_WRITES=1 to permit shell/file/device actions'),
@@ -1572,8 +1612,8 @@ ${task.goal}`,
         jarvis_development: developmentServer(approve),
       },
       systemPrompt: WORKER_PROMPT,
-      model: MODEL,
-      effort: EFFORT,
+      model: currentModel(),
+      effort: currentEffort(),
       policy,
       // The gate, then the taint check (plan 08, phase 2). See taint.mjs.
       guard: taintGuard(taint, approve),
@@ -1800,8 +1840,8 @@ wss.on('connection', (socket, req) => {
       }),
     },
     systemPrompt: SYSTEM_PROMPT,
-    model: MODEL,
-    effort: EFFORT,
+    model: currentModel(),
+    effort: currentEffort(),
     policy,
     // Once this session has read private content, opening, fetching or
     // sending to a destination the owner did not name waits for an approval

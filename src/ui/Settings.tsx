@@ -6,6 +6,7 @@ import {
   getSettings,
   getSettingsSchema,
   getSetupStatus,
+  restartBridge,
   saveSettings,
   startClaudeLogin,
   testElevenLabs,
@@ -71,7 +72,42 @@ function def(schema: SettingsSchema | null, id: string) {
 function savedNote(r: SaveResult) {
   if (r.overridden.length) return `Saved, but an environment variable overrides ${r.overridden.join(', ')}.`
   if (r.needsRestart.length) return 'Saved. Restart JARVIS to apply.'
+  if (r.nextConversation.length) return 'Saved. Applies from the next conversation.'
   return 'Saved.'
+}
+
+/**
+ * "Restart JARVIS to apply", with one button (plan 39 phase 4). Shown while a
+ * restart-only setting is saved but not yet in force, inside and outside the
+ * dialog. Without a launcher to start it again the bridge cannot restart
+ * itself, and the banner says so instead of offering the button.
+ */
+function RestartBanner({
+  s,
+  schema,
+  busy,
+  onRestart,
+}: {
+  s: PublicSettings | null
+  schema: SettingsSchema | null
+  busy: boolean
+  onRestart: () => void
+}) {
+  const pending = s?.restartPending ?? []
+  if (!pending.length) return null
+  const names = pending.map((id) => schema?.settings.find((d) => d.id === id)?.label ?? id).join(', ')
+  return (
+    <div role="status" className="mem-note restart-banner">
+      Restart JARVIS to apply: {names}.{' '}
+      {s?.canRestart ? (
+        <button disabled={busy} onClick={onRestart}>
+          Restart JARVIS
+        </button>
+      ) : (
+        'Stop JARVIS and start it again.'
+      )}
+    </div>
+  )
 }
 
 export function Settings() {
@@ -161,6 +197,30 @@ export function Settings() {
     setNote(t.ok ? 'Key saved and working. JARVIS will use the ElevenLabs voice.' : `Key saved, but: ${t.reason}`)
   }
 
+  /**
+   * Restart the bridge, wait for the new one to answer, then reload the page:
+   * some restart-only settings (the wake word) are read by the page when it
+   * starts, so "Restart JARVIS" restarts both halves.
+   */
+  const restart = () =>
+    run(async () => {
+      await restartBridge()
+      setNote('Restarting JARVIS…')
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 1000))
+        try {
+          const next = await getSettings()
+          if (!next.restartPending?.length) {
+            window.location.reload()
+            return 'JARVIS restarted.'
+          }
+        } catch {
+          /* still starting */
+        }
+      }
+      return 'JARVIS is taking a while to come back. Check that it is running.'
+    })
+
   const finish = async () => {
     await patch({ setupDone: '1' }, '')
     setWizard(false)
@@ -172,11 +232,17 @@ export function Settings() {
     else setOpen(false)
   }
 
+  const banner = <RestartBanner s={s} schema={schema} busy={busy} onRestart={() => void restart()} />
+
   if (!open) {
     return (
-      <button className="mem-open" onClick={() => setOpen(true)} aria-label="Open settings">
-        SETTINGS
-      </button>
+      <>
+        <button className="mem-open" onClick={() => setOpen(true)} aria-label="Open settings">
+          SETTINGS
+        </button>
+        {/* Portalled like the dialog, so the HUD cannot stack over it. */}
+        {s?.restartPending?.length ? createPortal(<div className="restart-float hud-modal">{banner}</div>, document.body) : null}
+      </>
     )
   }
 
@@ -249,6 +315,7 @@ export function Settings() {
           <button onClick={close}>{wizard ? 'Skip setup' : 'Close'}</button>
         </header>
         {note && <p role="status" className="mem-note">{note}</p>}
+        {!wizard && banner}
 
         {wizard && step === 0 && (
           <>
@@ -374,7 +441,7 @@ export function Settings() {
               />{' '}
               Let JARVIS take real actions (run commands, change files, click and type in the browser)
             </label>
-            <p className="mem-note">{writes.help} Applies after a restart.</p>
+            <p className="mem-note">{writes.help} Applies after a restart (the banner above has the button).</p>
 
             <h3>Connectors</h3>
             <Connectors />

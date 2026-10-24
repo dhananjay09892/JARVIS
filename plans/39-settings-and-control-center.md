@@ -11,7 +11,7 @@ and scoped per person. Each plan adds its own section instead of piling controls
 ## Today (verified in the repo)
 - `src/ui/Settings.tsx` (288 lines): a first-run wizard ("Welcome — step 1 of 3": Claude, optional ElevenLabs voice, all set) and a Settings dialog with **Claude** sign-in, **Voice** (ElevenLabs key), **Brain** (model, effort), **Actions** (allow writes).
 - `src/lib/settings.ts`: `PublicSettings` = `ELEVENLABS_API_KEY_set`, `JARVIS_MODEL`, `JARVIS_EFFORT`, `JARVIS_VOICE_ID`, `JARVIS_ALLOW_WRITES`, `setupDone`, `storage`; `GET/POST /settings`, `/setup/status`, `/setup/test-elevenlabs`, `/setup/claude-login`.
-- Model, effort and actions apply **after a restart**. The ElevenLabs key re-probes capabilities live.
+- Model, effort and actions apply **after a restart**. The ElevenLabs key re-probes capabilities live. *(Since Q23: model and effort apply from the next conversation, voice and traces live; the rest shows a restart banner.)*
 - Single user, flat key/value settings, no sections, search, per-person scope, status badges or export.
 
 ## Information architecture
@@ -61,7 +61,7 @@ Not in Settings (live in the HUD, Settings only configures them): approvals inbo
 1. **Registry and API (1 w):** ✅ done (Q19). Extract today's 6 settings into the registry; schema endpoint; PATCH with validation; keep current UI working through the schema.
 2. **New shell (1 w):** left rail, search, Simple/Advanced, status dots; migrate Claude/Voice/Brain/Actions into Brains, Voice, Safety.
 3. **Secrets to keychain (3 d):** ✅ done (Q20). Move the ElevenLabs key and future provider keys; migration with backup (17).
-4. **Live apply + restart banner (3 d):** event on settings change; remove restart where possible.
+4. **Live apply + restart banner (3 d):** ✅ done (Q23). Event on settings change; remove restart where possible.
 5. **Safety section (1 w):** risk-tier table, standing grants, PIN/freeze setup, change confirmation + audit entries (15).
 6. **Brains section (1 w)** alongside the first extra provider (21, 25).
 7. **People, Languages, Voice sections** as 01, 28, 02 land.
@@ -135,6 +135,28 @@ All current settings live in the registry; the new shell ships with search and s
   `elevenlabs` MCP entry in `~/.claude.json`. The connector store's "unavailable" message still
   says the keychain "arrives with Q20"; it now only shows where no OS store exists. Settings
   writes are not yet in the audit log (phase 5).
+- **2026-10-24 — Phase 4 (Q23).** `bridge/settings.mjs` now emits the settings-changed event:
+  `onSettingsChange(listener)` hears `{ changed, appliedLive, nextConversation, needsRestart,
+  overridden }` after each committed change (a throwing listener is logged and cannot undo the
+  save). There is no event bus yet (plan 12, Q32), so subsystems subscribe here; moving it onto
+  the bus later is a one-line change. What became live: the ElevenLabs voice (read per `/tts`
+  request), turn traces (the store opens/closes on change) and, as `reconnect`, model and effort
+  (read when each conversation or task starts, so the next one uses them; the answer in progress
+  is not switched). `restartPending()` lists restart-only settings whose effective value differs
+  from the one the bridge started with, so changing a value back clears it; `GET /settings` and
+  every save return it with `canRestart`. The Settings page shows a "Restart JARVIS to apply:
+  …" banner (in the dialog, and floating when it is closed) with one **Restart JARVIS** button:
+  `POST /settings/restart` (same Origin rule as saves) answers, closes the server and exits with
+  code 75 (`bridge/restart.mjs`); the Windows launcher and `npm start` set `JARVIS_SUPERVISED=1`
+  and start the bridge again on that code, and the page reloads once the new bridge answers
+  (the wake word is read by the page at start). A bridge started by hand says it cannot restart
+  itself. Tests: `bridge/restart.test.mjs`, new cases in `settings.test.mjs`, and the generated
+  per-setting registry tests now check `appliedLive` / `nextConversation` / `needsRestart` and
+  `restartPending` from each entry's `apply`.
+  **Left / deliberately restart-only:** the writes switch (`dangerous`; making it live waits for
+  phase 5's confirmation and audit entry), the audit log, and the wake word and sensitivity
+  (page-side; live once the wake engine can be swapped without re-initialising). No live test of
+  the restart loop on Windows was possible in this run.
 - **2026-10-24 — Section 6, first slice (connector task C03).** Settings now has a Connectors part: one card per registered connector with status dot, what it can see, scopes, last sync, Test, Disconnect, Erase data, on/off switch, permissions and Freeze all, served by `bridge/connectors/routes.mjs`. Grants are saved in `connectors.json` (no secrets); tokens go only to the credential store. It sits in the current single-page dialog until the phase 2 shell.
 
 ## Related plans

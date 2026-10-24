@@ -4,7 +4,8 @@
  * Starts the bridge if it is not already running, waits until it answers, then
  * opens JARVIS in its own Chrome/Edge app window with a private browser profile
  * (so the microphone permission is remembered). When that window is closed the
- * bridge it started is stopped again.
+ * bridge it started is stopped again. When the bridge exits to apply settings
+ * (the Settings "Restart" button, plan 39 phase 4) it is started again.
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, openSync } from 'node:fs'
@@ -41,18 +42,28 @@ function findBrowser() {
   return null
 }
 
+/** Keep in step with RESTART_EXIT_CODE in bridge/restart.mjs. */
+const RESTART_EXIT_CODE = 75
+
 let bridge = null
-if (!(await healthy())) {
+function startBridge() {
   const log = openSync(join(logDir, 'bridge.log'), 'a')
-  bridge = spawn(process.execPath, ['bridge/server.mjs'], {
+  const child = spawn(process.execPath, ['bridge/server.mjs'], {
     cwd: appDir,
     stdio: ['ignore', log, log],
     windowsHide: true,
-    env: { ...process.env, JARVIS_BRIDGE_PORT: String(PORT) },
+    // JARVIS_SUPERVISED: this launcher starts the bridge again after a restart.
+    env: { ...process.env, JARVIS_BRIDGE_PORT: String(PORT), JARVIS_SUPERVISED: '1' },
   })
-  bridge.on('exit', () => {
-    bridge = null
+  child.on('exit', (code) => {
+    if (bridge !== child) return
+    bridge = code === RESTART_EXIT_CODE ? startBridge() : null
   })
+  return child
+}
+
+if (!(await healthy())) {
+  bridge = startBridge()
   let up = false
   for (let i = 0; i < 60 && !up && bridge; i++) {
     up = await healthy()

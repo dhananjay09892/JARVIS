@@ -255,7 +255,7 @@ this file decides *in what order*.
 - **Done when:** the built front end contains no API keys.
 
 ### Q23 · Plan 39 · Live apply and restart banner
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q19
 - **Scope:** 39 phase 4. Emit a settings-changed event so subsystems reconfigure live; where they can't, show a "Restart JARVIS to apply" banner with one button.
 - **Done when:** changing a live setting needs no restart.

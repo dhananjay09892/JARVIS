@@ -15,6 +15,10 @@ export type PublicSettings = {
   JARVIS_WAKE_SENSITIVITY: string
   setupDone: string
   storage: string
+  /** Restart-only settings saved but not yet in force (plan 39 phase 4). Older bridges omit it. */
+  restartPending?: string[]
+  /** Whether the bridge can restart itself (it was started by the launcher or `npm start`). */
+  canRestart?: boolean
   /** Where API keys are kept, e.g. "Windows protected storage (DPAPI)" — plan 39 phase 3. */
   secretStorage?: string
   /** False when this computer has no secure store: keys can then only come from the environment. */
@@ -44,9 +48,14 @@ export type SettingsSchema = {
   settings: SettingDef[]
 }
 
-/** What a save returns: the new settings, plus which changes are already in force. */
+/**
+ * What a save returns: the new settings, plus when each change takes effect —
+ * now (`appliedLive`), from the next conversation (`nextConversation`), or
+ * after a restart (`needsRestart`).
+ */
 export type SaveResult = PublicSettings & {
   appliedLive: string[]
+  nextConversation: string[]
   needsRestart: string[]
   overridden: string[]
 }
@@ -88,10 +97,21 @@ export async function saveSettings(patch: Record<string, string>): Promise<SaveR
   if ('ELEVENLABS_API_KEY' in patch) await probeCapabilities()
   return {
     appliedLive: [],
+    nextConversation: [],
     overridden: [],
     ...data,
     needsRestart: Array.isArray(data.needsRestart) ? data.needsRestart : Object.keys(patch),
   }
+}
+
+/**
+ * Ask the bridge to restart so restart-only settings take effect. It answers
+ * first, then exits; the launcher starts it again and the page reconnects.
+ */
+export async function restartBridge(): Promise<void> {
+  const res = await fetch(`${BRIDGE_HTTP_URL}/settings/restart`, { method: 'POST' })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || data.ok === false) throw new Error(data.reason ?? 'Could not restart JARVIS.')
 }
 
 export async function getSetupStatus(): Promise<SetupStatus> {
