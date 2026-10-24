@@ -33,7 +33,7 @@ export const ENTRY_TYPES = ['decision', 'approval', 'result']
 /** Who asked: the voice session or a background worker. */
 export const ACTORS = ['voice', 'worker', 'system']
 /** Where in a tool call the decision was taken. */
-export const STAGES = ['pre-tool-use', 'can-use-tool']
+export const STAGES = ['pre-tool-use', 'can-use-tool', 'tool-bridge']
 export const VERDICTS = ['allow', 'ask', 'deny']
 
 /** prevHash of the first entry. */

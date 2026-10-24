@@ -583,6 +583,9 @@ export const PRE_TOOL_USE_GUARD_TIMEOUT_S = 120
  *                       approval cards still live in the servers that act.
  *   decideTool(name)  — the yes/no form, for the hook and the HUD badge.
  *   disallowedTools() — the SDK's disallowedTools list for this mode.
+ *   authorize({ name, input, actor, stage, guard }) — decide one call, with
+ *                       the guard, and audit it; resolves to { decision, refusal }.
+ *                       What the hook below and the tool bridge share.
  *   preToolUse({ reason, guard, log }) — a PreToolUse hook matcher: the gate
  *                       first, then the optional `guard(toolName, toolInput)`,
  *                       which resolves to null to let the call run or to a
@@ -613,31 +616,51 @@ export function createPolicy(options) {
   const decideTool = (name) => decide({ kind: 'tool', name }).verdict === 'allow'
   const denyBy = (rule) => ({ verdict: 'deny', rule, reason: RULE_REASONS[rule] })
 
+  /**
+   * Decide one tool call and put the decision on the audit trail: the gate,
+   * then the optional `guard(name, input)` (the taint check), which resolves
+   * to null to let the call run or to a refusal reason; a guard that throws
+   * refuses. The PreToolUse hook (agent-CLI brains) and the tool bridge
+   * (brains/tool-bridge.mjs, tool-loop brains) both decide through this, so
+   * every brain is decided the same way (plan 21 phase 3).
+   * Resolves to { decision, refusal }: refusal is null when the call may run,
+   * else the words handed back to the model.
+   */
+  const authorize = async ({
+    name, input, actor = 'voice', stage = 'pre-tool-use', guard = null, reason = DENY_MESSAGES.hook, log = console,
+  } = {}) => {
+    let refusal = null
+    const request = { kind: 'tool', name }
+    let decision = decide(request)
+    if (decision.verdict !== 'allow') {
+      refusal = reason
+    } else if (guard) {
+      try {
+        refusal = await guard(name, input)
+        if (refusal !== null && refusal !== undefined) decision = denyBy('guard-refused')
+      } catch (err) {
+        // A check that cannot finish must refuse, never wave the call through.
+        log?.error?.('[jarvis] taint check failed:', err)
+        refusal = DENY_MESSAGES.guardFailed
+        decision = denyBy('guard-failed')
+      }
+    }
+    recordDecision(audit, log, { actor, stage, request, decision })
+    return { decision, refusal: refusal ?? null }
+  }
+
   return Object.freeze({
     allowWrites: opts.allowWrites,
     decide,
     decideTool,
     disallowedTools: () => (opts.allowWrites ? [] : [...GENERAL_WRITE_TOOLS]),
+    authorize,
     preToolUse: ({ reason = DENY_MESSAGES.hook, guard = null, log = console, actor = 'voice' } = {}) => {
       const hook = async (input) => {
-        let refusal = null
-        const request = { kind: 'tool', name: input?.tool_name }
-        let decision = decide(request)
-        if (decision.verdict !== 'allow') {
-          refusal = reason
-        } else if (guard) {
-          try {
-            refusal = await guard(input.tool_name, input.tool_input)
-            if (refusal !== null && refusal !== undefined) decision = denyBy('guard-refused')
-          } catch (err) {
-            // A check that cannot finish must refuse, never wave the call through.
-            log?.error?.('[jarvis] taint check failed:', err)
-            refusal = DENY_MESSAGES.guardFailed
-            decision = denyBy('guard-failed')
-          }
-        }
-        recordDecision(audit, log, { actor, stage: 'pre-tool-use', request, decision })
-        return refusal === null || refusal === undefined ? {} : {
+        const { refusal } = await authorize({
+          name: input?.tool_name, input: input?.tool_input, actor, stage: 'pre-tool-use', guard, reason, log,
+        })
+        return refusal === null ? {} : {
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
             permissionDecision: 'deny',

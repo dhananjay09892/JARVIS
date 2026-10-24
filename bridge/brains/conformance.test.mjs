@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createClaudeBrain } from './claude.mjs'
+import { createBrainRegistry, POLICY_BYPASS } from './registry.mjs'
 import { SCENARIOS, runScenario, runConformance, checkStream } from './conformance.mjs'
 
 /**
@@ -133,7 +134,7 @@ test('the Claude brain passes the whole suite', async () => {
   const rows = await runConformance(claudeHarness(), { capabilities: createClaudeBrain({ query() {} }).capabilities })
   assert.deepEqual(rows.filter((r) => !r.ok), [])
   assert.deepEqual(rows.map((r) => r.id), [
-    'plain-answer', 'one-tool-call', 'denied-tool', 'cancel-mid-stream', 'long-answer', 'tool-error', 'resume',
+    'plain-answer', 'one-tool-call', 'denied-tool', 'write-tools-refused', 'cancel-mid-stream', 'long-answer', 'tool-error', 'resume',
   ])
 })
 
@@ -208,9 +209,9 @@ test('the suite fails a brain that never finishes', async () => {
 
 test('runConformance reports failures per scenario and skips tool scenarios for a brain without tools', async () => {
   const rows = await runConformance(claudeHarness({ bypassPolicy: true }))
-  assert.deepEqual(rows.filter((r) => !r.ok).map((r) => r.id), ['denied-tool'])
+  assert.deepEqual(rows.filter((r) => !r.ok).map((r) => r.id), ['denied-tool', 'write-tools-refused'])
   const noTools = await runConformance(claudeHarness(), { capabilities: { tools: false } })
-  assert.deepEqual(noTools.filter((r) => r.skipped).map((r) => r.id), ['one-tool-call', 'denied-tool', 'tool-error'])
+  assert.deepEqual(noTools.filter((r) => r.skipped).map((r) => r.id), ['one-tool-call', 'denied-tool', 'write-tools-refused', 'tool-error'])
 })
 
 test('checkStream rules', () => {
@@ -222,4 +223,132 @@ test('checkStream rules', () => {
   const usage = { t: 'usage', inTokens: 1, outTokens: 1 }
   assert.throws(() => checkStream([usage, usage, done], 1), /more than one usage/)
   assert.equal(checkStream([usage, done, done], 2).length, 2)
+})
+
+// Plan 21 phase 3: the policy contract, on every brain, through the registry.
+
+/** A harness whose brain is the one the registry hands out, in that brain's tool mode. */
+const registered = (base) => async (args) => {
+  const h = await base(args)
+  const brain = createBrainRegistry({ log: null }).register(h.brain)
+  return { ...h, brain }
+}
+
+/**
+ * A reference tool-loop brain (toolGate 'loop'): a model that only proposes
+ * calls. It plays the script and runs every call through `params.tools`, the
+ * tool bridge the registry gives it. `cheat` makes it run its own handler
+ * instead and report success, which the registry must catch.
+ */
+function loopHarness({ cheat = false, gate = 'loop' } = {}) {
+  return ({ script, policy }) => {
+    const executed = []
+    const steps = script.flat().filter((s) => s.tool).map((s) => s.tool)
+    const tools = Object.fromEntries(steps.map((t) => [t.name, async () => {
+      executed.push(t.name)
+      if (t.error) throw new Error(t.error)
+      return t.output ?? ''
+    }]))
+    const brain = {
+      id: 'mock-loop',
+      label: 'Mock tool loop',
+      capabilities: { tools: gate !== undefined, streaming: true, ...(gate && { toolGate: gate }) },
+      status: () => ({ installed: true }),
+      startSession() {
+        throw new Error('not used')
+      },
+      converse({ prompt, tools: bridge }) {
+        let cancelled = false
+        let wake = null
+        const turns = typeof prompt === 'string' ? [prompt] : prompt
+        async function* events() {
+          for (const [n] of turns.entries()) {
+            cancelled = false
+            for (const step of script[n] ?? []) {
+              if (step.say !== undefined) {
+                for (const piece of step.say.match(/\S+\s*|\s+/g) ?? []) if (!cancelled) yield { t: 'text', delta: piece }
+              } else if (step.tool && !cancelled) {
+                const { id, name, args } = step.tool
+                yield { t: 'tool_start', id, name }
+                yield { t: 'tool_call', id, name, args }
+                if (cheat) {
+                  await tools[name]()
+                  yield { t: 'tool_result', id, ok: true, summary: step.tool.output ?? '', tainted: false }
+                } else {
+                  yield await bridge.run({ id, name, args })
+                }
+              } else if (step.stall && !cancelled) {
+                await new Promise((resolve) => { wake = resolve })
+              } else if (step.usage && !cancelled) {
+                yield { t: 'usage', ...step.usage }
+              }
+            }
+            yield { t: 'done', reason: cancelled ? 'cancelled' : 'complete' }
+          }
+        }
+        return {
+          events: events(),
+          async cancel() {
+            cancelled = true
+            wake?.()
+          },
+          close() {},
+        }
+      },
+    }
+    return { brain, executed, params: { actor: 'voice', policy, mcpServers: { secret: {} }, tools, guard: async () => null } }
+  }
+}
+
+test('every brain kind passes the whole suite through the registry', async () => {
+  const claude = await runConformance(registered(claudeHarness()), { capabilities: createClaudeBrain({ query() {} }).capabilities })
+  assert.deepEqual(claude.filter((r) => !r.ok), [], 'Claude in agent mode')
+  assert.equal(claude.filter((r) => r.skipped).length, 0)
+  const loop = await runConformance(registered(loopHarness()))
+  assert.deepEqual(loop.filter((r) => !r.ok), [], 'a tool-loop brain')
+  assert.equal(loop.filter((r) => r.skipped).length, 0)
+  // A brain with no pre-execution hook runs read-only: no tool scenarios, and
+  // the rest still pass.
+  const readOnly = await runConformance(registered(loopHarness({ gate: undefined })), { capabilities: { tools: false } })
+  assert.deepEqual(readOnly.filter((r) => !r.ok), [])
+  assert.deepEqual(readOnly.filter((r) => r.skipped).map((r) => r.id), ['one-tool-call', 'denied-tool', 'write-tools-refused', 'tool-error'])
+})
+
+test('the registry stops a Claude brain whose provider ran a tool without the hook', async () => {
+  const scenario = SCENARIOS.find((s) => s.id === 'denied-tool')
+  await assert.rejects(runScenario(scenario, registered(claudeHarness({ bypassPolicy: true }))))
+  // And says why: the turn ends with a policy_bypass error, not a success.
+  const h = await registered(claudeHarness({ bypassPolicy: true }))({ script: scenario.script, policy: (await import('../policy.mjs')).createPolicy({ allowWrites: false, isMemoryTool: () => false, isWorkflowTool: () => false, isTaskTool: () => false }) })
+  const seen = []
+  for await (const e of h.brain.converse({ prompt: scenario.prompt, ...h.params }).events) {
+    seen.push(e)
+    if (e.t === 'done') break
+  }
+  assert.deepEqual(seen.filter((e) => e.t === 'error').map((e) => e.code), [POLICY_BYPASS])
+  assert.equal(seen.at(-1).reason, 'error')
+  assert.equal(seen.some((e) => e.t === 'tool_result' && e.ok), false, 'the bypassed result is not passed on as work done')
+  assert.equal(seen.some((e) => e.t === 'text'), false, 'the rest of the turn is dropped')
+})
+
+test('the registry stops a tool-loop brain that runs a tool around the bridge', async () => {
+  for (const id of ['one-tool-call', 'denied-tool']) {
+    const scenario = SCENARIOS.find((s) => s.id === id)
+    await assert.rejects(runScenario(scenario, registered(loopHarness({ cheat: true }))))
+  }
+})
+
+test('a tool-loop brain never sees MCP servers, handlers or the policy engine', async () => {
+  let given = null
+  const brain = createBrainRegistry({ log: null }).register({
+    id: 'peek', label: 'Peek', capabilities: { tools: true, toolGate: 'loop' }, status: () => ({}), startSession() {},
+    converse(params) {
+      given = params
+      return { events: (async function* () { yield { t: 'done', reason: 'complete' } })(), cancel() {}, close() {} }
+    },
+  })
+  const policy = (await import('../policy.mjs')).createPolicy({ allowWrites: false, isMemoryTool: () => false, isWorkflowTool: () => false, isTaskTool: () => false })
+  brain.converse({ prompt: 'hi', actor: 'worker', policy, mcpServers: { a: {} }, tools: { Read: async () => 'x', Bash: async () => 'y' }, guard: async () => null, afterTool: {}, model: 'm' })
+  assert.deepEqual(Object.keys(given).sort(), ['actor', 'model', 'prompt', 'tools'])
+  assert.deepEqual(given.tools.offered(), ['Read'], 'only what the policy allows is offered')
+  assert.equal(typeof given.tools.run, 'function')
 })

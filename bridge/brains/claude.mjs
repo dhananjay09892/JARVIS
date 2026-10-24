@@ -340,8 +340,11 @@ export function createClaudeBrain({ query, status = claudeStatus, login = startC
     // What this brain can do, for the router and Settings (plan 21). `resume`
     // is false because JARVIS owns conversation history (conversation.mjs),
     // not because the SDK cannot.
+    // `toolGate: 'hook'` puts it in agent mode (registry.mjs): the SDK runs
+    // tools, but only after the PreToolUse hook and canUseTool built from the
+    // policy engine in claudeOptions have allowed them (plan 21 phase 3).
     capabilities: Object.freeze({
-      tools: true, streaming: true, resume: false, vision: true, offline: false,
+      tools: true, streaming: true, resume: false, vision: true, offline: false, toolGate: 'hook',
     }),
 
     /**
