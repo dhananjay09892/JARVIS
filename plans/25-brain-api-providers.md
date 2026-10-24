@@ -31,7 +31,7 @@ keys are the recommended default for automation). It trades "free with my subscr
 - Model catalogue with capabilities and price hints, user-overridable.
 
 ## Phases
-1. **Generic adapter + OpenAI profile (4 d):** streaming, tool loop, cancellation, usage; conformance suite.
+1. **Generic adapter + OpenAI profile (4 d):** streaming, tool loop, cancellation, usage; conformance suite. **Done (Q21):** `bridge/brains/openai-compatible.mjs`, passes the conformance suite against a mock server; not yet registered in the bridge or selectable in Settings.
 2. **Anthropic API profile (2 d):** reuse, with prompt caching; becomes the sanctioned fallback for the Claude brain.
 3. **OpenRouter + compatible endpoints (2 d):** profile editor in Settings; "test connection" button.
 4. **Secrets and the `direct` backend (2 d):** move keys behind the bridge; remove keys from the front-end bundle; migration note.
@@ -46,6 +46,26 @@ keys are the recommended default for automation). It trades "free with my subscr
 
 ## Done when
 A user can paste an OpenAI (or OpenRouter) key, choose it as the brain, hold a conversation, run a gated tool task, see spend, and no provider key exists in browser code.
+
+## Autopilot log
+- **2026-10-24 · Q21 · Phase 1: generic adapter and OpenAI profile.**
+  Added `bridge/brains/openai-compatible.mjs`: a tool-loop brain (`toolGate: 'loop'`) over the
+  Chat Completions streaming API, with an OpenAI profile (`PROFILES.openai`). It streams text,
+  assembles streamed (and parallel) tool calls, runs every call through the registry's
+  policy-gated tool bridge, feeds results back to the model, sums usage over the turn's requests
+  (one `usage` per turn), cancels by aborting the request in flight, and stops at a step limit
+  (8 voice / 24 worker) and on a silent-provider timeout. HTTP failures map to `auth`,
+  `rate_limit`, `provider`, `request`; keys come from `getKey()` at request time, are scrubbed
+  from provider messages, and a non-loopback base URL must be https. Calls with non-JSON
+  arguments are never run; missing or repeated provider call ids are replaced. The tool bridge
+  now also hands the brain the whole tool output as a non-enumerable `content`, so the model sees
+  more than the 2000-character `detail` while events, traces and the HUD do not.
+  `openai-compatible.test.mjs` runs the whole conformance suite against a local mock
+  OpenAI-compatible HTTP server (no paid key) plus 19 adapter tests.
+  Left: register the brain in `server.mjs` behind a Settings switch (off by default) and store
+  its key through the keychain (Q22); untrusted-content labelling of tool results in tool-loop
+  mode (Claude gets it from its PostToolUse hook); a cost figure (`costUsd`) from a price table
+  (phase 5); phases 2–7.
 
 ## Related plans
 [21](21-multi-brain-framework.md) · [36 cost caps](36-economics-and-licensing.md) · [15](15-policy-trust-and-privacy.md)
