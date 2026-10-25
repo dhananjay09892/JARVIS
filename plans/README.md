@@ -34,7 +34,7 @@ anything marked *unaudited* was not read in depth.
 | 19 | [Skills ecosystem](19-skills-ecosystem.md) | Pending | Later | Workflows only → signed, sandboxed skill packs |
 | 20 | [Messaging channels (own number, WhatsApp, Telegram)](20-messaging-channels.md) | Pending | P1 | Voice/browser only → channel adapters, sender allow-list, approvals over chat |
 | 21 | [Multi-brain framework](21-multi-brain-framework.md) | Pending | P1 | Claude-only (`brain.ts`, Agent SDK in `server.mjs`) → provider interface, conformance suite, fallback |
-| 22 | [Brain: OpenAI Codex / ChatGPT plan](22-brain-openai-codex.md) | Pending | P1 | Subscription login documented; third-party use terms unconfirmed |
+| 22 | [Brain: OpenAI Codex / ChatGPT plan](22-brain-openai-codex.md) | Partial | P1 | Sign in with ChatGPT (ADR 001) auth and Responses wire done (Q43); Settings next (Q55) |
 | 23 | [Brain: GitHub Copilot](23-brain-github-copilot.md) | Pending | P1 | Official embeddable SDK; verify GA status and quota |
 | 24 | [Brain: Google Gemini](24-brain-google-gemini.md) | Pending | P2 | API key first; free Google-login path reportedly ended (unverified) |
 | 25 | [Brain: API-key providers](25-brain-api-providers.md) | Partial | P1 | Anthropic direct path only, key in browser → server-side tool-loop adapter, OpenAI/OpenRouter/compatible |

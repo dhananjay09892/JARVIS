@@ -26,7 +26,7 @@ Credentials stay on the user's machine. In JARVIS they go to the OS keychain (pl
 8. **Health:** token-expiry detection and plain-language fix-it messages.
 
 ### Alternatives to compare before building
-- Alternative path: Google's official remote Gmail MCP server (developer preview since May 2026) or the Claude/Anthropic-hosted Gmail connector. Compare before building our own.
+- Alternative path: Google's official remote Gmail MCP server (developer preview since May 2026) or the Claude/Anthropic-hosted Gmail connector. Compared in C06: both run the owner's mail through a hosted service and give JARVIS no local copy to search offline, erase per connector or keep within the policy engine's per-source grants, and the hosted connector is tied to a Claude account rather than to the owner's own OAuth client. We built our own read-only adapter; the MCP server stays an option for a later write capability.
 - Shares one Google OAuth client with Calendar, Drive, Tasks and Contacts: build one Google auth module, request scopes per connector.
 - Writes (drafts, send, label) are separate scopes and a separate, approval-gated capability (plans 15, 20).
 
@@ -39,6 +39,13 @@ Option B: run OpenJarvis as a sidecar and call its connector (`jarvis connect gm
 - Disconnect deletes credentials and (optionally) synced data.
 - Prompt-injection fixture in the content cannot trigger an action.
 - Nothing from this connector reaches a cloud model unless the user's privacy setting allows it for this source.
+
+## API facts (checked 2026-10-25)
+- Sync: full sync = `users.getProfile` (current `historyId`) + `users.messages.list` + `users.messages.get?format=full`; partial sync = `users.history.list?startHistoryId=…&historyTypes=messageAdded`. An out-of-range `startHistoryId` returns **404** and the client must full-sync; history records are kept "typically at least a week", sometimes less ([Synchronize clients](https://developers.google.com/workspace/gmail/api/guides/sync)).
+- Quota: **6,000 units per user per minute**; `messages.get` costs 20 units (**60 with `format=full`/`raw`/`html`**), `messages.list` 5, `history.list` 2, `getProfile` 1 ([Usage limits](https://developers.google.com/workspace/gmail/api/reference/quota)). So one sync fetches at most 50 full messages (~3,000 units) and carries the rest in the cursor.
+
+## Build log
+- **2026-10-25 · C06.** `bridge/connectors/gmail.mjs`, registered in the bridge. Read-only (`gmail.readonly` only, via the shared Google OAuth module C04); `write` and `subscribe` capabilities are false. Full sync of the newest messages (spam/trash excluded by Gmail, drafts skipped), then incremental sync by history id with a 404 → full-sync fallback; at most 50 full messages per sync, the rest kept in the cursor (`{"v":1,"h":historyId,"p":[pending ids]}`), checkpoints every 10 messages. Each message → a `messages`-class document (subject, sender, recipients, date, plain-text body or HTML reduced to text, charset honoured, attachments listed by name/type and never downloaded, link back to the Gmail thread). One read tool, `search_mail` (Gmail search syntax, ≤10 results, metadata + snippet only), results wrapped as untrusted. Settings: the card gained **Sync now** (`POST /connectors/:id/sync`, resumes from the stored cursor and keeps documents in the C02 store) for every connector with `sync()`. Tests: the shared test pack (untrusted sync, injection, auth failure, revoked token, rate limit, offline, erase, writes denied, kill switches) plus full/incremental sync, history 404, the per-sync cap, `since`, deleted messages, bad cursors, MIME/HTML/charset/attachments, the search tool, Test and disconnect-revokes; and a Sync now route test. Left: scheduled background sync (plan 12 event bus) — today sync runs on "Sync now"; semantic index (plans 07/33); real sign-in is C05; any write capability (drafts/send) would be its own task and scope.
 
 ## Related plans
 [Connector index](../../../README.md) · [08](../../../../08-data-access-and-safety.md) · [15](../../../../15-policy-trust-and-privacy.md) · [39](../../../../39-settings-and-control-center.md) · [38](../../../../38-shared-data-contracts.md)

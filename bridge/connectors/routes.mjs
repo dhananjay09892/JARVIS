@@ -12,6 +12,7 @@
  *   POST /connectors/:id/enabled           { enabled: boolean }  the per-connector kill switch
  *   POST /connectors/:id/grants            { capability, granted, confirm? }  write needs confirm
  *   POST /connectors/:id/retention         { days: number|null, confirm? }  shorter needs confirm
+ *   POST /connectors/:id/sync              "Sync now": resume from the stored cursor, keep the documents
  *   POST /connectors/vault                 { allow: boolean, confirm? }  allow needs confirm
  *   POST /connectors/retention             { class, days: number|null, confirm? }  shorter needs confirm
  *
@@ -142,14 +143,33 @@ function card(summary, backend, docs = null) {
 }
 
 /**
+ * One "Sync now" (task C06): pull from where the last good sync stopped and
+ * keep what came back in the document store (C02). The registry applies the
+ * kill switches and the read grant; a failed sync keeps nothing and leaves
+ * the old cursor. Never throws for an adapter failure.
+ * @param {ReturnType<typeof import('./registry.mjs').createConnectorRegistry>} registry
+ * @param {ReturnType<typeof import('./store.mjs').openDocumentStore>} store
+ * @param {string} id
+ */
+export async function syncConnectorInto(registry, store, id) {
+  const { cursor } = store.state(id)
+  const r = await registry.sync(id, cursor ? { cursor } : {})
+  if (!r.ok) return { ok: false, error: r.error }
+  const counts = store.ingest(id, r)
+  return { ok: true, saved: counts.saved, skipped: counts.skipped + (r.dropped ?? 0) }
+}
+
+/**
  * @param {{
  *   registry: ReturnType<typeof import('./registry.mjs').createConnectorRegistry>,
  *   persist?: (snapshot: object) => void,     save grants and switches
  *   documents?: ReturnType<typeof import('./prefs.mjs').createDocumentPrefs> | null,
+ *   syncNow?: ((id: string) => Promise<{ ok: boolean, saved?: number, error?: { code: string, message: string } }>) | null,
  *   log?: Pick<Console, 'warn' | 'error'>,
  * }} opts
  */
-export function createConnectorRoutes({ registry, persist = null, documents = null, log = console }) {
+export function createConnectorRoutes({ registry, persist = null, documents = null, syncNow = null, log = console }) {
+  const syncing = new Set()
   const save = () => {
     if (typeof persist !== 'function') return
     try {
@@ -244,6 +264,23 @@ export function createConnectorRoutes({ registry, persist = null, documents = nu
       }
       save()
       return after(id)
+    },
+    async sync(id) {
+      if (typeof syncNow !== 'function') return noStore()
+      const c = registry.list().find((x) => x.id === id)
+      if (!c.canSync) return bad('This connector has nothing to sync.')
+      if (syncing.has(id)) return bad('A sync of this connector is already running.', 409)
+      syncing.add(id)
+      try {
+        const r = await syncNow(id)
+        if (!r?.ok) {
+          const code = r?.error?.code ?? 'other'
+          return { status: 200, body: { ok: false, reason: ERROR_MESSAGES[code] ?? ERROR_MESSAGES.other, code, connector: one(id) } }
+        }
+        return after(id, { saved: r.saved ?? 0 })
+      } finally {
+        syncing.delete(id)
+      }
     },
     async retention(id, body) {
       if (!documents?.available()) return noStore()

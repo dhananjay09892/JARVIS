@@ -1,6 +1,6 @@
 # 22 · Brain: OpenAI Codex / ChatGPT subscription
 
-**Status:** Pending · **Priority:** P1 (most-requested alternative) · **Effort:** 1–2 weeks · **Depends on:** 21
+**Status:** Partial · **Priority:** P1 (most-requested alternative) · **Effort:** 1–2 weeks · **Depends on:** 21
 
 ## Goal
 Let a user with a ChatGPT Plus/Pro/Business plan run JARVIS's brain on Codex using "Sign in
@@ -45,6 +45,39 @@ with ChatGPT", with the same tools, persona, permissions and memory as the Claud
 
 ## Done when
 JARVIS answers voice turns and runs a read-only tool task on Codex, a denied tool stays denied, cancel works, status shows the plan, and the conformance suite passes (or documented gaps are accepted).
+
+## Progress
+- **SIWC route (ADR 001):** auth module and Responses API wire format done (Q43); bridge
+  routes and Settings screen next (Q55, after Q54 wires the OpenAI brain into the bridge).
+- The Codex CLI route (Mode A above) is not being built: ADR 001 chose SIWC on the Responses
+  API instead.
+
+## Autopilot log
+- **2026-10-25 · Q43 · Sign in with ChatGPT for the OpenAI profile.**
+  Added `bridge/brains/siwc.mjs`, following OpenAI's SIWC docs for open-source local apps
+  (checked 2026-10-25): a stable `urn:uuid` host id; first sign-in registers through
+  `dynamic_agent_client` + `agent_name_hint: JARVIS` and keeps the issued `client_id` (no
+  client secret); PKCE S256, fresh state and nonce, loopback callback on
+  `127.0.0.1:<port>/auth/callback` (listener up before the browser opens, Host and state
+  checked); code exchange with `resource=https://api.openai.com/v1`; ID token verified against
+  OpenAI's JWKS (RS256, issuer, audience = issued client, expiry, nonce); plan usage only when
+  `chatgpt.tokens.use.direct` is granted; refresh early, serialized (rotating refresh token);
+  `invalid_grant`-family errors mean sign in again while temporary failures keep credentials;
+  sign-out revokes at the OpenID `revocation_endpoint` and says so when OpenAI did not confirm.
+  Every auth URL must be on auth.openai.com. SIWC terms: tokens only in the store the bridge
+  passes in (the OS keychain), never in a log, URL or error; background (worker) turns need
+  express consent, forgotten on sign-out; `PRIVACY_NOTICE` and `MANAGE_USAGE_URL` for Settings.
+  The OpenAI profile in `openai-compatible.mjs` now takes `auth: 'chatgpt'` with that client: it
+  speaks the Responses API (`POST /v1/responses`, `store: false`, streamed, persona as
+  `instructions`, function calls and outputs as items, tools non-strict), refreshes and retries
+  once on a 401, needs `response.completed` to count a reply as finished, and maps the SIWC
+  plan-usage errors (`usage_limit` with the Manage usage link, `not_eligible`, …) to their own
+  codes without ever falling back to an API key. `status().authMode` is `chatgpt`. Tests:
+  `siwc.test.mjs` (21, mock auth server with real RSA-signed ID tokens) and
+  `openai-chatgpt.test.mjs` (25, including the whole conformance suite against a Responses mock).
+  Left (Q55): bridge routes, the Settings screen (auth choice, privacy notice, Manage usage link,
+  background consent switch, model picker from `/v1/models`), and checking the Manage usage deep
+  link against OpenAI's UI guidelines page, which could not be read in this run.
 
 ## Related plans
 [21](21-multi-brain-framework.md) · [25 API fallback](25-brain-api-providers.md) · [36 CLI redistribution licence](36-economics-and-licensing.md)

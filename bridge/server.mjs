@@ -56,7 +56,8 @@ import { createCredentialStore, createUnavailableCredentialStore } from './conne
 import { openDocumentStore } from './connectors/store.mjs'
 import { documentsConnector } from './connectors/documents.mjs'
 import { connectorsServer } from './connectors/mcp.mjs'
-import { createConnectorRoutes, createGrantsFile } from './connectors/routes.mjs'
+import { createConnectorRoutes, createGrantsFile, syncConnectorInto } from './connectors/routes.mjs'
+import { gmailConnector } from './connectors/gmail.mjs'
 import { gcalendarConnector } from './connectors/gcalendar.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
@@ -306,8 +307,8 @@ function configuredServers() {
 const MCP_SERVERS = configuredServers()
 
 /**
- * Connectors (plans/connectors, task C01). Only the built-in documents
- * connector (C02) is registered so far; each connector task adds its adapter here, inside the registry's own try/catch,
+ * Connectors (plans/connectors, task C01). The built-in documents connector
+ * (C02) and Gmail (C06) are registered; each connector task adds its adapter here, inside the registry's own try/catch,
  * so one that fails cannot stop the bridge. Credentials go to the OS secret
  * store (Q20: DPAPI, Keychain or Secret Service). Where there is none, they stay
  * unavailable unless a developer opts into the dev-only store.
@@ -371,9 +372,17 @@ connectors.registerAll([
       }]
     : []),
   {
-    // Google Calendar (task C07), read-only. Built inside the registry's
-    // try/catch; the owner's Google OAuth client lives under its own `google`
-    // credential id, which no adapter can read through its scoped view.
+    // Gmail (task C06), read-only. Built inside the registry's try/catch; the
+    // owner's Google OAuth client lives under its own `google` credential id,
+    // which no adapter can read through its scoped view.
+    id: 'gmail',
+    create: (ctx) => gmailConnector({
+      googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
+    }).create(ctx),
+  },
+  {
+    // Google Calendar (task C07), read-only, the same way: its own scoped
+    // credential view plus the shared `google` client.
     id: 'gcalendar',
     create: (ctx) => gcalendarConnector({
       googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
@@ -395,6 +404,8 @@ const connectorRoutes = createConnectorRoutes({
   registry: connectors,
   persist: connectorGrantsFile.save,
   documents: documentPrefs,
+  // "Sync now" on a card (task C06): resume from the stored cursor, keep the result.
+  syncNow: connectorStore ? (id) => syncConnectorInto(connectors, connectorStore, id) : null,
 })
 
 /** `{ jarvis_connectors }` for a session, or nothing when no connector tool is available. */

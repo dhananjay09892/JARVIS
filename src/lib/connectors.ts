@@ -34,6 +34,8 @@ export type ConnectorCard = {
   pattern: ConnectPattern
   setup: ConnectorSetup | null
   canTest: boolean
+  /** Has a sync(): the card offers "Sync now" (task C06). */
+  canSync?: boolean
   erasable: boolean
   grants: Record<Capability, boolean> | null
   disabled: boolean
@@ -91,6 +93,8 @@ export type ConnectorReply = {
   result?: { account?: string; detail?: string; url?: string }
   connector?: ConnectorCard
   removed?: number
+  /** Documents kept by a "Sync now". */
+  saved?: number
   documents?: DocumentPrefs
 }
 
@@ -116,6 +120,7 @@ const at = (id: string, action: string) => `/${encodeURIComponent(id)}/${action}
 
 export const connectConnector = (id: string, fields: Record<string, unknown>) => post(at(id, 'connect'), fields)
 export const testConnector = (id: string) => post(at(id, 'test'))
+export const syncConnector = (id: string) => post(at(id, 'sync'))
 export const disconnectConnector = (id: string, eraseData: boolean) => post(at(id, 'disconnect'), { eraseData })
 export const eraseConnector = (id: string) => post(at(id, 'erase'), { confirm: true })
 export const setConnectorEnabled = (id: string, enabled: boolean) => post(at(id, 'enabled'), { enabled })

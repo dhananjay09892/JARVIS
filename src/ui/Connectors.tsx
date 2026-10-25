@@ -10,6 +10,7 @@ import {
   setConnectorRetention,
   setConnectorsFrozen,
   setVaultAllowed,
+  syncConnector,
   testConnector,
   type Capability,
   type ConnectorCard,
@@ -386,6 +387,14 @@ function Card({
         {card.canTest && (
           <button disabled={busy} onClick={() => act(() => testConnector(card.id), (r) => r.detail ?? 'Working.')}>
             Test
+          </button>
+        )}
+        {card.canSync && connected && card.documents !== undefined && card.documents !== null && (
+          <button
+            disabled={busy}
+            onClick={() => act(() => syncConnector(card.id), (r) => `Synced: ${r.saved ?? 0} new or updated.`)}
+          >
+            Sync now
           </button>
         )}
         {card.pattern !== 'none' && (
