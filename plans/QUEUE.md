@@ -242,10 +242,16 @@ this file decides *in what order*.
 - **Done when:** JARVIS runs on either the user's subscription or their API key, switchable in Settings, with tests.
 
 ### Q43 · Plan 22 · Sign in with ChatGPT for the OpenAI profile
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q21
 - **Scope:** ADR 001 decision (OpenAI line). Add a Sign in with ChatGPT auth option to the OpenAI profile from Q21, following the SIWC terms: local token storage, a "Manage usage" link, consent before background tasks, privacy notice. Test against mocks.
 - **Done when:** the OpenAI profile works with SIWC or an API key, with tests.
+
+### Q55 · Plan 22 · Sign in with ChatGPT in Settings
+- **Status:** todo
+- **Depends on:** Q43, Q54
+- **Scope:** Remainder of Q43. Bridge routes to start, finish and cancel a SIWC sign-in (open the system browser on the URL from `bridge/brains/siwc.mjs`), sign out, and set background consent; keep the SIWC record in the keychain (Q20) under its own scoped name. In Settings → Brains, an OpenAI auth choice (API key / Sign in with ChatGPT, API key the default), the privacy notice shown before the Sign in button, the signed-in account, the "Manage usage" link, a separate "Let background tasks use my ChatGPT plan" switch (off by default), and a model picker filled from `GET /v1/models` with the plan token. Show `usage_limit`, `not_eligible` and `consent_needed` errors in plain words. Check `MANAGE_USAGE_URL` against OpenAI's SIWC UI guidelines page.
+- **Done when:** a user can sign in with ChatGPT from Settings, see the privacy notice and Manage usage link, pick a model, run a voice turn on their plan (tested against mocks), allow or refuse background use, and sign out; with API key chosen nothing changes.
 
 ### Q44 · Plan 21 · Written confirmation from Anthropic
 - **Status:** needs-you

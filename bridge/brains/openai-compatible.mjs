@@ -20,9 +20,21 @@
  * error messages. A non-loopback base URL must be https, so a key is never
  * sent in the clear.
  *
+ * The OpenAI profile has a second way to pay (ADR 001, task Q43): Sign in
+ * with ChatGPT (`auth: 'chatgpt'`), which uses the user's own ChatGPT plan.
+ * SIWC tokens are only good for the Responses API, so that mode speaks the
+ * Responses wire format (`POST /v1/responses`, `store: false`, streamed)
+ * instead of Chat Completions; the tool loop, the policy gate and the events
+ * are the same. The access token comes from siwc.mjs per request; a
+ * background (worker) turn needs the user's express consent first. A
+ * plan-usage error stops the turn with its own code and never falls back to
+ * an API key on its own (OpenAI: "must not silently switch to another
+ * billing path").
+ *
  * `fetch` is passed in (defaulting to Node's), so the tests drive the whole
  * adapter against a local mock server and no paid key is needed.
  */
+import { MANAGE_USAGE_URL, SiwcError } from './siwc.mjs'
 
 /** Most model requests in one turn (each tool round is one). */
 export const MAX_STEPS = Object.freeze({ voice: 8, worker: 24 })
@@ -50,8 +62,55 @@ export const PROFILES = Object.freeze({
     auth: 'bearer',
     defaultModel: 'gpt-5-mini',
     capabilities: Object.freeze({ tools: true, streaming: true, vision: true, parallelTools: true }),
+    // Sign in with ChatGPT is offered for this profile (Q43). Its token is
+    // for api.openai.com's Responses API only.
+    siwc: true,
   }),
 })
+
+/** Ways to pay for a profile: its own key, or (OpenAI only) the user's ChatGPT plan. */
+export const AUTH_MODES = Object.freeze(['apikey', 'chatgpt'])
+
+/**
+ * How a Responses API error code ends the turn. The codes are OpenAI's SIWC
+ * plan-usage errors ("Errors and recovery", checked 2026-10-25). None of them
+ * switches to another billing path.
+ */
+export const RESPONSES_ERRORS = Object.freeze({
+  subscription_sharing_usage_limit_exceeded: Object.freeze({
+    code: 'usage_limit', retryable: false,
+    message: `The ChatGPT plan usage for JARVIS has reached its limit. Check or change it in ChatGPT settings → Usage (${MANAGE_USAGE_URL}).`,
+  }),
+  subscription_sharing_user_not_eligible: Object.freeze({
+    code: 'not_eligible', retryable: false,
+    message: 'ChatGPT plan usage is not available for this account or workspace. Use an API key instead, or ask the workspace admin.',
+  }),
+  subscription_sharing_usage_unavailable: Object.freeze({ code: 'provider', retryable: true, message: 'OpenAI could not check the plan usage just now. Try again in a moment.' }),
+  subscription_sharing_user_unavailable: Object.freeze({ code: 'provider', retryable: true, message: 'OpenAI could not serve this account just now. Try again in a moment.' }),
+  subscription_sharing_unsupported_capability: Object.freeze({ code: 'request', retryable: false, message: 'ChatGPT plan usage does not support part of this request' }),
+  subscription_sharing_route_not_supported: Object.freeze({ code: 'request', retryable: false, message: 'ChatGPT plan usage does not support this request route.' }),
+  subscription_sharing_invalid_user: Object.freeze({ code: 'auth', retryable: false, message: 'OpenAI did not accept the ChatGPT sign-in. Sign in again from Settings → Brains.' }),
+  chatpass_v2_scope_not_authorized: Object.freeze({ code: 'auth', retryable: false, message: 'This ChatGPT sign-in does not allow plan usage. Sign in again and allow plan usage.' }),
+  chatpass_v2_invalid_authorization_context: Object.freeze({ code: 'auth', retryable: false, message: 'This ChatGPT sign-in does not allow plan usage. Sign in again and allow plan usage.' }),
+})
+
+/** A Responses API error (`{ code, message, param }`) as a BrainEvent error. */
+export function responsesError(err, status = 0, key = null) {
+  const code = typeof err?.code === 'string' ? err.code : null
+  const known = code ? RESPONSES_ERRORS[code] : null
+  if (known) {
+    const param = typeof err.param === 'string' && code === 'subscription_sharing_unsupported_capability' ? `: ${scrub(err.param).slice(0, 80)}.` : ''
+    return { code: known.code, retryable: known.retryable, message: `${known.message}${param}` }
+  }
+  const message = typeof err?.message === 'string' ? err.message : typeof err?.detail === 'string' ? err.detail : status ? `HTTP ${status}` : 'The provider reported an error.'
+  return { ...(status ? httpError(status) : { code: 'provider', retryable: true }), message: scrub(message, key) }
+}
+
+/** A sign-in problem as a BrainEvent error. */
+function siwcBrainError(err) {
+  const code = err.code === 'consent_needed' ? 'consent_needed' : err.code === 'network' ? 'network' : 'auth'
+  return { code, retryable: Boolean(err.retryable), message: err.message }
+}
 
 // Same rule as `Id` in shared/contracts.ts and events.mjs.
 const ID = /^[^\s\u0000-\u001f]{1,128}$/
@@ -138,6 +197,36 @@ export function toolDefinitions(names, specs = {}) {
 }
 
 /**
+ * The same tools in the Responses API's flat shape. `strict: false`, because
+ * the Responses API otherwise holds a schema to strict mode, which the
+ * bridge's permissive schemas do not meet.
+ */
+export function responsesToolDefinitions(names, specs = {}) {
+  return toolDefinitions(names, specs).map(({ function: f }) => ({ type: 'function', ...f, strict: false }))
+}
+
+/**
+ * The adapter's history (Chat Completions messages) as Responses API input:
+ * the system prompt becomes `instructions`; tool calls and results become
+ * `function_call` and `function_call_output` items with matching call ids.
+ * With `store: false` nothing is kept on OpenAI's side, so the whole
+ * conversation goes with every request.
+ */
+export function responsesInput(history) {
+  const system = []
+  const input = []
+  for (const m of history) {
+    if (m.role === 'system') system.push(m.content)
+    else if (m.role === 'user') input.push({ role: 'user', content: m.content })
+    else if (m.role === 'assistant') {
+      if (m.content) input.push({ role: 'assistant', content: m.content })
+      for (const c of m.tool_calls ?? []) input.push({ type: 'function_call', call_id: c.id, name: c.function.name, arguments: c.function.arguments })
+    } else if (m.role === 'tool') input.push({ type: 'function_call_output', call_id: m.tool_call_id, output: m.content })
+  }
+  return { ...(system.length && { instructions: system.join('\n\n') }), input }
+}
+
+/**
  * Build an OpenAI-compatible brain.
  *
  * @param {object} deps
@@ -145,23 +234,37 @@ export function toolDefinitions(names, specs = {}) {
  * @param {object} [deps.overrides] baseUrl / defaultModel the user has set
  * @param {() => (string|null|Promise<string|null>)} [deps.getKey] the API key, from the keychain
  * @param {() => boolean} [deps.hasKey] is a key stored? (for status(); never returns the key)
+ * @param {'apikey'|'chatgpt'} [deps.auth] how this brain is paid for (default: its key)
+ * @param {object} [deps.siwc]   the Sign in with ChatGPT client (siwc.mjs), for auth 'chatgpt'
  * @param {typeof fetch} [deps.fetch]
  * @param {number} [deps.timeoutMs]
  * @param {object} [deps.log]
  */
 export function createOpenAICompatibleBrain({
   profile = PROFILES.openai, overrides = {}, getKey = () => null, hasKey = () => false,
+  auth = 'apikey', siwc = null,
   fetch: fetchImpl = globalThis.fetch, timeoutMs = REQUEST_TIMEOUT_MS, log = console,
 } = {}) {
   if (!profile || typeof profile.id !== 'string') throw new Error('The OpenAI-compatible brain needs a profile.')
   if (typeof fetchImpl !== 'function') throw new Error('The OpenAI-compatible brain needs fetch().')
+  if (!AUTH_MODES.includes(auth)) throw new Error(`Unknown brain auth mode: ${auth}.`)
+  const chatgpt = auth === 'chatgpt'
+  if (chatgpt && !profile.siwc) throw new Error(`Sign in with ChatGPT is not offered for the ${profile.id} profile.`)
+  if (chatgpt && (!siwc || typeof siwc.accessToken !== 'function')) throw new Error('Sign in with ChatGPT needs its sign-in client.')
   const baseUrl = checkBaseUrl(overrides.baseUrl ?? profile.baseUrl)
+  if (chatgpt) {
+    // The plan-usage token is for OpenAI's own API; it never goes anywhere
+    // else (a loopback URL is allowed for the tests' mock server).
+    const u = new URL(baseUrl)
+    if (baseUrl !== PROFILES.openai.baseUrl && u.protocol !== 'http:') throw new Error('Sign in with ChatGPT only works with api.openai.com.')
+  }
   const defaultModel = overrides.defaultModel ?? profile.defaultModel
-  const needsKey = profile.auth !== 'none'
+  const needsKey = !chatgpt && profile.auth !== 'none'
+  const wire = chatgpt ? 'responses' : 'chat'
 
   return Object.freeze({
     id: profile.id,
-    label: profile.label,
+    label: chatgpt ? 'OpenAI (Sign in with ChatGPT)' : profile.label,
     // `resume` is false: JARVIS owns history across sessions (conversation.mjs);
     // within one session the adapter keeps the turns itself.
     capabilities: Object.freeze({
@@ -175,6 +278,25 @@ export function createOpenAICompatibleBrain({
 
     /** Configured? Never throws and never returns the key. */
     status() {
+      if (chatgpt) {
+        let s = null
+        try {
+          s = siwc.status()
+        } catch {
+          s = null
+        }
+        return {
+          installed: true,
+          version: '',
+          authenticated: Boolean(s?.planUsage),
+          authMode: 'chatgpt',
+          baseUrl,
+          model: defaultModel,
+          account: s?.account ?? null,
+          backgroundConsent: Boolean(s?.backgroundConsent),
+          manageUsageUrl: MANAGE_USAGE_URL,
+        }
+      }
       let stored = false
       try {
         stored = Boolean(hasKey())
@@ -235,13 +357,20 @@ export function createOpenAICompatibleBrain({
           if (step >= steps) {
             return yield* [...endUsage(), { t: 'error', code: 'max_steps', retryable: false, message: `Stopped after ${steps} model requests in one turn.` }, { t: 'done', reason: 'limit' }]
           }
-          const offered = bridge ? toolDefinitions(bridge.offered(), toolSpecs) : []
-          const body = {
-            model,
-            messages: history,
-            stream: true,
-            stream_options: { include_usage: true },
-            ...(offered.length && { tools: offered }),
+          const names = bridge ? bridge.offered() : []
+          let body
+          if (wire === 'responses') {
+            const offered = responsesToolDefinitions(names, toolSpecs)
+            body = { model, ...responsesInput(history), stream: true, store: false, ...(offered.length && { tools: offered }) }
+          } else {
+            const offered = toolDefinitions(names, toolSpecs)
+            body = {
+              model,
+              messages: history,
+              stream: true,
+              stream_options: { include_usage: true },
+              ...(offered.length && { tools: offered }),
+            }
           }
 
           let reply
@@ -257,6 +386,9 @@ export function createOpenAICompatibleBrain({
           const calls = reply.calls
           if (calls.length === 0) {
             history.push({ role: 'assistant', content: reply.text })
+            if (reply.finish === 'incomplete') {
+              return yield* [...endUsage(), { t: 'error', code: 'incomplete', retryable: false, message: 'The model stopped before finishing the answer.' }, { t: 'done', reason: 'error' }]
+            }
             if (reply.finish === 'length') {
               return yield* [...endUsage(), { t: 'error', code: 'max_tokens', retryable: false, message: 'The answer hit the model\'s length limit.' }, { t: 'done', reason: 'limit' }]
             }
@@ -325,28 +457,56 @@ export function createOpenAICompatibleBrain({
             key = await getKey()
             if (!key) throw Object.assign(new Error('no key'), { brainError: { code: 'auth', retryable: false, message: 'No API key is stored for this brain.' } })
           }
-          let res
-          try {
-            res = await fetchImpl(`${baseUrl}/chat/completions`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json', accept: 'text/event-stream', ...(key && { authorization: `Bearer ${key}` }) },
-              body: JSON.stringify(body),
-              signal: controller.signal,
-            })
-          } catch (err) {
-            if (timedOut) throw Object.assign(err, { brainError: { code: 'timeout', retryable: true, message: 'The model did not answer in time.' } })
-            throw Object.assign(err, { brainError: { code: 'network', retryable: true, message: scrub(err?.message, key) } })
+          const send = async () => {
+            if (chatgpt) key = await planToken(false)
+            try {
+              return await fetchImpl(`${baseUrl}/${wire === 'responses' ? 'responses' : 'chat/completions'}`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', accept: 'text/event-stream', ...(key && { authorization: `Bearer ${key}` }) },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+              })
+            } catch (err) {
+              if (timedOut) throw Object.assign(err, { brainError: { code: 'timeout', retryable: true, message: 'The model did not answer in time.' } })
+              throw Object.assign(err, { brainError: { code: 'network', retryable: true, message: scrub(err?.message, key) } })
+            }
+          }
+          /** The plan token for this request; `force` refreshes it first. */
+          const planToken = async (force) => {
+            try {
+              return await siwc.accessToken({ background: actor === 'worker', force })
+            } catch (err) {
+              if (err instanceof SiwcError) throw Object.assign(new Error(err.code), { brainError: siwcBrainError(err) })
+              throw err
+            }
+          }
+          let res = await send()
+          if (chatgpt && res.status === 401) {
+            // OpenAI: ask the user to sign in again only after a terminal
+            // refresh error, so refresh once and try once more.
+            try {
+              await res.body?.cancel()
+            } catch {
+              // already closed
+            }
+            key = await planToken(true)
+            res = await send()
           }
           if (!res.ok) {
-            let message = `HTTP ${res.status}`
+            let j = null
             try {
-              const j = await res.json()
-              if (typeof j?.error?.message === 'string') message = j.error.message
+              j = await res.json()
             } catch {
               // no JSON body
             }
+            if (wire === 'responses') {
+              const e = responsesError(isRecord(j?.error) ? j.error : j, res.status, key)
+              throw Object.assign(new Error(e.message), { brainError: e })
+            }
+            const message = typeof j?.error?.message === 'string' ? j.error.message : `HTTP ${res.status}`
             throw Object.assign(new Error(message), { brainError: { ...httpError(res.status), message: scrub(message, key) } })
           }
+          if (wire === 'responses') return yield* readResponses(res, usage, pet, () => timedOut, key)
 
           let text = ''
           let finish = null
@@ -413,6 +573,94 @@ export function createOpenAICompatibleBrain({
           clearTimeout(timer)
           controller = null
         }
+      }
+
+      /**
+       * A streamed Responses API reply (Sign in with ChatGPT). Text comes as
+       * `response.output_text.delta`; a tool call as a `function_call` output
+       * item whose arguments stream in `response.function_call_arguments.*`.
+       * Only `response.completed` (or `response.incomplete`) ends it well:
+       * `response.failed`, an `error` event or a stream that just stops is a
+       * failure (OpenAI: usage-limit errors can arrive mid-stream).
+       */
+      async function* readResponses(res, usage, pet, timedOut, key) {
+        let text = ''
+        let finish = null
+        const parts = new Map() // output index → { id, name, rawArgs, started }
+        const fail = (e) => Object.assign(new Error(e.message), { brainError: e })
+        const addUsage = (u) => {
+          if (!isRecord(u)) return
+          usage.seen = true
+          usage.inTokens += count(u.input_tokens)
+          usage.outTokens += count(u.output_tokens)
+        }
+        try {
+          for await (const ev of sseData(res.body)) {
+            pet()
+            const type = typeof ev?.type === 'string' ? ev.type : ''
+            if (type === 'response.output_text.delta' || type === 'response.refusal.delta') {
+              const said = typeof ev.delta === 'string' ? ev.delta : ''
+              if (said) {
+                text += said
+                if (!cancelled) yield { t: 'text', delta: said }
+              }
+            } else if (type === 'response.output_item.added' || type === 'response.output_item.done') {
+              const item = ev.item
+              if (item?.type !== 'function_call') continue
+              const index = Number.isInteger(ev.output_index) ? ev.output_index : parts.size
+              const part = parts.get(index) ?? { id: '', name: '', rawArgs: '', started: false }
+              if (typeof item.call_id === 'string' && item.call_id) part.id = item.call_id
+              if (typeof item.name === 'string' && item.name) part.name = item.name
+              if (typeof item.arguments === 'string' && (type === 'response.output_item.done' || !part.rawArgs)) part.rawArgs = item.arguments
+              parts.set(index, part)
+              if (!part.started && part.name && ID.test(part.id) && !usedIds.has(part.id) && !cancelled) {
+                part.started = true
+                yield { t: 'tool_start', id: part.id, name: part.name }
+              }
+            } else if (type === 'response.function_call_arguments.delta') {
+              const part = parts.get(ev.output_index)
+              if (part && typeof ev.delta === 'string') part.rawArgs += ev.delta
+            } else if (type === 'response.function_call_arguments.done') {
+              const part = parts.get(ev.output_index)
+              if (part && typeof ev.arguments === 'string') part.rawArgs = ev.arguments
+            } else if (type === 'response.completed') {
+              addUsage(ev.response?.usage)
+              finish = 'stop'
+            } else if (type === 'response.incomplete') {
+              addUsage(ev.response?.usage)
+              finish = ev.response?.incomplete_details?.reason === 'max_output_tokens' ? 'length' : 'incomplete'
+            } else if (type === 'response.failed') {
+              addUsage(ev.response?.usage)
+              throw fail(responsesError(ev.response?.error, 0, key))
+            } else if (type === 'error') {
+              throw fail(responsesError(isRecord(ev.error) ? ev.error : ev, 0, key))
+            }
+            if (finish) break
+          }
+        } catch (err) {
+          if (err?.brainError) throw err
+          if (timedOut()) throw Object.assign(err, { brainError: { code: 'timeout', retryable: true, message: 'The model stopped answering.' } })
+          throw Object.assign(err, { brainError: { code: 'stream', retryable: true, message: scrub(err?.message, key) } })
+        }
+        if (!finish) {
+          if (cancelled) return { text, calls: [], finish: null }
+          throw fail({ code: 'stream', retryable: true, message: 'The answer stopped before OpenAI said it was complete.' })
+        }
+        const calls = [...parts.entries()]
+          .sort(([a], [b]) => a - b)
+          .map(([, p]) => p)
+          .filter((p) => p.name)
+          .map((p) => {
+            let args = null
+            try {
+              const parsed = p.rawArgs.trim() ? JSON.parse(p.rawArgs) : {}
+              args = isRecord(parsed) ? parsed : null
+            } catch {
+              args = null
+            }
+            return { id: p.id, name: p.name, rawArgs: p.rawArgs || '{}', args }
+          })
+        return { text, calls, finish }
       }
 
       async function* events() {
