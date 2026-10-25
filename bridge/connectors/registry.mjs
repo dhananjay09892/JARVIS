@@ -66,6 +66,8 @@ const SECRET_SHAPES = [
   /Bearer\s+[^\s"',]+/gi,
   /\b(?:sk|pk|rk|xox[abprs]|ghp|gho|ghu|ghs|github_pat|ya29|secret|ntn)[-_][\w-]{6,}/gi,
   /\b[A-Za-z0-9_\-.]{40,}\b/g,
+  /\bGOCSPX-[\w-]{6,}/g, // Google OAuth client secret
+  /\b1\/\/[\w-]{20,}/g, // Google refresh token
 ]
 
 /**
@@ -88,6 +90,7 @@ const cleanLabel = (s) => neutraliseControlTags(stripHiddenText(s).text).replace
 const STATE_FOR_CODE = {
   'auth': 'attention', 'revoked': 'attention', 'not-connected': 'attention',
   'not-granted': 'attention', 'disabled': 'attention', 'frozen': 'attention',
+  'consent-denied': 'attention', 'setup-needed': 'attention',
 }
 
 /**
