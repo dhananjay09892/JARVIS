@@ -47,6 +47,23 @@ function flag(name: string, raw: unknown, fallback: boolean): boolean {
 }
 
 /**
+ * Keys behind the bridge (plan 25 phase 4, Q22). Every VITE_* value is copied
+ * into the JavaScript Vite builds, so a key read here is a key anyone with
+ * devtools can copy. The built front end therefore holds none: `vite build`
+ * refuses to run while one is set (vite.config.ts, scripts/bundle-secrets.mjs)
+ * and the build scans dist/ for keys afterwards. The bridge keeps keys in the
+ * OS keychain and makes the provider calls itself.
+ *
+ * `npm run dev` still reads them, for the browser-direct demo only. Use
+ * `devSecret` for every credential below, so a production build never even
+ * tries to use one.
+ */
+const DEV = import.meta.env.DEV
+function devSecret(raw: unknown): string | undefined {
+  return DEV ? str(raw) : undefined
+}
+
+/**
  * Which brain to use.
  *
  *   'bridge' — run `npm run bridge` alongside the app. Authenticates off your
@@ -54,16 +71,23 @@ function flag(name: string, raw: unknown, fallback: boolean): boolean {
  *              your Claude Code config is available to JARVIS, including local
  *              ones like higgsfield, elevenlabs, android and playwright.
  *
- *   'direct' — the browser calls the Claude API itself. Nothing to run and it
- *              deploys as a static site, but it needs VITE_ANTHROPIC_API_KEY in
- *              the bundle and only reaches remote HTTP MCP servers.
+ *   'direct' — the browser calls the Claude API itself, with
+ *              VITE_ANTHROPIC_API_KEY, and only reaches remote HTTP MCP
+ *              servers. Development only (`npm run dev`): a built front end
+ *              carries no keys, so a build always uses the bridge.
  */
-export const BACKEND: 'bridge' | 'direct' = choice(
+const REQUESTED_BACKEND: 'bridge' | 'direct' = choice(
   'VITE_BACKEND',
   import.meta.env.VITE_BACKEND,
   ['bridge', 'direct'] as const,
   'bridge',
 )
+if (REQUESTED_BACKEND === 'direct' && !DEV) {
+  console.warn(
+    '[jarvis] VITE_BACKEND=direct works only in `npm run dev`: a built JARVIS keeps its keys behind the bridge. Using the bridge.',
+  )
+}
+export const BACKEND: 'bridge' | 'direct' = DEV ? REQUESTED_BACKEND : 'bridge'
 
 /**
  * Where the bridge lives. Derived once here rather than in each of the three
@@ -129,8 +153,9 @@ export const KOKORO_VOICE = choice(
 )
 
 export const env = {
-  anthropicKey: str(import.meta.env.VITE_ANTHROPIC_API_KEY) ?? '',
-  elevenKey: str(import.meta.env.VITE_ELEVENLABS_API_KEY) ?? '',
+  // Direct mode in `npm run dev` only; always empty in a build (see devSecret).
+  anthropicKey: devSecret(import.meta.env.VITE_ANTHROPIC_API_KEY) ?? '',
+  elevenKey: devSecret(import.meta.env.VITE_ELEVENLABS_API_KEY) ?? '',
   elevenVoiceId:
     str(import.meta.env.VITE_ELEVENLABS_VOICE_ID) ?? 'JBFqnCBsd6RMkjVDRZzb',
 }
@@ -179,16 +204,12 @@ export type McpServer = {
  * Blender, Playwright) need a machine to run on and are out of scope for a
  * browser-only build.
  *
- * READ THIS BEFORE FILLING ANY OF THESE IN. Every one of them ships to the
- * browser. In direct mode Vite inlines each token below into the JavaScript
- * bundle, and the Zapier and Pipedream URLs *are* secrets — the URL is the
- * credential. Anyone who opens devtools on a deployed build gets your Notion,
- * Linear, GitHub, Stripe, Sentry and Home Assistant access, not just the
- * Anthropic key. This is fine for a demo on your own machine or a recording;
- * it is not fine for anything public. The bridge backend (the default) reads
- * none of this — it uses your Claude Code MCP config, where the secrets stay on
- * your machine — so if you want these integrations without the exposure, run
- * `npm run bridge` instead of filling in this block.
+ * Development only. Every token below, and the Zapier and Pipedream URLs (the
+ * URL *is* the credential), would be readable by anyone who opens devtools, so
+ * they are read in `npm run dev` only and `vite build` refuses to run while any
+ * is set (Q22). The bridge backend (the default) reads none of this — it uses
+ * your Claude Code MCP config, where the secrets stay on your machine — so for
+ * these integrations in a real install, add them there instead.
  */
 export const MCP_SERVERS: McpServer[] = [
   // The single highest-leverage integration: one URL, ~8,000 apps, managed
@@ -198,16 +219,16 @@ export const MCP_SERVERS: McpServer[] = [
   {
     name: 'zapier',
     label: 'Zapier',
-    url: str(import.meta.env.VITE_ZAPIER_MCP_URL) ?? '',
-    enabled: Boolean(str(import.meta.env.VITE_ZAPIER_MCP_URL)),
+    url: devSecret(import.meta.env.VITE_ZAPIER_MCP_URL) ?? '',
+    enabled: Boolean(devSecret(import.meta.env.VITE_ZAPIER_MCP_URL)),
   },
 
   // Alternative/complementary gateway: ~3,000 apps, free for personal use.
   {
     name: 'pipedream',
     label: 'Pipedream',
-    url: str(import.meta.env.VITE_PIPEDREAM_MCP_URL) ?? '',
-    enabled: Boolean(str(import.meta.env.VITE_PIPEDREAM_MCP_URL)),
+    url: devSecret(import.meta.env.VITE_PIPEDREAM_MCP_URL) ?? '',
+    enabled: Boolean(devSecret(import.meta.env.VITE_PIPEDREAM_MCP_URL)),
   },
 
   // Official first-party servers. Each needs its own OAuth token pasted in.
@@ -215,36 +236,36 @@ export const MCP_SERVERS: McpServer[] = [
     name: 'notion',
     label: 'Notion',
     url: 'https://mcp.notion.com/mcp',
-    token: str(import.meta.env.VITE_NOTION_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_NOTION_TOKEN)),
+    token: devSecret(import.meta.env.VITE_NOTION_TOKEN),
+    enabled: Boolean(devSecret(import.meta.env.VITE_NOTION_TOKEN)),
   },
   {
     name: 'linear',
     label: 'Linear',
     url: 'https://mcp.linear.app/mcp',
-    token: str(import.meta.env.VITE_LINEAR_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_LINEAR_TOKEN)),
+    token: devSecret(import.meta.env.VITE_LINEAR_TOKEN),
+    enabled: Boolean(devSecret(import.meta.env.VITE_LINEAR_TOKEN)),
   },
   {
     name: 'github',
     label: 'GitHub',
     url: 'https://api.githubcopilot.com/mcp/',
-    token: str(import.meta.env.VITE_GITHUB_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_GITHUB_TOKEN)),
+    token: devSecret(import.meta.env.VITE_GITHUB_TOKEN),
+    enabled: Boolean(devSecret(import.meta.env.VITE_GITHUB_TOKEN)),
   },
   {
     name: 'stripe',
     label: 'Stripe',
     url: 'https://mcp.stripe.com',
-    token: str(import.meta.env.VITE_STRIPE_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_STRIPE_TOKEN)),
+    token: devSecret(import.meta.env.VITE_STRIPE_TOKEN),
+    enabled: Boolean(devSecret(import.meta.env.VITE_STRIPE_TOKEN)),
   },
   {
     name: 'sentry',
     label: 'Sentry',
     url: 'https://mcp.sentry.dev/mcp',
-    token: str(import.meta.env.VITE_SENTRY_TOKEN),
-    enabled: Boolean(str(import.meta.env.VITE_SENTRY_TOKEN)),
+    token: devSecret(import.meta.env.VITE_SENTRY_TOKEN),
+    enabled: Boolean(devSecret(import.meta.env.VITE_SENTRY_TOKEN)),
   },
   // Home Assistant is self-hosted, so this needs a publicly reachable URL
   // (Nabu Casa Cloud, or a Cloudflare tunnel). Worth the setup — "Jarvis, dim
@@ -255,11 +276,11 @@ export const MCP_SERVERS: McpServer[] = [
   {
     name: 'home',
     label: 'Home',
-    url: str(import.meta.env.VITE_HOMEASSISTANT_MCP_URL) ?? '',
-    token: str(import.meta.env.VITE_HOMEASSISTANT_TOKEN),
+    url: devSecret(import.meta.env.VITE_HOMEASSISTANT_MCP_URL) ?? '',
+    token: devSecret(import.meta.env.VITE_HOMEASSISTANT_TOKEN),
     enabled: Boolean(
-      str(import.meta.env.VITE_HOMEASSISTANT_MCP_URL) &&
-        str(import.meta.env.VITE_HOMEASSISTANT_TOKEN),
+      devSecret(import.meta.env.VITE_HOMEASSISTANT_MCP_URL) &&
+        devSecret(import.meta.env.VITE_HOMEASSISTANT_TOKEN),
     ),
   },
 ]

@@ -261,7 +261,7 @@ this file decides *in what order*.
 - **Done when:** Anthropic's answer is recorded in ADR 001.
 
 ### Q22 · Plan 25 · Keys behind the bridge
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q20
 - **Scope:** 25 phase 4. Move API keys out of the front-end bundle and behind the bridge; migration note in the README.
 - **Done when:** the built front end contains no API keys.
