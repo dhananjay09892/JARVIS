@@ -546,7 +546,7 @@ export default function App() {
 
     if (!usingBridge && !env.anthropicKey) {
       s.setError(
-        'No Anthropic API key — copy .env.example to .env.local and set VITE_ANTHROPIC_API_KEY.',
+        'No Anthropic API key for direct mode — set VITE_ANTHROPIC_API_KEY in .env.local (npm run dev only), or use the bridge.',
       )
     }
 

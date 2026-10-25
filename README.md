@@ -497,7 +497,41 @@ the browser. `JARVIS_MODEL` and `JARVIS_EFFORT` can also be set there when using
 | `VITE_TTS_ENGINE` | `system` or `kokoro` |
 | `VITE_KOKORO_VOICE` | Voice for the Kokoro engine |
 | `VITE_USE_ELEVENLABS` | Force the ElevenLabs voice on |
-| `VITE_ANTHROPIC_API_KEY` | Direct mode only |
+| `VITE_ANTHROPIC_API_KEY` | Direct mode only, and only in `npm run dev` |
+
+### Keys behind the bridge
+
+The page in your browser never holds a provider key. Keys live with the bridge,
+in your operating system's protected storage (pasted in **Settings**) or in the
+bridge's environment, and the bridge makes the calls to ElevenLabs, Claude and
+your MCP servers itself. Anything with a `VITE_` prefix would be copied into the
+JavaScript of the built page, where anyone who opens it can read it, so:
+
+- `npm run build` (and the Windows installer, which runs it) **refuses to start**
+  while any `VITE_` key, token or secret MCP URL is set (`VITE_ANTHROPIC_API_KEY`,
+  `VITE_ELEVENLABS_API_KEY`, `VITE_ZAPIER_MCP_URL`, `VITE_PIPEDREAM_MCP_URL`,
+  `VITE_NOTION_TOKEN`, `VITE_LINEAR_TOKEN`, `VITE_GITHUB_TOKEN`,
+  `VITE_STRIPE_TOKEN`, `VITE_SENTRY_TOKEN`, `VITE_HOMEASSISTANT_MCP_URL`,
+  `VITE_HOMEASSISTANT_TOKEN`), and after building it scans `dist/` for anything
+  shaped like a key and fails if it finds one. The full list is in
+  `scripts/bundle-secrets.mjs`.
+- A built JARVIS always uses the bridge; `VITE_BACKEND=direct` (the browser
+  calling the Claude API itself) works in `npm run dev` only, as a local demo.
+
+**Upgrading from an earlier version:** if your `.env.local` has any of those
+variables, the build will tell you which. Move each one behind the bridge, then
+delete the `VITE_` line:
+
+- `VITE_ELEVENLABS_API_KEY` → paste the key in **Settings → Voice**, or set
+  `ELEVENLABS_API_KEY` (no `VITE_` prefix), which `npm start` passes to the
+  bridge only.
+- `VITE_ANTHROPIC_API_KEY` → nothing, if you use your Claude subscription; to
+  pay with an API key, paste it in **Settings → Brain** (see below).
+- MCP tokens and URLs → add the server to your Claude Code MCP config
+  (`~/.claude.json`), which the bridge reads.
+
+Keep a `VITE_` key only if you run the direct demo with `npm run dev`, and take it
+out before you build.
 
 ### Using a Claude API key instead
 
@@ -586,6 +620,8 @@ All of this lives in `bridge/server.mjs`:
   resolve the real path, and refuse private and loopback addresses (SSRF guard).
 - The tool gate (`decideTool`) is default-deny for effectful MCP tools.
 - A strict CSP in `index.html`; model-authored panel HTML is sanitised.
+- No provider key ships in the built page: the build refuses `VITE_` keys and
+  scans its output (see [Keys behind the bridge](#keys-behind-the-bridge)).
 
 The limits JARVIS keeps no matter what it is asked are listed in
 [What JARVIS will never do](NEVER.md).
