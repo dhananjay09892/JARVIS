@@ -53,6 +53,7 @@ anything marked *unaudited* was not read in depth.
 | 38 | [Shared data contracts](38-shared-data-contracts.md) | Partial | P0/P1 | Ad-hoc shapes → typed, validated schemas and event topics |
 | 39 | [Settings and control center](39-settings-and-control-center.md) | Partial | P1 | Six flat settings, restart to apply → settings registry, 15 sections, live apply, keychain secrets, per-person scope |
 | 40 | [Name and brand](40-name-and-brand.md) | Proposal | P1 | Codename "JARVIS" (Marvel IP, unownable) → own coined name **Tamelo**, multilingual full forms, trademark + domain plan |
+| 41 | [Content Studio](41-content-studio.md) | Proposal | P2 | Agents, workflows, approvals exist; no brand kit, board or social connectors → content team, ready-to-post packages, approved scheduled publishing, Agency mode on API keys |
 | – | [Connectors folder](connectors/README.md) | Draft | P1 | Index and framework plus per-connector READMEs: OpenJarvis (27 data connectors, 30 channels), n8n (4 modes), Claude skills/plugins, Codex |
 
 ## Mapping from the 12-step "movie Jarvis" list

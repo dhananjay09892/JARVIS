@@ -373,6 +373,117 @@ this file decides *in what order*.
 - **Scope:** 14 phase 1. Named context slices with TTL, per-source permission, redaction and a token budget.
 - **Done when:** the orchestrator can request slices, with tests.
 
+## Content Studio (plan 41)
+
+Plan [41](41-content-studio.md). Placed after Phase 2 so it builds on the event bus, Telegram and
+the API-key brain. To start it sooner, move this block up: Q56 and Q57 are documents only and have
+no blocking dependencies.
+
+### Q56 · Plan 41 · Study AttentionOS and record what to borrow
+- **Status:** todo
+- **Depends on:** none
+- **Scope:** 41 phase 0. Read https://github.com/evanbaker315/AttentionOS (MIT): agent roles and prompts, Brand Kit layout, database schema, approval flow, publishing code and its platform list. Add an "AttentionOS notes" section to plan 41 with what to borrow as ideas and what (if any) code to copy. If code will be copied, add a row to `plans/LICENCES.md` and the MIT notice to `CREDITS.md` in the same PR. No product code.
+- **Done when:** the notes are merged and any copied code has its licence row.
+
+### Q57 · Plan 41 · Content Studio spec and ADR 005 (scheduled publishing approvals)
+- **Status:** todo
+- **Depends on:** Q04, Q56
+- **Scope:** 41 phase 0. Write `plans/adr/005-scheduled-publishing-approvals.md`: options for letting an approved item post later while the owner is away (single-use `PublishApproval` bound to content hash, account and window, vs. ask at posting time over Telegram, vs. manual only), how it fits the workflow rule that no approval is remembered, threat model (edited after approval, replay, wrong account, injected comment), and the freeze switch. Leave `Decision:` empty with a recommendation. Documents only; the PR review is the spec review.
+- **Done when:** the ADR is ready for the owner to decide.
+
+### Q58 · Plan 41 · Decide scheduled publishing
+- **Status:** needs-you
+- **Needs you:** read ADR 005 (from Q57), write your choice in its `Decision:` line, then set this to `done`.
+- **Depends on:** Q57
+- **Scope:** ADR 005 decision.
+- **Done when:** ADR 005 has a decision.
+
+### Q59 · Plan 41 · Content contracts
+- **Status:** todo
+- **Depends on:** Q14, Q57
+- **Scope:** 41 "Data model". Add `Workspace`, `BrandKit`, `ContentItem` (with the state machine), `Asset`, `PublishApproval`, `PublishJob`, `Metric` and `Lesson` to `shared/contracts.ts` with zod validation, a plain-JS bridge copy, fixtures in `shared/fixtures/` and tests for every illegal state transition.
+- **Done when:** contracts and transition tests pass; an edit after `approved` returns the item to `in_review` in a test.
+
+### Q60 · Plan 41 · Content store and brand kit
+- **Status:** todo
+- **Depends on:** Q59
+- **Scope:** 41 phase 1. `content.db` (node:sqlite) in the memory directory for items, jobs, metrics and lessons; brand kit and assets as files in `content/<workspace>/`; erase per workspace; read tools and local-write tools registered through the policy engine; a short brand-kit interview the orchestrator can run by voice.
+- **Done when:** a brand kit can be created by voice, items stored and erased per workspace, with tests including cross-workspace isolation.
+
+### Q61 · Plan 41 · The agent team as task templates
+- **Status:** todo
+- **Depends on:** Q60
+- **Scope:** 41 phase 2 and "The team". Strategist, Copywriter, Analyst and Art Director as task templates on `tasks.mjs`: system prompt, tool allow-list, step budget, output schema, brain route. No publishing tools. Web research wrapped as untrusted. Daily task and generation caps per workspace.
+- **Done when:** "give me five ideas for next week" creates five items with hooks and two drafted scripts, against a mocked brain in tests.
+
+### Q62 · Plan 41 · Content board and review
+- **Status:** todo
+- **Depends on:** Q61
+- **Scope:** 41 phase 3. HUD panel with columns by state, item detail with text, media preview, targets, AI label and cost line; edit, request changes, approve. Approval creates a `PublishApproval` only once ADR 005 is decided; until then approval marks the item ready for a manual package. Telegram review cards if Q36 is `done`, otherwise a follow-up task.
+- **Done when:** an item can be reviewed, changed and approved from the HUD, with tests.
+
+### Q63 · Plan 41 · Ready-to-post packages (the MVP)
+- **Status:** todo
+- **Depends on:** Q62
+- **Scope:** 41 phase 4 and the "Manual" platform row. Export folder per approved item (caption, hashtags, media, thumbnail, checklist for each platform) and a phone-friendly summary; mark as posted by voice or HUD, with the post URL.
+- **Done when:** idea to package works end to end by voice, and the plan 41 exit gate (≤ 10 minutes of owner time) is measured once.
+
+### Q64 · Plan 41 · Run one real week
+- **Status:** needs-you
+- **Needs you:** fill your brand kit, run Content Studio for one week on your own accounts using manual packages, then note in plan 41's Autopilot log: posts made, minutes per post, first-draft approval rate, and what felt wrong. Set this to `done`.
+- **Depends on:** Q63
+- **Scope:** Real-use check before any platform connector.
+- **Done when:** the week's numbers are in plan 41.
+
+### Q65 · Plan 41 · Metrics import and weekly review
+- **Status:** todo
+- **Depends on:** Q63
+- **Scope:** 41 phase 5. CSV import from Instagram, YouTube and LinkedIn insights exports, manual entry by voice, the Analyst's Sunday summary (publishes on the event bus if Q32 is `done`).
+- **Done when:** a fixture CSV imports and the summary names the top and bottom posts, with tests.
+
+### Q66 · Plan 41 · Instagram publishing connector
+- **Status:** todo
+- **Depends on:** Q58, Q63
+- **Scope:** 41 phase 6 and the Instagram row. Re-check Meta's current requirements and limits in the PR. `tool-provider` connector, `write` off by default, R2, token in the keychain; checks content hash, account, window and single use right before posting; reads `content_publishing_limit`; public media URL per the decision in plan 41's open questions; freeze switch; retry and failure alert. Built and tested against mocks; live testing is Q67.
+- **Done when:** the connector passes the C01 test pack plus the plan 41 publishing acceptance tests against mocks.
+
+### Q67 · Plan 41 · Live check: Instagram
+- **Status:** needs-you
+- **Needs you:** a Meta developer app and an Instagram professional account you own. Connect it in Settings, approve one test post, confirm it appears, then delete it yourself. Note the result in plan 41's Autopilot log and set this to `done`.
+- **Depends on:** Q66
+- **Scope:** Live verification.
+- **Done when:** one approved post went live from JARVIS.
+
+### Q68 · Plan 41 · YouTube and LinkedIn publishers
+- **Status:** todo
+- **Depends on:** Q66
+- **Scope:** 41 phase 7. Same rules as Q66; YouTube reuses the shared Google OAuth module (C04); re-check upload quota and audit rules and LinkedIn member-posting permission in the PR. Mocks only; live checks become follow-up `needs-you` tasks.
+- **Done when:** both connectors pass the same tests as Q66.
+
+### Q69 · Plan 41 · Community reply drafts
+- **Status:** todo
+- **Depends on:** Q62, Q03
+- **Scope:** 41 phase 8. Pull comments as untrusted documents, draft replies in the brand voice with AI disclosure per NEVER.md rule 2, flag questions and leads; sending is an R2 action approved each time. No DMs to people who have not written first.
+- **Done when:** the injected-comment acceptance test passes and no reply is ever sent without approval, in tests.
+
+### Q70 · Plan 41 · Agency workspaces
+- **Status:** todo
+- **Depends on:** Q60, Q42
+- **Scope:** 41 phase 9 and "Two modes". Workspace switcher; a `client` workspace refuses to run on a subscription brain profile; per-workspace API-key profile, budget and cost report; isolation and erase tests.
+- **Done when:** a client workspace with a subscription profile is refused, and the cost report sums a test month, with tests.
+
+### Q71 · Plan 41 · Commercial-use rows in the licence register
+- **Status:** todo
+- **Depends on:** none
+- **Scope:** 41 "Commercial checklist". Add Higgsfield and each planned platform API to `plans/LICENCES.md` with their commercial-use terms and the date checked; link the checklist from plan 36.
+- **Done when:** every row of the plan 41 checklist points to a licence-register entry.
+
+### Q72 · Plan 41 · Learning loop
+- **Status:** todo
+- **Depends on:** Q65
+- **Scope:** 41 phase 10. The Analyst proposes lessons with evidence; the owner keeps or drops them; Strategist and Copywriter read kept lessons (keyword memory until Q38).
+- **Done when:** a kept lesson changes the next week's ideas in a test with a mocked brain.
+
 ## Next phases
 
 ### Q40 · Break down the next phase

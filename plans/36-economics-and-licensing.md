@@ -41,6 +41,7 @@ Focus areas:
 - Fully free and local-first, community-funded.
 - Free core + optional paid managed relay / hosted services.
 - Paid support or business edition (policy packs, SSO, audit export).
+- Done-for-you content service run with Content Studio in Agency mode, on API keys ([41](41-content-studio.md); its commercial checklist lists the licence items to clear first).
 - Marketplace revenue share for skills (19) — only after a security review process exists.
 
 ## Phases

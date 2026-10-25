@@ -82,6 +82,7 @@ phase.
 7. Project name/branding and legal review (36).
 8. Sustainability model (36).
 9. Windows-first vs cross-platform timing (10, 17).
+10. Scheduled publishing approvals: may an approved post go out while the owner is away? (41, ADR 005)
 
 ## 6. Risk register
 
