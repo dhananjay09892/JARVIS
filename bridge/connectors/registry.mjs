@@ -87,6 +87,15 @@ export function scrubSecrets(text, secrets = []) {
 /** A short piece of outside text that is shown, not read as a document: title, author. */
 const cleanLabel = (s) => neutraliseControlTags(stripHiddenText(s).text).replace(/[\r\n]+/g, ' ')
 
+/**
+ * The document id in a deletion marker, or null when it is not a usable one
+ * (same rules as a document id in interface.mjs normaliseDocument).
+ */
+export function deletionId(v) {
+  if (typeof v !== 'string' || !v.length || v.length > 512 || /[\u0000-\u001f]/.test(v)) return null
+  return v
+}
+
 const STATE_FOR_CODE = {
   'auth': 'attention', 'revoked': 'attention', 'not-connected': 'attention',
   'not-granted': 'attention', 'disabled': 'attention', 'frozen': 'attention',
@@ -364,10 +373,14 @@ export function createConnectorRegistry({
      * Pull documents. Never throws. Each document is validated (bad ones are
      * dropped and counted) and its text wrapped as untrusted. The adapter may
      * yield `{ cursor }` checkpoints; the last one is returned so the next
-     * sync can resume. A kill switch thrown mid-sync stops it at once.
+     * sync can resume. It may also yield `{ deleted: '<doc id>' }` when an
+     * item is gone at the source (task C96); those come back in `deleted` as
+     * `{ connectorId, id }`, tagged with this connector so the store can only
+     * remove this connector's own copy. The later of a document and a marker
+     * for the same id wins. A kill switch thrown mid-sync stops it at once.
      */
     async sync(id, { since, cursor } = {}) {
-      const result = { ok: false, documents: [], dropped: 0, cursor: cursor ?? null }
+      const result = { ok: false, documents: [], deleted: [], dropped: 0, cursor: cursor ?? null }
       if (!connectors.has(id)) return { ...result, error: blocked('other') }
       const c = connectors.get(id)
       const stop = gate(id, 'read')
@@ -377,17 +390,28 @@ export function createConnectorRegistry({
         for await (const item of c.sync({ since, cursor })) {
           const mid = gate(id, 'read')
           if (mid) return { ...result, error: mid }
-          if (item && typeof item === 'object' && typeof item.cursor === 'string' && !('text' in item)) {
+          if (item && typeof item === 'object' && typeof item.cursor === 'string' && !('text' in item) && !('deleted' in item)) {
             result.cursor = item.cursor
             continue
           }
-          const n = normaliseDocument(item, { defaultSensitivity: c.defaultSensitivity })
-          if (!n.ok) {
-            result.dropped++
-            continue
+          if (item && typeof item === 'object' && 'deleted' in item && !('text' in item)) {
+            const docId = deletionId(item.deleted)
+            if (docId === null) {
+              result.dropped++
+              continue
+            }
+            result.documents = result.documents.filter((d) => d.id !== docId)
+            if (!result.deleted.some((d) => d.id === docId)) result.deleted.push({ connectorId: id, id: docId })
+          } else {
+            const n = normaliseDocument(item, { defaultSensitivity: c.defaultSensitivity })
+            if (!n.ok) {
+              result.dropped++
+              continue
+            }
+            result.deleted = result.deleted.filter((d) => d.id !== n.doc.id)
+            result.documents.push(registry.untrustedDocument(id, n.doc))
           }
-          result.documents.push(registry.untrustedDocument(id, n.doc))
-          if (result.documents.length >= maxDocsPerSync) break
+          if (result.documents.length + result.deleted.length >= maxDocsPerSync) break
         }
       } catch (err) {
         return { ...result, error: failure(id, err) }

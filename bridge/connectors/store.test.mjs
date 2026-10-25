@@ -158,11 +158,38 @@ test('erase leaves nothing readable in the file', () => {
 test('ingest keeps a successful sync and its cursor; a failed sync keeps nothing', () => {
   const s = openDocumentStore({ file: ':memory:', now: () => NOW })
   const docs = [doc('gmail', { id: 'a', text: 'alpha' })]
-  assert.deepEqual(s.ingest('gmail', { ok: true, documents: docs, cursor: 'page2' }), { saved: 1, skipped: 0, ok: true })
+  assert.deepEqual(s.ingest('gmail', { ok: true, documents: docs, cursor: 'page2' }), { saved: 1, skipped: 0, removed: 0, ok: true })
   assert.deepEqual(s.state('gmail'), { cursor: 'page2', lastSync: NOW, retentionDays: null })
-  assert.deepEqual(s.ingest('gmail', { ok: false, documents: [doc('gmail', { id: 'b', text: 'beta' })], cursor: 'page9', error: {} }), { saved: 0, skipped: 0, ok: false })
+  assert.deepEqual(s.ingest('gmail', { ok: false, documents: [doc('gmail', { id: 'b', text: 'beta' })], cursor: 'page9', error: {} }), { saved: 0, skipped: 0, removed: 0, ok: false })
   assert.equal(s.state('gmail').cursor, 'page2')
   assert.equal(s.get('gmail', 'b'), null)
+})
+
+test('ingest removes documents a sync reported as deleted, only for that connector (C96)', () => {
+  const s = fresh()
+  const r = s.ingest('gmail', {
+    ok: true, cursor: 'c2', documents: [],
+    deleted: [
+      { connectorId: 'gmail', id: 'm1' },
+      { connectorId: 'gmail', id: 'never-stored' },
+      { connectorId: 'notion', id: 'p1' }, // another connector's document: ignored
+      { connectorId: 'gmail' },
+      null,
+    ],
+  })
+  assert.deepEqual(r, { saved: 0, skipped: 3, removed: 1, ok: true })
+  assert.equal(s.get('gmail', 'm1'), null)
+  assert.deepEqual(s.search('dentist appointment'), [], 'the index entry went with it')
+  assert.ok(s.get('notion', 'p1'), 'a marker for another connector never removes its document')
+  assert.ok(s.get('gmail', 'm2'))
+  assert.equal(s.stats().gmail.total, 2)
+  // Even a correctly tagged marker passed to the wrong connector's ingest does nothing.
+  assert.equal(s.remove('notion', [{ connectorId: 'gmail', id: 'm2' }]).removed, 0)
+  assert.ok(s.get('gmail', 'm2'))
+  // A failed sync removes nothing.
+  s.ingest('gmail', { ok: false, deleted: [{ connectorId: 'gmail', id: 'm2' }] })
+  assert.ok(s.get('gmail', 'm2'))
+  s.close()
 })
 
 test('retention: each class has its own default, and old documents are pruned', () => {

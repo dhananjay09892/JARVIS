@@ -19,8 +19,10 @@
  *   - Incremental sync: events.list?syncToken=… with none of the parameters
  *     Google forbids beside it (timeMin, timeMax, q, orderBy, updatedMin,
  *     iCalUID, extended properties). Deleted events come back with status
- *     `cancelled`; they are kept as a short "cancelled" document so the stored
- *     copy stops saying the meeting is on.
+ *     `cancelled`; the adapter yields a deletion marker (task C96) so the
+ *     stored copy is removed. One cancelled occurrence of a repeating event
+ *     (it has recurringEventId and originalStartTime) is kept as a short
+ *     note instead, because the series document still lists that date.
  *   - 410 Gone: the sync token expired or the calendar's sharing changed.
  *     That calendar starts a fresh full sync (once per run).
  *   - Paging: up to 250 events a page (Google's default; max 2500), and at
@@ -143,7 +145,8 @@ const meetLink = (ev) => {
 }
 
 /**
- * One Calendar event to a connector document, or null to skip it.
+ * One Calendar event to a connector document, a deletion marker
+ * `{ deleted: id }` for a cancelled or deleted event, or null to skip it.
  * @param {any} ev       an events.list item
  * @param {{ id: string, name: string }} calendar
  * @param {{ now?: () => number }} [opts]  stamps a cancelled entry that carries no time
@@ -159,10 +162,17 @@ export function eventToDocument(ev, calendar, { now = Date.now } = {}) {
 
   if (ev.status === 'cancelled') {
     // Incremental sync reports a deleted event as little more than its id.
+    // One cancelled occurrence of a repeating event is news about the series
+    // (the series document still carries its repeat rule), so it is kept as
+    // a short note; anything else that was cancelled or deleted leaves the
+    // store (task C96).
+    const original = when(ev.originalStartTime)
+    if (!meta.recurringEventId || !original) return { deleted: id }
+    meta.originalStart = original.text
     return {
       id,
-      title: `Cancelled: ${str(ev.summary, 300) || 'event'}`,
-      text: `This event was cancelled or deleted in Google Calendar (${calendar.name}).`,
+      title: `Cancelled: ${str(ev.summary, 300) || 'one occurrence of a repeating event'}`,
+      text: `The occurrence on ${original.text}${original.allDay ? ' (all day)' : ''} of a repeating event was cancelled in Google Calendar (${calendar.name}). Other occurrences are not affected.`,
       updatedAt: updatedAt ?? now(),
       sensitivity: 'personal',
       meta,

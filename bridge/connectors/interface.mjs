@@ -14,7 +14,7 @@
  *   connect(opts)        → ConnectResult      runs the owner's setup flow
  *   disconnect(opts?)    → void               { eraseData } also erases local data
  *   status()             → { state, detail, lastSync? }
- *   sync?(o)             → AsyncIterable<Document>
+ *   sync?(o)             → AsyncIterable<Document | { cursor } | { deleted: docId }>
  *   tools?()             → ConnectorTool[]    offered to brains, policy-gated
  *   receive?()           → AsyncIterable<ChannelMessage>   channels
  *   send?(msg)           → void               channels, approval-gated

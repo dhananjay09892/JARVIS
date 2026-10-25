@@ -120,6 +120,50 @@ test('sync validates documents, drops bad ones, keeps the cursor, and wraps text
   assert.equal(reg.status('plain').lastSync, 42)
 })
 
+test('sync passes deletion markers through, tagged with the connector; the later of a document and a marker wins (C96)', async () => {
+  const reg = createConnectorRegistry({ log: quiet })
+  const gone = 'other/thing'
+  reg.register(plain({
+    async *sync() {
+      yield { id: 'keep', text: 'stays', updatedAt: 1 }
+      yield { id: 'flip', text: 'first version', updatedAt: 1 }
+      yield { deleted: 'flip' } // deleted after it was yielded: no document, one deletion
+      yield { deleted: 'back' }
+      yield { id: 'back', text: 'restored', updatedAt: 2 } // came back: a document, no deletion
+      yield { deleted: gone } // gone at the source
+      yield { deleted: gone } // duplicates collapse
+      yield { deleted: '' }
+      yield { deleted: 42 }
+      yield { deleted: 'bad\nid' }
+      yield { deleted: 'x'.repeat(513) }
+      yield { deleted: 'x', cursor: 'not-a-checkpoint' }
+    },
+  }))
+  const r = await reg.sync('plain')
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.documents.map((d) => d.id), ['keep', 'back'])
+  assert.deepEqual(r.deleted, [
+    { connectorId: 'plain', id: 'flip' },
+    { connectorId: 'plain', id: gone },
+    { connectorId: 'plain', id: 'x' },
+  ])
+  assert.equal(r.dropped, 4)
+  assert.equal(r.cursor, null, 'a marker is never read as a cursor checkpoint')
+})
+
+test('deletion markers need the read grant like documents, and stop with a kill switch', async () => {
+  const reg = createConnectorRegistry({ log: quiet })
+  reg.register(plain({
+    async *sync() {
+      yield { deleted: 'a' }
+    },
+  }))
+  reg.grants.revoke('plain', 'read')
+  const r = await reg.sync('plain')
+  assert.equal(r.ok, false)
+  assert.deepEqual(r.deleted, [])
+})
+
 test('a kill switch thrown mid-sync stops it at once', async () => {
   const reg = createConnectorRegistry({ log: quiet })
   let pulled = 0

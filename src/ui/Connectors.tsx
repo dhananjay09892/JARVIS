@@ -392,7 +392,7 @@ function Card({
         {card.canSync && connected && card.documents !== undefined && card.documents !== null && (
           <button
             disabled={busy}
-            onClick={() => act(() => syncConnector(card.id), (r) => `Synced: ${r.saved ?? 0} new or updated.`)}
+            onClick={() => act(() => syncConnector(card.id), (r) => `Synced: ${r.saved ?? 0} new or updated${r.removed ? `, ${r.removed} removed` : ''}.`)}
           >
             Sync now
           </button>

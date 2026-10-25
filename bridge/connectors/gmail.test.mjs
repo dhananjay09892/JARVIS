@@ -15,6 +15,7 @@ import { createMemoryCredentialStore } from './credentials.mjs'
 import { createConnectorRegistry, connectorToolName, connectorMcpName } from './registry.mjs'
 import { connectorTestPack, createFakeFetch, captureLog } from './testpack.mjs'
 import { setupProblems } from './interface.mjs'
+import { openDocumentStore } from './store.mjs'
 
 const CLIENT_ID = '123456789012-abcdefgh12345678.apps.googleusercontent.com'
 const REFRESH = '1//gmail-refresh-token-abcdefghijklmnopqrstuvwxyz'
@@ -53,7 +54,7 @@ function fullMessage(id, { subject = `Subject ${id}`, from = 'Alice <alice@examp
 
 /**
  * A fake Gmail. `messages` is newest first. `history` maps a start id to
- * `{ added: [ids or {id, labels}], historyId }`, or 404 when absent and `historyGone`.
+ * `{ added: [ids or {id, labels}], historyId }` (or raw `{ records, historyId }`), or 404 when absent.
  */
 function fakeGmail({ messages = ['m3', 'm2', 'm1'], profileHistory = '1000', history = {}, injection, deleted = [], seen = { gets: [], lists: [], history: [], revokes: 0, refreshes: 0 } } = {}) {
   const store = new Map(messages.map((id, i) => [id, fullMessage(id, { at: 1_790_000_000_000 - i * 1000 })]))
@@ -82,9 +83,10 @@ function fakeGmail({ messages = ['m3', 'm2', 'm1'], profileHistory = '1000', his
     }
     if (path === '/history') {
       const start = u.searchParams.get('startHistoryId')
-      seen.history.push(Object.fromEntries(u.searchParams))
+      seen.history.push({ ...Object.fromEntries(u.searchParams), historyTypes: u.searchParams.getAll('historyTypes') })
       const h = history[start]
       if (!h) return { status: 404, body: { error: { code: 404, message: 'Requested entity was not found.' } } }
+      if (h.records) return { body: { history: h.records, historyId: h.historyId } }
       return {
         body: {
           history: h.added.map((a) => {
@@ -167,7 +169,8 @@ test('gmail: incremental sync fetches only new messages and skips drafts and spa
   assert.equal(r.ok, true, JSON.stringify(r.error))
   assert.deepEqual(r.documents.map((d) => d.id), ['m4', 'm5'])
   assert.equal(seen.lists.length, 0, 'no full listing on an incremental sync')
-  assert.equal(seen.history[0].historyTypes, 'messageAdded')
+  assert.deepEqual(seen.history[0].historyTypes, ['messageAdded', 'messageDeleted', 'labelAdded', 'labelRemoved'])
+  assert.deepEqual(r.deleted, [])
   assert.deepEqual(parseGmailCursor(r.cursor), { h: '1010', p: [] })
 
   const again = await registry.sync('gmail', { cursor: r.cursor })
@@ -214,6 +217,51 @@ test('gmail: a message deleted between listing and fetching is skipped', async (
   const r = await registry.sync('gmail')
   assert.equal(r.ok, true)
   assert.deepEqual(r.documents.map((d) => d.id), ['m3', 'm1'])
+  assert.deepEqual(r.deleted, [{ connectorId: 'gmail', id: 'm2' }])
+})
+
+const msgRef = (id, labelIds = ['INBOX']) => ({ message: { id, threadId: `t${id}`, labelIds } })
+
+test('gmail: deleted, trashed and spammed messages leave the store; restored ones come back (C96)', async () => {
+  const records = [
+    { id: '1001', messagesDeleted: [msgRef('m1', [])] },
+    { id: '1002', labelsAdded: [{ ...msgRef('m2', ['TRASH']), labelIds: ['TRASH'] }] },
+    { id: '1003', labelsAdded: [{ ...msgRef('m3', ['SPAM']), labelIds: ['SPAM'] }] },
+    { id: '1004', labelsRemoved: [{ ...msgRef('m3', ['INBOX']), labelIds: ['SPAM'] }] }, // not spam after all
+    { id: '1005', labelsAdded: [{ ...msgRef('m3', ['INBOX', 'STARRED']), labelIds: ['STARRED'] }] }, // ordinary label: no change
+    { id: '1006', messagesAdded: [msgRef('m9')] },
+    { id: '1007', messagesDeleted: [msgRef('m9', [])] }, // added and deleted in the same window
+    { id: '1008', messagesDeleted: [{ message: { id: 'bad id' } }] },
+  ]
+  const store = openDocumentStore({ file: ':memory:', now: () => 1_790_000_100_000 })
+  const first = setup(fakeGmail())
+  store.ingest('gmail', await first.registry.sync('gmail'))
+  assert.deepEqual(['m1', 'm2', 'm3'].map((id) => Boolean(store.get('gmail', id))), [true, true, true])
+
+  const gmail = fakeGmail({ history: { 1000: { records, historyId: '1008' } }, deleted: ['m9'] })
+  const { registry, seen } = setup(gmail)
+  const r = await registry.sync('gmail', { cursor: store.state('gmail').cursor })
+  assert.equal(r.ok, true, JSON.stringify(r.error))
+  assert.deepEqual(r.documents.map((d) => d.id), ['m3'], 'taken out of spam: fetched again')
+  assert.deepEqual(r.deleted.map((d) => d.id).sort(), ['m1', 'm2', 'm9'])
+  assert.ok(!seen.gets.some((g) => g.id === 'm9'), 'a message deleted before it was fetched is not fetched')
+  const counts = store.ingest('gmail', r)
+  assert.equal(counts.removed, 2)
+  assert.equal(store.get('gmail', 'm1'), null)
+  assert.equal(store.get('gmail', 'm2'), null)
+  assert.ok(store.get('gmail', 'm3'))
+  assert.deepEqual(parseGmailCursor(store.state('gmail').cursor), { h: '1008', p: [] })
+  store.close()
+})
+
+test('gmail: a pending message deleted before its turn is dropped from the cursor', async () => {
+  const records = [{ id: '1001', messagesDeleted: [msgRef('n2', [])] }]
+  const { registry, seen } = setup(fakeGmail({ history: { 1000: { records, historyId: '1001' } } }))
+  const r = await registry.sync('gmail', { cursor: gmailCursor('1000', ['n1', 'n2', 'n3']) })
+  assert.equal(r.ok, true, JSON.stringify(r.error))
+  assert.deepEqual(r.documents.map((d) => d.id), ['n1', 'n3'])
+  assert.deepEqual(r.deleted, [{ connectorId: 'gmail', id: 'n2' }])
+  assert.ok(!seen.gets.some((g) => g.id === 'n2'))
 })
 
 test('gmail: a bad cursor is ignored, not trusted', () => {

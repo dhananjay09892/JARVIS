@@ -23,6 +23,10 @@
  *   - Retention: every class has a default number of days (shorter for other
  *     people's messages, health, finance and location), changeable per
  *     connector. `prune()` runs on open and after every ingest.
+ *   - Deletions (task C96): a sync can report items that are gone at the
+ *     source; `ingest()` removes this connector's copy of each one outright
+ *     (no tombstone text kept, `secure_delete` overwrites the pages). A
+ *     deletion tagged with another connector's id is skipped.
  *   - Erase per connector: rows, index entries and the sync cursor, with
  *     `secure_delete` on so the pages are overwritten, not just unlinked. The
  *     owner's retention choice for that connector is a setting and stays.
@@ -164,6 +168,7 @@ export function openDocumentStore({ file, dir = defaultMemoryDir(), now = Date.n
       WHERE excluded.updated_at >= connector_documents.updated_at`),
     get: db.prepare('SELECT * FROM connector_documents WHERE connector_id = ? AND doc_id = ?'),
     eraseDocs: db.prepare('DELETE FROM connector_documents WHERE connector_id = ?'),
+    deleteDoc: db.prepare('DELETE FROM connector_documents WHERE connector_id = ? AND doc_id = ?'),
     // Erase forgets the cursor and last sync but keeps the owner's retention
     // choice: that is a setting, not synced data.
     eraseState: db.prepare('DELETE FROM connector_state WHERE connector_id = ? AND retention_days IS NULL'),
@@ -243,17 +248,42 @@ export function openDocumentStore({ file, dir = defaultMemoryDir(), now = Date.n
     },
 
     /**
-     * Keep a whole `registry.sync()` result: its documents, and its cursor and
-     * time when the sync succeeded, then prune. A failed sync keeps nothing
-     * and leaves the old cursor, so the next sync resumes from there.
+     * Remove documents a sync reported as gone at the source. Each entry is a
+     * registry deletion `{ connectorId, id }`; one tagged with another
+     * connector is skipped, so a connector can never remove another's
+     * documents. Returns `{ removed, skipped }` (removed counts rows that
+     * existed).
+     */
+    remove(connectorId, deletions) {
+      checkId(connectorId)
+      let removed = 0
+      let skipped = 0
+      tx(() => {
+        for (const d of deletions ?? []) {
+          if (!d || d.connectorId !== connectorId || typeof d.id !== 'string' || !d.id || d.id.length > 512) {
+            skipped++
+            continue
+          }
+          removed += Number(q.deleteDoc.run(connectorId, d.id).changes)
+        }
+      })
+      return { removed, skipped }
+    },
+
+    /**
+     * Keep a whole `registry.sync()` result: its documents and deletions, and
+     * its cursor and time when the sync succeeded, then prune. A failed sync
+     * keeps nothing, removes nothing and leaves the old cursor, so the next
+     * sync resumes from there.
      */
     ingest(connectorId, result) {
       checkId(connectorId)
-      if (!result?.ok) return { saved: 0, skipped: 0, ok: false }
+      if (!result?.ok) return { saved: 0, skipped: 0, removed: 0, ok: false }
       const counts = store.save(connectorId, result.documents)
+      const gone = store.remove(connectorId, result.deleted)
       q.saveState.run(connectorId, typeof result.cursor === 'string' ? result.cursor : null, now())
       store.prune()
-      return { ...counts, ok: true }
+      return { saved: counts.saved, skipped: counts.skipped + gone.skipped, removed: gone.removed, ok: true }
     },
 
     /** Where the next sync of this connector resumes: `{ cursor, lastSync }`. */
