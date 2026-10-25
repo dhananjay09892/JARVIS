@@ -58,6 +58,7 @@ import { documentsConnector } from './connectors/documents.mjs'
 import { connectorsServer } from './connectors/mcp.mjs'
 import { createConnectorRoutes, createGrantsFile, syncConnectorInto } from './connectors/routes.mjs'
 import { gmailConnector } from './connectors/gmail.mjs'
+import { gcalendarConnector } from './connectors/gcalendar.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { checkForUpdate } from './update.mjs'
@@ -376,6 +377,14 @@ connectors.registerAll([
     // which no adapter can read through its scoped view.
     id: 'gmail',
     create: (ctx) => gmailConnector({
+      googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
+    }).create(ctx),
+  },
+  {
+    // Google Calendar (task C07), read-only, the same way: its own scoped
+    // credential view plus the shared `google` client.
+    id: 'gcalendar',
+    create: (ctx) => gcalendarConnector({
       googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
     }).create(ctx),
   },
