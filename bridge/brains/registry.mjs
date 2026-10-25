@@ -145,9 +145,10 @@ function converse(brain, toolMode, params, log) {
 
   if (toolMode === 'tool-loop') {
     // Only the bridge can run tools: the brain gets no MCP servers, no raw
-    // handlers, no guard and no policy to call around it.
-    const { mcpServers: _m, tools = {}, guard, afterTool: _a, policy: _p, tainted, ...rest } = params
-    const bridge = createToolBridge({ policy, actor: params.actor, tools, guard, tainted, log })
+    // handlers, no guard, no PostToolUse hook and no policy to call around it.
+    // The bridge runs the hook itself after each tool (labelling and taint).
+    const { mcpServers: _m, tools = {}, guard, afterTool, policy: _p, tainted, ...rest } = params
+    const bridge = createToolBridge({ policy, actor: params.actor, tools, guard, tainted, afterTool, log })
     const run = brain.converse({ ...rest, tools: bridge })
     return watched(run, brain.id, log, (e) => {
       if (e.t !== 'tool_result') return null

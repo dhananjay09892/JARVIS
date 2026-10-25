@@ -487,6 +487,9 @@ the browser. `JARVIS_MODEL` and `JARVIS_EFFORT` can also be set there when using
 | `ELEVENLABS_API_KEY` | — | Optional; enables the ElevenLabs voice + Scribe |
 | `JARVIS_CLAUDE_AUTH` | `subscription` | `subscription` or `apikey`: how Claude is paid for |
 | `ANTHROPIC_API_KEY` | — | Your Anthropic API key; used only when `JARVIS_CLAUDE_AUTH` is `apikey` |
+| `JARVIS_BRAIN` | `claude` | `claude` or `openai`: which brain answers in conversation |
+| `OPENAI_API_KEY` | — | Your OpenAI API key; used only when `JARVIS_BRAIN` is `openai` |
+| `JARVIS_OPENAI_MODEL` | `gpt-5-mini` | The OpenAI model used when `JARVIS_BRAIN` is `openai` |
 
 ### Frontend (`.env.local`)
 
@@ -550,6 +553,23 @@ shell, JARVIS used to bill that key without asking. It now uses your subscriptio
 unless you choose the API key, and in subscription mode it removes the key from
 Claude's environment. To keep using the key, choose *your own API key* in
 Settings or also set `JARVIS_CLAUDE_AUTH=apikey`.
+
+### Using OpenAI as the brain (optional)
+
+Claude stays the default. To have conversations answered by OpenAI with your own
+API key instead, open **Settings → Brain**, set **Brain** to *OpenAI*, and paste
+the key (kept in your operating system's protected storage, like the others). It
+takes effect from the next conversation; usage is billed to that key. What you
+say, and what JARVIS's tools read for you, is then sent to OpenAI.
+
+JARVIS runs the tool loop itself: the model only proposes tool calls, and every
+one goes through the same policy engine, taint check and approval cards as with
+Claude; tool output from outside is labelled as untrusted data before the model
+sees it. For now the OpenAI brain gets JARVIS's own tools (HUD, interface,
+browser, apps, workspace, camera, tasks, memory, workflows, connectors) but not
+the MCP servers from your Claude Code config, and background tasks still run on
+Claude. If no key is saved, JARVIS says so rather than quietly switching brains.
+`GET /brains/stats` counts turns and errors per brain (counts only).
 
 ### Adding an ElevenLabs key
 

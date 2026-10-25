@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { lstat, mkdir, open, readdir, realpath, unlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, relative, isAbsolute } from 'node:path'
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { createSdkMcpServer, tool } from './sdk-server.mjs'
 import { z } from 'zod'
 
 export const WORKSPACE_ROOT = join(homedir(), 'Documents', 'GitHub')

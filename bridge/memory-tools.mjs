@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { createSdkMcpServer, tool } from './sdk-server.mjs'
 import { z } from 'zod'
 
 const MEMORY_TOOLS = ['remember', 'list_memories', 'search_memory', 'update_memory', 'forget']

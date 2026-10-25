@@ -286,8 +286,9 @@ test('server.mjs reaches the SDK only through the brain registry', () => {
   // query is imported once and handed to the brain, never called directly.
   assert.equal((src.match(/\bquery\(/g) ?? []).length, 0)
   assert.match(src, /createClaudeBrain\(\{ query(, auth: claudeAuth)? \}\)/)
-  // Both sessions (voice and task worker) are read as BrainEvents.
-  assert.equal((src.match(/brain\.converse\(/g) ?? []).length, 2)
+  // Both sessions (voice and task worker) are read as BrainEvents. The voice
+  // session's brain is the one Settings → Brain picks (Q54).
+  assert.equal((src.match(/\b(brain|voiceBrain)\.converse\(/g) ?? []).length, 2)
   assert.equal((src.match(/\.startSession\(/g) ?? []).length, 0)
   // Session options are built in one place only.
   assert.doesNotMatch(src, /(settingSources|includePartialMessages|permissionMode|canUseTool):/)

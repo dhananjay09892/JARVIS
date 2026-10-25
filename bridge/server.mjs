@@ -16,7 +16,10 @@
  */
 
 import { WebSocketServer } from 'ws'
-import { query, createSdkMcpServer, tool as sdkTool } from '@anthropic-ai/claude-agent-sdk'
+import { query } from '@anthropic-ai/claude-agent-sdk'
+// The SDK's server builder, except each server remembers its tools so a
+// tool-loop brain can be offered them too (brains/sdk-tools.mjs).
+import { createSdkMcpServer, tool as sdkTool } from './sdk-server.mjs'
 import { z } from 'zod'
 import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
@@ -38,7 +41,7 @@ import { developmentServer } from './development.mjs'
 import { approvalQueue } from './approvals.mjs'
 import { createPolicy, writesEnabled, isVetoed } from './policy.mjs'
 import { createSeenUrls, createTaintTracker, guardOutbound, proxiedMediaIn } from './taint.mjs'
-import { UNTRUSTED_PROMPT, untrustedNotice } from './untrusted.mjs'
+import { UNTRUSTED_PROMPT, createPostToolUse } from './untrusted.mjs'
 import { homedir, tmpdir } from 'node:os'
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
@@ -51,6 +54,10 @@ import { settingDefault, settingsSchema } from './settings-registry.mjs'
 import { createRestarter } from './restart.mjs'
 import { createClaudeBrain } from './brains/claude.mjs'
 import { createBrainRegistry } from './brains/registry.mjs'
+import { createOpenAICompatibleBrain, PROFILES } from './brains/openai-compatible.mjs'
+import { createBrainMetrics } from './brains/metrics.mjs'
+import { chooseBrain, toolParams } from './brains/select.mjs'
+import { zodSchemaAdapter } from './brains/sdk-tools.mjs'
 import { createConnectorRegistry } from './connectors/registry.mjs'
 import { createCredentialStore, createUnavailableCredentialStore } from './connectors/credentials.mjs'
 import { openDocumentStore } from './connectors/store.mjs'
@@ -452,6 +459,33 @@ brains.register(createClaudeBrain({ query, auth: claudeAuth }))
 const brain = brains.default()
 
 /**
+ * The OpenAI brain (plan 25, task Q54): a tool-loop brain on the user's own
+ * OpenAI API key. Registered always, used only when Settings → Brain says
+ * OpenAI (`JARVIS_BRAIN`, off by default), from the next conversation. The
+ * key is read from the OS keychain (or the environment) for each request and
+ * never leaves this process. Background tasks stay on Claude for now.
+ */
+const openaiKey = () => setting('OPENAI_API_KEY') ?? null
+brains.register(createOpenAICompatibleBrain({
+  profile: PROFILES.openai,
+  getKey: openaiKey,
+  hasKey: () => Boolean(openaiKey()),
+}))
+
+/** The brain a new conversation runs on (Settings → Brain; Claude by default). */
+const activeBrain = () => chooseBrain(brains, setting('JARVIS_BRAIN') ?? settingDefault('JARVIS_BRAIN'))
+
+/** The model a brain is asked for: Claude's own setting, or the OpenAI one. */
+const modelFor = (b) =>
+  b.id === 'openai' ? setting('JARVIS_OPENAI_MODEL') ?? settingDefault('JARVIS_OPENAI_MODEL') : currentModel()
+
+/** Tool input schemas (zod) as JSON Schema, for a tool-loop brain's model. */
+const toolSchemas = zodSchemaAdapter(z)
+
+/** Turns and errors per brain (plan 16 metric); counts only, served at /brains/stats. */
+const brainMetrics = createBrainMetrics()
+
+/**
  * URLs that arrived in external content (search results, fetched pages, the
  * owner's own words). Shared by every session's taint tracker and by the /img
  * and /media proxy, which serves nothing else — see taint.mjs (plan 08).
@@ -469,26 +503,10 @@ const taintGuard = (taint, approve) => (toolName, toolInput) =>
 
 /**
  * PostToolUse: log that the call came back (name and error flag only), note
- * what was read for taint, then label it as untrusted.
+ * what was read for taint, then label it as untrusted (untrusted.mjs). The
+ * tool bridge runs the same hook for a tool-loop brain.
  */
-const postToolUse = (taint, actor) => ({
-  hooks: [async (input) => {
-    audit?.({
-      type: 'result',
-      actor,
-      request: { kind: 'tool', name: input?.tool_name },
-      result: { error: input?.tool_response?.isError === true },
-    })
-    try {
-      taint.noteResult(input.tool_name, input.tool_response)
-    } catch (err) {
-      // Failing to read a result must not cost the taint: assume it was private.
-      taint.markPrivate(input.tool_name)
-      console.warn('[jarvis] taint: could not read a tool result:', err.message)
-    }
-    return untrustedNotice(input)
-  }],
-})
+const postToolUse = (taint, actor) => createPostToolUse({ taint, actor, audit })
 
 const SYSTEM_PROMPT = `You are JARVIS. You are speaking out loud to one person.
 
@@ -1218,6 +1236,12 @@ const handleRequest = async (req, res) => {
         : { enabled: false },
     ))
   }
+  // Turns and errors per brain since the bridge started (plan 16; Q54).
+  // Counts only: never what was said.
+  if (requestUrl.pathname === '/brains/stats' && req.method === 'GET') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify({ active: activeBrain().id, ...brainMetrics.snapshot() }))
+  }
   // ---- Audit log (plan 15 phase 5) ------------------------------------
   // Counts and the chain check only; entries themselves are not served yet
   // (the search panel is a later step).
@@ -1254,7 +1278,7 @@ const handleRequest = async (req, res) => {
     }
     try {
       const trace = JSON.parse(body || '{}')
-      traces.record(trace, { model: trace?.route === 'bridge' ? currentModel() : null })
+      traces.record(trace, { model: trace?.route === 'bridge' ? modelFor(activeBrain()) : null })
     } catch (err) {
       res.writeHead(400, { ...cors, 'content-type': 'application/json' })
       return res.end(JSON.stringify({ ok: false, reason: String(err?.message ?? err) }))
@@ -1604,6 +1628,13 @@ const RESULT_FAILURES = {
   // The brain registry stopped a turn in which a tool ran around the policy
   // engine (brains/registry.mjs, plan 21 phase 3).
   policy_bypass: 'I stopped that turn because a tool ran without a safety check.',
+  // Tool-loop brains (brains/openai-compatible.mjs, plan 25).
+  auth: 'The brain could not sign in. Check its key under Brain in Settings.',
+  rate_limit: 'The brain is rate limited just now. Try again in a moment.',
+  max_steps: 'That took too many steps, so I stopped.',
+  timeout: 'The brain did not answer in time.',
+  network: 'I could not reach the brain. Check the internet connection.',
+  provider: 'The brain\'s service had a problem. Try again in a moment.',
   default: 'The turn ended without an answer.',
 }
 
@@ -1653,7 +1684,8 @@ const taskManager = createTaskManager({
     const controller = new AbortController()
     signal.addEventListener('abort', () => controller.abort(), { once: true })
     // The worker's session as BrainEvents; tasks.mjs reads nothing else.
-    return brain.converse({
+    // Workers stay on Claude (the default brain) whatever Settings → Brain says.
+    return brainMetrics.observe(brain.id, 'worker', brain.converse({
       prompt: `Task: ${task.title}
 
 ${task.goal}`,
@@ -1674,7 +1706,7 @@ ${task.goal}`,
       // Results the bridge does not build itself are labelled as untrusted
       // data as they come back, and private reads taint the worker.
       afterTool: postToolUse(taint, 'worker'),
-    }).events
+    })).events
   },
 })
 
@@ -1854,47 +1886,56 @@ wss.on('connection', (socket, req) => {
   // Options and their reasons live with the brain (brains/claude.mjs). The
   // session comes back as BrainEvents (brains/events.mjs): this pump never
   // reads a provider's own message shapes.
-  const session = brain.converse({
+  //
+  // Which brain is read when the conversation starts (Settings → Brain,
+  // Claude by default); a change applies from the next conversation.
+  const voiceBrain = activeBrain()
+  // Everything Claude Code has configured, plus the HUD as an in-process
+  // server. The HUD's handler closes over this socket, so a `display` call
+  // lands on screen directly — which is also why this object is built per
+  // connection rather than once.
+  const mcpServers = {
+    ...MCP_SERVERS,
+    jarvis: displayServer(
+      (panel) => send({ type: 'panel', panel }),
+      (blade) => send({ type: 'blade', blade }),
+    ),
+    // The interface controls, on the same socket. A separate key because
+    // MCP tool names are `mcp__<key>__<tool>` and one key can only carry
+    // one server; the underscore in it is why decideTool and announceTool
+    // both name `jarvis_ui` explicitly.
+    jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
+    // The user's own Chrome, over the extension's native-host socket. It
+    // holds no per-connection state, but it is built here with the rest so
+    // the write gate is read once, at the same point as everything else.
+    jarvis_chrome: chromeServer({ allowWrites: policy.allowWrites }),
+    jarvis_apps: appsServer(),
+    jarvis_workspace: workspaceServer(approve),
+    jarvis_development: developmentServer(approve),
+    // The camera, which unlike everything else here has to ask and wait.
+    jarvis_eyes: visionServer(ask),
+    jarvis_tasks: taskServer(taskManager),
+    // Connector tools (plans/connectors): only granted, active ones; each
+    // call is decided by the policy engine and again by the registry.
+    ...connectorServerEntry(),
+    ...(workflows && { jarvis_workflows: workflowServer({ store: workflows, engine, approve }) }),
+    ...(sm && {
+      jarvis_memory: memoryServer(memory, {
+        conversation: () => sm.id,
+        project: () => sm.currentProject(),
+      }),
+    }),
+  }
+  const session = brainMetrics.observe(voiceBrain.id, 'voice', voiceBrain.converse({
     prompt: userMessages(),
     actor: 'voice',
-    // Everything Claude Code has configured, plus the HUD as an in-process
-    // server. The HUD's handler closes over this socket, so a `display` call
-    // lands on screen directly — which is also why this object is built per
-    // connection rather than once.
-    mcpServers: {
-      ...MCP_SERVERS,
-      jarvis: displayServer(
-        (panel) => send({ type: 'panel', panel }),
-        (blade) => send({ type: 'blade', blade }),
-      ),
-      // The interface controls, on the same socket. A separate key because
-      // MCP tool names are `mcp__<key>__<tool>` and one key can only carry
-      // one server; the underscore in it is why decideTool and announceTool
-      // both name `jarvis_ui` explicitly.
-      jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
-      // The user's own Chrome, over the extension's native-host socket. It
-      // holds no per-connection state, but it is built here with the rest so
-      // the write gate is read once, at the same point as everything else.
-      jarvis_chrome: chromeServer({ allowWrites: policy.allowWrites }),
-      jarvis_apps: appsServer(),
-      jarvis_workspace: workspaceServer(approve),
-      jarvis_development: developmentServer(approve),
-      // The camera, which unlike everything else here has to ask and wait.
-      jarvis_eyes: visionServer(ask),
-      jarvis_tasks: taskServer(taskManager),
-      // Connector tools (plans/connectors): only granted, active ones; each
-      // call is decided by the policy engine and again by the registry.
-      ...connectorServerEntry(),
-      ...(workflows && { jarvis_workflows: workflowServer({ store: workflows, engine, approve }) }),
-      ...(sm && {
-        jarvis_memory: memoryServer(memory, {
-          conversation: () => sm.id,
-          project: () => sm.currentProject(),
-        }),
-      }),
-    },
+    mcpServers,
+    // A tool-loop brain (OpenAI) gets the bridge's own tools as handlers and
+    // schemas, behind the registry's policy-gated tool bridge; Claude gets
+    // nothing extra (brains/select.mjs).
+    ...toolParams(voiceBrain, mcpServers, { schema: toolSchemas, log: console }),
     systemPrompt: SYSTEM_PROMPT,
-    model: currentModel(),
+    model: modelFor(voiceBrain),
     effort: currentEffort(),
     policy,
     // Once this session has read private content, opening, fetching or
@@ -1903,7 +1944,8 @@ wss.on('connection', (socket, req) => {
     guard: taintGuard(taint, approve),
     afterTool: postToolUse(taint, 'voice'),
     log: console.log,
-  })
+  }))
+  if (voiceBrain.id !== brain.id) console.log(`[jarvis] this conversation runs on ${voiceBrain.label}`)
 
   // Pump the session's events to the browser for as long as it lives.
   ;(async () => {

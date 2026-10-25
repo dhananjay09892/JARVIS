@@ -31,7 +31,7 @@ keys are the recommended default for automation). It trades "free with my subscr
 - Model catalogue with capabilities and price hints, user-overridable.
 
 ## Phases
-1. **Generic adapter + OpenAI profile (4 d):** streaming, tool loop, cancellation, usage; conformance suite. **Done (Q21):** `bridge/brains/openai-compatible.mjs`, passes the conformance suite against a mock server; not yet registered in the bridge or selectable in Settings.
+1. **Generic adapter + OpenAI profile (4 d):** streaming, tool loop, cancellation, usage; conformance suite. **Done (Q21, Q54):** `bridge/brains/openai-compatible.mjs`, passes the conformance suite against a mock server; registered in the bridge and selectable in Settings → Brain (`JARVIS_BRAIN`, off by default) with its key in the OS keychain; tool results labelled untrusted and noted for taint as with Claude; turns and errors per brain at `/brains/stats`. Not yet: background tasks and Claude Code's own MCP servers on this brain.
 2. **Anthropic API profile (2 d):** reuse, with prompt caching; becomes the sanctioned fallback for the Claude brain.
 3. **OpenRouter + compatible endpoints (2 d):** profile editor in Settings; "test connection" button.
 4. **Secrets and the `direct` backend (2 d):** move keys behind the bridge; remove keys from the front-end bundle; migration note. **Done (Q22):** `vite build` refuses any `VITE_` key, token or secret MCP URL and the build scans `dist/` for keys; a built front end always uses the bridge (`direct` is `npm run dev` only); migration note in the README.
@@ -85,6 +85,34 @@ A user can paste an OpenAI (or OpenRouter) key, choose it as the brain, hold a c
   Left: removing the direct path entirely once the OpenAI and Anthropic API profiles run in the
   bridge (Q54 and phase 2); a real `npm run build` was not run in this session (npm registry
   unreachable), so the first build on a machine with dependencies is the end-to-end check.
+- **2026-10-25 · Q54 · Phase 1: the OpenAI brain in the bridge.**
+  `server.mjs` registers the OpenAI-compatible brain (OpenAI profile) next to Claude. Settings →
+  Brain (`JARVIS_BRAIN`: `claude` default, `openai`; applies from the next conversation) picks the
+  voice session's brain through `brains/select.mjs`; `OPENAI_API_KEY` is a registry secret, so it
+  lives in the OS keychain and is read per request; `JARVIS_OPENAI_MODEL` (default `gpt-5-mini`).
+  The Settings page has the Brain choice, key field and model. With no key the turn ends with an
+  `auth` error and a spoken message; it never falls back to Claude. Tool specs for the bridge's own
+  tools: every bridge module now builds its MCP server through `bridge/sdk-server.mjs`, which
+  keeps each server's `tool()` definitions (not enumerable, so the SDK never sees them);
+  `brains/sdk-tools.mjs` turns them into handlers and JSON Schemas (zod 4 `toJSONSchema`) under
+  the names Claude sees (`mcp__<server>__<tool>`), validates arguments before a handler runs, and
+  turns an `isError` result into a failed call. Untrusted labelling and taint: the PostToolUse
+  hook moved from `server.mjs` to `untrusted.mjs` (`createPostToolUse`); the registry now hands it
+  to the tool bridge, which runs it after each tool that ran (audit `result` entry, taint noting,
+  seen URLs) and, where it asks for the notice, gives the model the output inside an
+  `<untrusted_data>` envelope followed by the notice; a hook that throws still labels the output.
+  Plan 16 metric: `brains/metrics.mjs` counts turns per brain and actor by how they ended, with
+  error codes, served at `GET /brains/stats` (counts only). Tests: `openai-bridge.test.mjs`
+  (5: an end-to-end voice turn on the OpenAI profile against a mock Chat Completions server with
+  a tool through the policy gate, the untrusted label, taint and audit; a refused tool never
+  offered or run; with the switch off Claude gets exactly the old parameters; no key → `auth`,
+  no request), `sdk-tools.test.mjs` (7), `metrics.test.mjs` (2), 4 more in
+  `tool-bridge.test.mjs`, 1 more in `settings-registry.test.mjs`; source checks in `audit`,
+  `policy` and `claude` tests updated for the moved hook and the chosen brain.
+  Left: background tasks on a tool-loop brain (they stay on Claude); the MCP servers from the
+  user's Claude Code config (separate processes; a tool-loop brain needs an MCP client for them);
+  the Anthropic API profile (phase 2); a cost figure and caps (phase 5); a Diagnostics view of
+  `/brains/stats`.
 
 ## Related plans
 [21](21-multi-brain-framework.md) · [36 cost caps](36-economics-and-licensing.md) · [15](15-policy-trust-and-privacy.md)

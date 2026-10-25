@@ -41,7 +41,24 @@ test('every setting that existed before the registry is declared', () => {
     'ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT',
     'JARVIS_MODEL', 'JARVIS_TRACES', 'JARVIS_VOICE_ID',
     'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD', 'setupDone',
-  ])
+  ].concat(['JARVIS_BRAIN', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY']).sort())
+})
+
+test('the OpenAI brain is off by default and its key is a keychain secret (plan 25, Q54)', () => {
+  const brain = settingDef('JARVIS_BRAIN')
+  assert.equal(brain.section, 'brains')
+  assert.deepEqual(brain.options, ['claude', 'openai'])
+  assert.equal(brain.default, 'claude', 'Claude stays the default brain (standing constraint)')
+  assert.equal(brain.apply, 'reconnect')
+  const key = settingDef('OPENAI_API_KEY')
+  assert.equal(key.secret, true, 'the key goes to the OS keychain, never the settings table')
+  assert.equal(key.default, '')
+  assert.equal(key.risk, 'sensitive')
+  assert.equal(isValid(key, 'sk-proj-' + 'a'.repeat(40)), true)
+  for (const bad of ['', 'sk-short', 'not-a-key-at-all-0123456789', 'sk-proj-has space here!!!!!!!']) {
+    assert.equal(isValid(key, bad), false, bad)
+  }
+  assert.equal(settingDef('JARVIS_OPENAI_MODEL').default, 'gpt-5-mini')
 })
 
 test('Claude runs on the subscription by default; an API key is an opt-in secret (ADR 001, Q42)', () => {
@@ -163,7 +180,7 @@ test('the page keeps its own copy of the shapes it reads in step with the regist
 test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
   const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
   assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
-  assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL'])
+  assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_BRAIN', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
   // The writes switch stays restart-only until the Safety section (phase 5)
   // adds confirmation for dangerous changes; the audit log stays on until then too.
   assert.deepEqual(by('restart'), ['JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD'])

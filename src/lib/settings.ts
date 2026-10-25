@@ -7,6 +7,12 @@ export type PublicSettings = {
   ANTHROPIC_API_KEY_set: boolean
   /** 'subscription' | 'apikey' — how Claude is paid for. '' means the default (subscription). */
   JARVIS_CLAUDE_AUTH: string
+  /** 'claude' | 'openai' — which brain answers (plan 25, Q54). '' means the default (claude). */
+  JARVIS_BRAIN: string
+  /** Whether an OpenAI API key is saved. The key itself never reaches the page. */
+  OPENAI_API_KEY_set: boolean
+  /** The OpenAI model used when JARVIS_BRAIN is 'openai'. '' means the default. */
+  JARVIS_OPENAI_MODEL: string
   JARVIS_MODEL: string
   JARVIS_EFFORT: string
   JARVIS_VOICE_ID: string
