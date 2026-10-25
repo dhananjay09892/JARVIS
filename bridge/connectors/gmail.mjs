@@ -12,9 +12,14 @@
  *   - Full sync: users.getProfile for the mailbox's current historyId, then
  *     users.messages.list (newest first; spam and trash are left out by
  *     default) and users.messages.get?format=full for each message.
- *   - Partial sync: users.history.list?startHistoryId=…&historyTypes=messageAdded.
- *     A 404 means the history id is too old (records are kept "typically at
- *     least a week", sometimes less), so it falls back to a full sync.
+ *   - Partial sync: users.history.list?startHistoryId=… with historyTypes
+ *     messageAdded, messageDeleted, labelAdded and labelRemoved (a repeated
+ *     parameter; checked 2026-10-25). A message deleted, or moved to spam or
+ *     trash, is yielded as a deletion marker `{ deleted: id }` (task C96) so
+ *     the stored copy leaves; one taken back out of spam or trash is fetched
+ *     again. A 404 means the history id is too old (records are kept
+ *     "typically at least a week", sometimes less), so it falls back to a
+ *     full sync (which cannot see deletions; retention still ages them out).
  *   - Quota (checked 2026-10-25): 6,000 units per user per minute;
  *     messages.get with format=full costs 60 units, messages.list 5,
  *     history.list 2, getProfile 1. So one sync fetches at most `maxPerSync`
@@ -44,6 +49,8 @@ export const GMAIL_OAUTH_HOST = 'oauth2.googleapis.com'
 const MESSAGE_ID = /^[A-Za-z0-9_-]{1,64}$/
 const HISTORY_ID = /^[0-9]{1,30}$/
 const SKIP_LABELS = new Set(['DRAFT', 'SPAM', 'TRASH'])
+/** history.list types read on a partial sync (historyTypes is a repeated parameter). */
+const HISTORY_TYPES = Object.freeze(['messageAdded', 'messageDeleted', 'labelAdded', 'labelRemoved'])
 const MAX_PENDING = 1000
 const MAX_HISTORY_PAGES = 20
 const MAX_LIST_PAGE = 100
@@ -244,30 +251,48 @@ export function gmailConnector({ googleClient, maxPerSync = 50, timeoutMs } = {}
         return h
       }
 
-      /** Ids added since `start`, oldest first, and where history now ends. */
+      /**
+       * What changed since `start`: ids to fetch (oldest first), ids gone
+       * from what JARVIS reads (deleted, or moved to spam or trash), and
+       * where history now ends. Records are in order, so the last change to
+       * a message wins: deleted then restored is fetched again.
+       */
       async function historySince(start) {
-        const added = []
+        const change = new Map() // id -> 'add' | 'gone', in first-seen order
+        const mark = (m, what) => {
+          if (typeof m?.id !== 'string' || !MESSAGE_ID.test(m.id)) return
+          change.set(m.id, what) // a Map keeps first-seen order; the value is the latest change
+        }
+        const skipped = (labels) => Array.isArray(labels) && labels.some((l) => SKIP_LABELS.has(l))
         let latest = start
         let pageToken
         for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
-          const params = { startHistoryId: start, historyTypes: 'messageAdded', maxResults: '500' }
-          if (pageToken) params.pageToken = pageToken
+          const params = [['startHistoryId', start], ['maxResults', '500'], ...HISTORY_TYPES.map((t) => ['historyTypes', t])]
+          if (pageToken) params.push(['pageToken', pageToken])
           const body = await get('/history', params)
           if (!body || typeof body !== 'object') throw new ConnectorError('bad-response', { detail: 'history.list' })
           for (const h of Array.isArray(body.history) ? body.history : []) {
-            for (const a of Array.isArray(h?.messagesAdded) ? h.messagesAdded : []) {
-              const m = a?.message
-              if (typeof m?.id !== 'string' || !MESSAGE_ID.test(m.id)) continue
-              const labels = Array.isArray(m.labelIds) ? m.labelIds : []
-              if (labels.some((l) => SKIP_LABELS.has(l))) continue
-              if (!added.includes(m.id)) added.push(m.id)
+            if (!h || typeof h !== 'object') continue
+            for (const a of Array.isArray(h.messagesAdded) ? h.messagesAdded : []) {
+              if (!skipped(a?.message?.labelIds)) mark(a?.message, 'add')
+            }
+            for (const d of Array.isArray(h.messagesDeleted) ? h.messagesDeleted : []) mark(d?.message, 'gone')
+            for (const l of Array.isArray(h.labelsAdded) ? h.labelsAdded : []) {
+              if (skipped(l?.labelIds)) mark(l?.message, 'gone')
+            }
+            for (const l of Array.isArray(h.labelsRemoved) ? h.labelsRemoved : []) {
+              // Out of spam or trash and not in another skipped place: read it again.
+              if (skipped(l?.labelIds) && !skipped(l?.message?.labelIds)) mark(l?.message, 'add')
             }
           }
           if (body.historyId !== undefined && HISTORY_ID.test(String(body.historyId))) latest = String(body.historyId)
           if (typeof body.nextPageToken !== 'string' || !body.nextPageToken) break
           pageToken = body.nextPageToken
         }
-        return { added, latest }
+        const added = []
+        const gone = []
+        for (const [id, what] of change) (what === 'add' ? added : gone).push(id)
+        return { added, gone, latest }
       }
 
       async function fullSyncStart(since) {
@@ -309,11 +334,13 @@ export function gmailConnector({ googleClient, maxPerSync = 50, timeoutMs } = {}
           const state = parseGmailCursor(cursor)
           let h
           let pending
+          let gone = []
           if (state) {
             try {
-              const { added, latest } = await historySince(state.h)
+              const { added, gone: removed, latest } = await historySince(state.h)
               h = latest
-              pending = [...state.p, ...added.filter((id) => !state.p.includes(id))]
+              gone = removed
+              pending = [...state.p.filter((id) => !gone.includes(id)), ...added.filter((id) => !state.p.includes(id))]
             } catch (err) {
               if (!is404(err)) throw err
               // History too old: start again from a full sync.
@@ -323,6 +350,8 @@ export function gmailConnector({ googleClient, maxPerSync = 50, timeoutMs } = {}
             ;({ h, pending } = await fullSyncStart(since))
           }
           pending = pending.slice(0, MAX_PENDING)
+          // Gone at the source (deleted, or moved to spam or trash): the stored copy leaves too (task C96).
+          for (const id of gone) yield { deleted: id }
           const batch = pending.slice(0, perSync)
           for (let i = 0; i < batch.length; i++) {
             let msg
@@ -333,7 +362,9 @@ export function gmailConnector({ googleClient, maxPerSync = 50, timeoutMs } = {}
               msg = null // deleted since it was listed
             }
             const doc = messageToDocument(msg)
+            // Not readable any more (deleted, or now in spam/trash/drafts): drop any stored copy.
             if (doc) yield doc
+            else yield { deleted: batch[i] }
             if ((i + 1) % 10 === 0) yield { cursor: gmailCursor(h, pending.slice(i + 1)) }
           }
           yield { cursor: gmailCursor(h, pending.slice(batch.length)) }

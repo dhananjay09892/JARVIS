@@ -92,6 +92,7 @@ export type ConnectorReply = {
   erased?: boolean
   result?: { account?: string; detail?: string; url?: string }
   connector?: ConnectorCard
+  /** Documents removed: by a retention change, or by a "Sync now" for items gone at the source. */
   removed?: number
   /** Documents kept by a "Sync now". */
   saved?: number

@@ -2,7 +2,7 @@
  * Google Calendar connector (task C07): the shared connector test pack plus
  * Calendar's own acceptance tests — calendar selection, full and incremental
  * sync by sync token, 410 Gone, the per-sync page budget carried in the
- * cursor, cancelled events, the read-only tools, and disconnect revoking.
+ * cursor, cancelled events (deletion markers, task C96), the read-only tools, and disconnect revoking.
  * Google is a fake fetch; no real account.
  */
 import { test } from 'node:test'
@@ -16,6 +16,7 @@ import { createMemoryCredentialStore } from './credentials.mjs'
 import { createConnectorRegistry, connectorToolName, connectorMcpName } from './registry.mjs'
 import { connectorTestPack, createFakeFetch, captureLog } from './testpack.mjs'
 import { setupProblems } from './interface.mjs'
+import { openDocumentStore } from './store.mjs'
 
 const CLIENT_ID = '123456789012-abcdefgh12345678.apps.googleusercontent.com'
 const REFRESH = '1//gcal-refresh-token-abcdefghijklmnopqrstuvwxyz'
@@ -180,7 +181,7 @@ test('gcalendar: full sync maps events to documents with ids, times and a per-ca
   assert.ok(!seen.lists.some((l) => /hidden|unshown|fb@/.test(l.cal)), 'only chosen calendars are read')
 })
 
-test('gcalendar: incremental sync sends only the sync token and returns only changes, cancelled ones included', async () => {
+test('gcalendar: incremental sync sends only the sync token and returns only changes; cancelled events become deletions', async () => {
   const changes = {
     'me@example.com': { s1: { items: [event('a3', { summary: 'New one' }), { id: 'a1', status: 'cancelled' }], nextSyncToken: 's2' } },
     'team@group.calendar.google.com': { t1: { items: [], nextSyncToken: 't2' } },
@@ -189,14 +190,47 @@ test('gcalendar: incremental sync sends only the sync token and returns only cha
   const cursor = calendarCursor({ c: { 'me@example.com': { s: 's1' }, 'team@group.calendar.google.com': { s: 't1' } } })
   const r = await registry.sync('gcalendar', { cursor })
   assert.equal(r.ok, true, JSON.stringify(r.error))
-  assert.deepEqual(r.documents.map((d) => d.id), ['me@example.com/a3', 'me@example.com/a1'])
-  const gone = r.documents[1]
-  assert.match(gone.title, /^Cancelled/)
-  assert.match(gone.text, /cancelled or deleted/)
-  assert.equal(gone.meta.status, 'cancelled')
-  assert.equal(gone.updatedAt, NOW, 'a bare cancelled entry is stamped with the sync time')
+  assert.deepEqual(r.documents.map((d) => d.id), ['me@example.com/a3'])
+  assert.deepEqual(r.deleted, [{ connectorId: 'gcalendar', id: 'me@example.com/a1' }], 'no tombstone document is kept')
   assert.deepEqual(parseCalendarCursor(r.cursor).c, { 'me@example.com': { s: 's2' }, 'team@group.calendar.google.com': { s: 't2' } })
   assert.ok(seen.lists.every((l) => l.syncToken && l.timeMin === undefined))
+})
+
+test('gcalendar: a cancelled event synced incrementally removes the stored event (C96)', async () => {
+  const store = openDocumentStore({ file: ':memory:', now: () => NOW })
+  const first = setup(fakeCalendar())
+  const full = await first.registry.sync('gcalendar')
+  assert.equal(full.ok, true, JSON.stringify(full.error))
+  store.ingest('gcalendar', full)
+  assert.ok(store.get('gcalendar', 'me@example.com/a1'))
+  const changes = {
+    'me@example.com': { 'sync-me@example.com-1': { items: [{ id: 'a1', status: 'cancelled' }], nextSyncToken: 's2' } },
+    'team@group.calendar.google.com': { 'sync-team@group.calendar.google.com-1': { items: [], nextSyncToken: 't2' } },
+  }
+  const again = setup(fakeCalendar({ changes }))
+  const inc = await again.registry.sync('gcalendar', { cursor: store.state('gcalendar').cursor })
+  assert.equal(inc.ok, true, JSON.stringify(inc.error))
+  const counts = store.ingest('gcalendar', inc)
+  assert.equal(counts.removed, 1)
+  assert.equal(store.get('gcalendar', 'me@example.com/a1'), null)
+  assert.ok(store.get('gcalendar', 'me@example.com/a2'), 'other events stay')
+  assert.deepEqual(store.search('cancelled'), [], 'nothing about the deleted event is left to find')
+  store.close()
+})
+
+test('gcalendar: one cancelled occurrence of a repeating event is kept as a short note, not a deletion', () => {
+  const cal = { id: 'me@example.com', name: 'Me' }
+  const note = eventToDocument({
+    id: 'r1_20261102T090000Z', status: 'cancelled', recurringEventId: 'r1',
+    originalStartTime: { dateTime: '2026-11-02T09:00:00Z' },
+  }, cal, { now: () => NOW })
+  assert.equal(note.id, 'me@example.com/r1_20261102T090000Z')
+  assert.match(note.title, /^Cancelled/)
+  assert.match(note.text, /occurrence on 2026-11-02T09:00:00Z/)
+  assert.equal(note.meta.recurringEventId, 'r1')
+  assert.equal(note.updatedAt, NOW)
+  assert.deepEqual(eventToDocument({ id: 'x1', status: 'cancelled' }, cal), { deleted: 'me@example.com/x1' })
+  assert.deepEqual(eventToDocument({ id: 'r1', status: 'cancelled', recurrence: ['RRULE:FREQ=WEEKLY'] }, cal), { deleted: 'me@example.com/r1' }, 'a whole cancelled series leaves')
 })
 
 test('gcalendar: 410 Gone restarts that calendar with a full sync, the others carry on', async () => {

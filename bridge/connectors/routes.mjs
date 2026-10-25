@@ -144,9 +144,10 @@ function card(summary, backend, docs = null) {
 
 /**
  * One "Sync now" (task C06): pull from where the last good sync stopped and
- * keep what came back in the document store (C02). The registry applies the
- * kill switches and the read grant; a failed sync keeps nothing and leaves
- * the old cursor. Never throws for an adapter failure.
+ * keep what came back in the document store (C02), removing items gone at
+ * the source (C96). The registry applies the kill switches and the read
+ * grant; a failed sync keeps nothing and leaves the old cursor. Never throws
+ * for an adapter failure.
  * @param {ReturnType<typeof import('./registry.mjs').createConnectorRegistry>} registry
  * @param {ReturnType<typeof import('./store.mjs').openDocumentStore>} store
  * @param {string} id
@@ -156,7 +157,7 @@ export async function syncConnectorInto(registry, store, id) {
   const r = await registry.sync(id, cursor ? { cursor } : {})
   if (!r.ok) return { ok: false, error: r.error }
   const counts = store.ingest(id, r)
-  return { ok: true, saved: counts.saved, skipped: counts.skipped + (r.dropped ?? 0) }
+  return { ok: true, saved: counts.saved, removed: counts.removed ?? 0, skipped: counts.skipped + (r.dropped ?? 0) }
 }
 
 /**
@@ -164,7 +165,7 @@ export async function syncConnectorInto(registry, store, id) {
  *   registry: ReturnType<typeof import('./registry.mjs').createConnectorRegistry>,
  *   persist?: (snapshot: object) => void,     save grants and switches
  *   documents?: ReturnType<typeof import('./prefs.mjs').createDocumentPrefs> | null,
- *   syncNow?: ((id: string) => Promise<{ ok: boolean, saved?: number, error?: { code: string, message: string } }>) | null,
+ *   syncNow?: ((id: string) => Promise<{ ok: boolean, saved?: number, removed?: number, error?: { code: string, message: string } }>) | null,
  *   log?: Pick<Console, 'warn' | 'error'>,
  * }} opts
  */
@@ -277,7 +278,7 @@ export function createConnectorRoutes({ registry, persist = null, documents = nu
           const code = r?.error?.code ?? 'other'
           return { status: 200, body: { ok: false, reason: ERROR_MESSAGES[code] ?? ERROR_MESSAGES.other, code, connector: one(id) } }
         }
-        return after(id, { saved: r.saved ?? 0 })
+        return after(id, { saved: r.saved ?? 0, removed: r.removed ?? 0 })
       } finally {
         syncing.delete(id)
       }

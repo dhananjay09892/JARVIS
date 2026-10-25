@@ -74,7 +74,7 @@ test('registers as a read-only tool provider with two read tools', () => {
 
 test('synced fixture documents are searchable through the policy engine', async () => {
   const s = setup()
-  assert.deepEqual(await syncFake(s), { saved: 2, skipped: 0, ok: true })
+  assert.deepEqual(await syncFake(s), { saved: 2, skipped: 0, removed: 0, ok: true })
   const name = connectorMcpName('documents', 'read', 'search_documents')
   assert.equal(s.policy.decideTool(name), true, 'the policy engine allows the granted read')
   const out = s.body(await s.search({ query: 'tuesday' }))
