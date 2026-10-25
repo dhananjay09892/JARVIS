@@ -71,7 +71,18 @@ export const CONNECT_BODY = Object.freeze({
     }
     return { opts }
   },
-  oauth: () => ({ opts: {} }),
+  // Guided sign-in. A connector whose card has `setup.clientLabel` (Google)
+  // may also be sent the owner's own OAuth client, once; it goes only to the
+  // adapter's connect() and so to the credential store.
+  oauth(body) {
+    if (body.clientId === undefined && body.clientSecret === undefined) return { opts: {} }
+    const clientId = typeof body.clientId === 'string' ? body.clientId.trim() : ''
+    const clientSecret = typeof body.clientSecret === 'string' ? body.clientSecret.trim() : ''
+    if (!clientId) return { error: 'Paste the OAuth client ID first.' }
+    if (clientId.length > 256 || /[\s\u0000-\u001f]/.test(clientId)) return { error: 'That client ID is not valid.' }
+    if (clientSecret.length > 512 || /[\s\u0000-\u001f]/.test(clientSecret)) return { error: 'That client secret is not valid.' }
+    return { opts: { clientId, ...(clientSecret ? { clientSecret } : {}) }, secrets: clientSecret ? [clientSecret] : [] }
+  },
   none: () => ({ opts: {} }),
 })
 

@@ -210,11 +210,45 @@ function LocalFlow({ card, busy, onConnect }: FlowProps) {
   )
 }
 
-/** Guided sign-in (pattern 1): the bridge hands back a consent page to open. */
-function OAuthFlow({ busy, onConnect, signInUrl }: FlowProps & { signInUrl: string | null }) {
+/**
+ * Guided sign-in (pattern 1): the bridge hands back a consent page to open.
+ * Providers that need the owner's own OAuth client (Google: `setup.clientLabel`)
+ * show its two fields; they are sent once with Connect and then cleared. Left
+ * empty, Connect reuses the client already saved.
+ */
+function OAuthFlow({ card, busy, onConnect, signInUrl }: FlowProps & { signInUrl: string | null }) {
+  const [clientId, setClientId] = useState('')
+  const [clientSecret, setClientSecret] = useState('')
+  const clientLabel = card.setup?.clientLabel
+  const connect = async () => {
+    const fields = clientId.trim() ? { clientId: clientId.trim(), clientSecret: clientSecret.trim() } : {}
+    const ok = await onConnect(fields)
+    setClientSecret('')
+    if (ok) setClientId('')
+    return ok
+  }
   return (
     <>
-      <button disabled={busy} onClick={() => onConnect({})}>
+      {clientLabel && (
+        <div className="mem-add">
+          <input
+            autoComplete="off"
+            placeholder={`${clientLabel}: client ID (leave empty to reuse the saved one)`}
+            aria-label={`${clientLabel} client ID`}
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+          />
+          <input
+            type="password"
+            autoComplete="off"
+            placeholder="Client secret"
+            aria-label={`${clientLabel} client secret`}
+            value={clientSecret}
+            onChange={(e) => setClientSecret(e.target.value)}
+          />
+        </div>
+      )}
+      <button disabled={busy} onClick={connect}>
         Connect
       </button>
       {signInUrl && (

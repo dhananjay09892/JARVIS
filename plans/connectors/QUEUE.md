@@ -73,7 +73,7 @@ for *what* to build; this file decides *in what order*. The main roadmap queue i
 Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mocks, read-only, following the connector's README.
 
 ### C04 · openjarvis/data-connectors (shared) · Shared Google OAuth module
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03
 - **Scope:** One Google OAuth module for Gmail, Calendar, Drive, Contacts and Tasks: installed-app flow with PKCE and loopback redirect, incremental per-connector scopes (smallest read-only scopes), token refresh and revocation, tokens in the credential store. Tested against a mock token endpoint.
 - **Done when:** a mocked consent → token → refresh → revoke round trip passes, with readable errors for denied consent and revoked tokens.

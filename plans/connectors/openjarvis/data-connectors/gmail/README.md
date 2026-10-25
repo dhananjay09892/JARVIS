@@ -10,8 +10,8 @@ Read email messages and threads (gmail.readonly scope) for search, summaries and
 1. In Google Cloud Console create a project and enable the Gmail API.
 2. Create an OAuth client of type "Desktop app"; copy the Client ID and Client Secret.
 3. Add your own address as a test user on the OAuth consent screen (needed while the app is unverified).
-4. Add the redirect URI the app shows (OpenJarvis uses http://localhost:8789/callback).
-5. In JARVIS: Settings → Connectors → Gmail → paste Client ID and Secret → approve Google's consent page (read-only).
+4. No redirect URI to register: Desktop clients accept a loopback redirect on any port (`http://127.0.0.1:<port>`), and JARVIS picks a free port for each sign-in (checked 2026-10-25 against Google's "OAuth 2.0 for Desktop Apps"). OpenJarvis instead uses a fixed http://localhost:8789/callback.
+5. In JARVIS: Settings → Connectors → Gmail → paste Client ID and Secret (once; every Google connector reuses them) → approve Google's consent page (read-only).
 
 Credentials stay on the user's machine. In JARVIS they go to the OS keychain (plan 39), never to plain JSON or the relay (plan 41).
 

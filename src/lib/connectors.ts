@@ -19,6 +19,8 @@ export type ConnectorSetup = {
   helpUrl?: string
   localWhy?: string
   testQuestion?: string
+  /** Guided sign-in with the owner's own OAuth client (Google): names it. */
+  clientLabel?: string
 }
 
 export type ConnectorCard = {
