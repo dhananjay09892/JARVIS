@@ -8,7 +8,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createConnectorRoutes, createGrantsFile, connectResultForPage } from './routes.mjs'
+import { createConnectorRoutes, createGrantsFile, connectResultForPage, syncConnectorInto } from './routes.mjs'
+import { openDocumentStore } from './store.mjs'
 import { createConnectorRegistry } from './registry.mjs'
 import { createMemoryCredentialStore } from './credentials.mjs'
 import { fakeConnector, FAKE_HOST } from './fake.mjs'
@@ -282,4 +283,31 @@ test('grants and switches survive a restart through the grants file, which holds
   assert.equal(second.registry.grants.has('fake', 'read'), false)
   const { readFileSync } = await import('node:fs')
   assert.ok(!readFileSync(file.file, 'utf8').includes(TOKEN))
+})
+
+test('Sync now keeps documents and the cursor, needs read, and needs a store', async () => {
+  const { registry } = setup()
+  const store = openDocumentStore({ file: ':memory:' })
+  const routes = createConnectorRoutes({ registry, log: quiet, syncNow: (id) => syncConnectorInto(registry, store, id) })
+  const call = (method, path, body) => routes.handle({ method, path, body })
+  assert.equal(fakeCard(await call('GET', '/connectors')).canSync, true)
+
+  const before = await call('POST', '/connectors/fake/sync', {})
+  assert.equal(before.body.ok, false, 'not connected yet')
+  assert.equal(store.state('fake').lastSync, null, 'a failed sync keeps nothing')
+
+  await call('POST', '/connectors/fake/connect', { token: TOKEN })
+  const r = await call('POST', '/connectors/fake/sync', {})
+  assert.equal(r.body.ok, true, JSON.stringify(r.body))
+  assert.equal(r.body.saved, 1)
+  assert.ok(store.state('fake').lastSync)
+  assert.ok(!JSON.stringify(r.body).includes(TOKEN))
+
+  registry.grants.revoke('fake', 'read')
+  const denied = await call('POST', '/connectors/fake/sync', {})
+  assert.equal(denied.body.ok, false)
+  assert.equal(denied.body.code, 'not-granted')
+
+  const noStore = createConnectorRoutes({ registry, log: quiet })
+  assert.equal((await noStore.handle({ method: 'POST', path: '/connectors/fake/sync', body: {} })).status, 409)
 })

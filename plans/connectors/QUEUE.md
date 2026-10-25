@@ -86,7 +86,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** a real Google sign-in works on your machine.
 
 ### C06 · openjarvis/data-connectors/gmail · Gmail (API)
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03, C04
 - **Scope:** README "How we implement it" and acceptance tests, read-only scopes through the shared Google OAuth module; incremental sync with cursor, rate-limit backoff.
 - **Done when:** fixture sync, revoked token, injection fixture and erase tests pass.

@@ -252,6 +252,7 @@ export function createConnectorRegistry({
         pattern: patternOf(c.auth),
         setup: c.setup ? structuredClone(c.setup) : null,
         canTest: typeof c.test === 'function' || typeof c.sync === 'function',
+        canSync: typeof c.sync === 'function',
         // A tool provider (like the built-in documents search) keeps nothing of its own.
         erasable: typeof onErase === 'function' && c.kind !== 'tool-provider',
         grants: grants.of(c.id),
