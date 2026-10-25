@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { createSdkMcpServer, tool } from './sdk-server.mjs'
 import { z } from 'zod'
 import { workspaceFiles, WORKSPACE_ROOT } from './workspace.mjs'
 

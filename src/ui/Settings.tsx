@@ -57,6 +57,8 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_WAKE_SENSITIVITY: { default: 'medium', options: ['low', 'medium', 'high'], help: '' },
   JARVIS_MODEL: { default: 'claude-opus-5', help: '' },
   JARVIS_CLAUDE_AUTH: { default: 'subscription', options: ['subscription', 'apikey'], help: '' },
+  JARVIS_BRAIN: { default: 'claude', options: ['claude', 'openai'], help: '' },
+  JARVIS_OPENAI_MODEL: { default: 'gpt-5-mini', help: '' },
   JARVIS_EFFORT: { default: 'high', options: ['low', 'medium', 'high', 'xhigh'], help: '' },
   JARVIS_ALLOW_WRITES: {
     default: '0',
@@ -120,6 +122,7 @@ export function Settings() {
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [keyDraft, setKeyDraft] = useState('')
   const [claudeKeyDraft, setClaudeKeyDraft] = useState('')
+  const [openaiKeyDraft, setOpenaiKeyDraft] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -188,6 +191,8 @@ export function Settings() {
 
   const model = def(schema, 'JARVIS_MODEL')
   const claudeAuth = def(schema, 'JARVIS_CLAUDE_AUTH')
+  const brainChoice = def(schema, 'JARVIS_BRAIN')
+  const openaiModel = def(schema, 'JARVIS_OPENAI_MODEL')
   const effort = def(schema, 'JARVIS_EFFORT')
   const writes = def(schema, 'JARVIS_ALLOW_WRITES')
   const wakeWord = def(schema, 'JARVIS_WAKE_WORD')
@@ -256,7 +261,14 @@ export function Settings() {
     void checkClaude()
   }
 
+  /** Save the OpenAI API key (plan 25, Q54). It goes to the OS keychain; the page only learns "saved". */
+  const saveOpenaiKey = async () => {
+    if (!(await patchSetting({ OPENAI_API_KEY: openaiKeyDraft }))) return
+    setOpenaiKeyDraft('')
+  }
+
   const authMode = s?.JARVIS_CLAUDE_AUTH || claudeAuth.default
+  const activeBrain = s?.JARVIS_BRAIN || brainChoice.default
   const claudeLine = !status
     ? 'Checking your Claude sign-in…'
     : !status.claudeInstalled
@@ -496,6 +508,62 @@ export function Settings() {
               </>
             )}
             <p className="mem-note">Claude sign-in changes apply from the next conversation.</p>
+
+            <div className="mem-add">
+              <label>
+                Brain{' '}
+                <select
+                  aria-label="Brain"
+                  title={brainChoice.help || undefined}
+                  value={activeBrain}
+                  onChange={(e) => patchSetting({ JARVIS_BRAIN: e.target.value })}
+                >
+                  <option value="claude">Claude (default)</option>
+                  <option value="openai">OpenAI, with your own API key</option>
+                </select>
+              </label>
+            </div>
+            {activeBrain === 'openai' && (
+              <>
+                <p className="mem-note">
+                  What you say, and what tools read for you, is sent to OpenAI and billed to your key. Background
+                  tasks stay on Claude for now. Key: {s.OPENAI_API_KEY_set ? 'saved ✓' : 'not set'}
+                  {s.secretStorageAvailable && s.secretStorage ? ` · kept in ${s.secretStorage}` : ''}
+                  {s.secretStorageAvailable === false ? ' · this computer has no secure key storage, so a key cannot be saved here' : ''}
+                </p>
+                <div className="mem-add">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    placeholder="Paste OpenAI API key (sk-…)"
+                    aria-label="OpenAI API key"
+                    value={openaiKeyDraft}
+                    onChange={(e) => setOpenaiKeyDraft(e.target.value)}
+                  />
+                  <button disabled={busy || !openaiKeyDraft.trim()} onClick={saveOpenaiKey}>Save key</button>
+                  {s.OPENAI_API_KEY_set && (
+                    <button disabled={busy} onClick={() => patchSetting({ OPENAI_API_KEY: '' })}>
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <div className="mem-add">
+                  <label>
+                    OpenAI model{' '}
+                    <input
+                      defaultValue={s.JARVIS_OPENAI_MODEL}
+                      placeholder={openaiModel.default}
+                      aria-label="OpenAI model"
+                      title={openaiModel.help || undefined}
+                      onBlur={(e) =>
+                        e.target.value !== s.JARVIS_OPENAI_MODEL && patchSetting({ JARVIS_OPENAI_MODEL: e.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+              </>
+            )}
+            <p className="mem-note">Brain changes apply from the next conversation.</p>
 
             <h3>Actions</h3>
             <label>

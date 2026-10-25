@@ -230,7 +230,7 @@ this file decides *in what order*.
 - **Done when:** the adapter passes the conformance suite against the mock.
 
 ### Q54 · Plan 25 · Wire the OpenAI-compatible brain into the bridge
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q21, Q22
 - **Scope:** Remainder of 25 phase 1. Register `bridge/brains/openai-compatible.mjs` in `server.mjs` behind a Settings switch (off by default) with its key read from the keychain; give tool-loop results the same untrusted-content labelling and taint noting the Claude brain gets from its PostToolUse hook; pass tool specs for the bridge's own tools; a plan 16 metric (turns and errors per brain).
 - **Done when:** with the switch on and a key stored, a voice turn runs on the OpenAI profile end to end (tested against the mock server), tool output from outside sources reaches the model labelled untrusted, and with the switch off nothing changes.

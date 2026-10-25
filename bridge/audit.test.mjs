@@ -248,7 +248,11 @@ test('server.mjs writes decisions, approvals and results to the audit log', () =
   const agents = count(/\bquery\(\{/g)
   assert.equal(count(/policy\.preToolUse\(\{ guard: taintGuard\(taint, approve\), actor: '(voice|worker)' \}\)/g), agents)
   assert.equal(count(/PostToolUse: \[postToolUse\(taint, '(voice|worker)'\)\]/g), agents)
-  assert.match(src, /type: 'result'/)
+  // Results are logged by the PostToolUse hook, which lives in untrusted.mjs
+  // so a tool-loop brain's tool bridge runs the very same one (Q54).
+  assert.match(src, /createPostToolUse\(\{ taint, actor, audit \}\)/)
+  const hook = readFileSync(new URL('./untrusted.mjs', import.meta.url), 'utf8')
+  assert.match(hook, /type: 'result'/)
   // The off switch.
   assert.match(src, /setting\('JARVIS_AUDIT'\)/)
 })

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import { createSdkMcpServer, tool } from './sdk-server.mjs'
 import { z } from 'zod'
 
 export const APPROVED_APPS = ['vscode', 'chrome', 'notepad', 'calculator']

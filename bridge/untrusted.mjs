@@ -408,6 +408,40 @@ export function untrustedNotice(input) {
 }
 
 /**
+ * The PostToolUse hook every brain's session gets (server.mjs): log that the
+ * call came back (name and error flag only), note what was read for taint,
+ * then label it as untrusted. An agent brain (Claude) runs it from its SDK
+ * hooks; a tool-loop brain's tool bridge runs it after each tool
+ * (brains/tool-bridge.mjs), so both get exactly the same treatment.
+ *
+ * @param {object} p
+ * @param {{ noteResult: Function, markPrivate: Function }} p.taint  the session's taint tracker (taint.mjs)
+ * @param {'voice'|'worker'} p.actor
+ * @param {Function|null} [p.audit]  the audit sink (audit.mjs)
+ * @param {object} [p.log]
+ */
+export function createPostToolUse({ taint, actor, audit = null, log = console }) {
+  return {
+    hooks: [async (input) => {
+      audit?.({
+        type: 'result',
+        actor,
+        request: { kind: 'tool', name: input?.tool_name },
+        result: { error: input?.tool_response?.isError === true },
+      })
+      try {
+        taint.noteResult(input.tool_name, input.tool_response)
+      } catch (err) {
+        // Failing to read a result must not cost the taint: assume it was private.
+        taint.markPrivate(input.tool_name)
+        log?.warn?.('[jarvis] taint: could not read a tool result:', err.message)
+      }
+      return untrustedNotice(input)
+    }],
+  }
+}
+
+/**
  * The system-prompt section that explains the envelope. Shared by the voice
  * session and background workers so the two can never describe it differently.
  */

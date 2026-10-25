@@ -16,8 +16,17 @@
  * checks every `tool_result` the brain reports against what the bridge
  * actually decided, so a brain cannot run a tool around it or report a refused
  * call as a success.
+ *
+ * After a tool has run, the bridge calls `afterTool`: the same PostToolUse
+ * hook an agent-CLI brain is given (server.mjs `postToolUse`), so a tool-loop
+ * session gets the same audit entry, taint noting and untrusted-content label
+ * as a Claude session (plan 08; task Q54). Where that hook asks for the
+ * untrusted notice, the output the model reads is wrapped in an
+ * `<untrusted_data>` envelope with the notice after it. Events, traces and the
+ * HUD still get the plain summary and detail.
  */
 import { detailOf, summarise } from './events.mjs'
+import { UNTRUSTED_NOTICE, isWrapped, wrapUntrusted } from '../untrusted.mjs'
 
 /** A tool's output as one string (MCP-style content blocks joined). */
 function flatText(content) {
@@ -30,6 +39,18 @@ function flatText(content) {
 
 const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
+/** A tool's output as MCP content blocks, the shape a PostToolUse hook reads. */
+function blocksOf(content) {
+  if (Array.isArray(content)) return content.map((b) => (typeof b === 'string' ? { type: 'text', text: b } : b))
+  return [{ type: 'text', text: typeof content === 'string' ? content : '' }]
+}
+
+/** The output for the model, labelled as untrusted data from outside. */
+export function labelUntrusted(text, source, notes) {
+  const body = isWrapped(text) ? text : wrapUntrusted(text, source)
+  return `${body}\n${notes.join('\n')}`
+}
+
 /**
  * @param {object} p
  * @param {object} p.policy  the policy engine (policy.mjs createPolicy)
@@ -39,9 +60,10 @@ const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
  *        or throws to fail the call
  * @param {Function} [p.guard]   extra check after the gate (the taint guard)
  * @param {(toolName: string) => boolean} [p.tainted]  does this tool's output count as private?
+ * @param {{ hooks?: Function[] }} [p.afterTool]  the PostToolUse hook (audit, taint, untrusted label)
  * @param {object} [p.log]
  */
-export function createToolBridge({ policy, actor, tools = {}, guard = null, tainted = () => false, log = console } = {}) {
+export function createToolBridge({ policy, actor, tools = {}, guard = null, tainted = () => false, afterTool = null, log = console } = {}) {
   if (typeof policy?.authorize !== 'function' || typeof policy?.decideTool !== 'function') {
     throw new Error('The tool bridge needs the policy engine.')
   }
@@ -55,7 +77,34 @@ export function createToolBridge({ policy, actor, tools = {}, guard = null, tain
   // Every call this bridge decided, by id, and whether it ended ok.
   const outcomes = new Map()
 
-  const result = (id, name, ok, content) => {
+  const afterHooks = Array.isArray(afterTool?.hooks) ? afterTool.hooks.filter((h) => typeof h === 'function') : []
+
+  /**
+   * Run the PostToolUse hook for a call whose handler ran. Returns the notes
+   * it asks the model to see. A hook that throws costs nothing in safety: the
+   * result is labelled untrusted anyway.
+   */
+  const after = async (name, input, content, isError) => {
+    const notes = []
+    for (const hook of afterHooks) {
+      try {
+        const out = await hook({
+          hook_event_name: 'PostToolUse',
+          tool_name: name,
+          tool_input: input,
+          tool_response: { content: blocksOf(content), isError },
+        })
+        const note = out?.hookSpecificOutput?.additionalContext
+        if (typeof note === 'string' && note) notes.push(note)
+      } catch (err) {
+        log?.error?.(`[jarvis] tool bridge: PostToolUse hook failed for ${name}:`, err?.message ?? err)
+        if (!notes.includes(UNTRUSTED_NOTICE)) notes.push(UNTRUSTED_NOTICE)
+      }
+    }
+    return notes
+  }
+
+  const result = (id, name, ok, content, notes = []) => {
     outcomes.set(id, ok)
     const event = {
       t: 'tool_result',
@@ -68,7 +117,11 @@ export function createToolBridge({ policy, actor, tools = {}, guard = null, tain
     // The whole output, for the brain to hand back to its model. Not
     // enumerable, so it never rides along when the event is copied, logged
     // or sent to the HUD; only the brain that asked reads it.
-    Object.defineProperty(event, 'content', { value: flatText(content), enumerable: false })
+    // A successful result from outside is labelled for the model (errors are
+    // written by the bridge or the tool itself and pass through, as in
+    // untrusted.mjs `markUntrustedResult`).
+    const text = flatText(content)
+    Object.defineProperty(event, 'content', { value: ok && notes.length ? labelUntrusted(text, name, notes) : text, enumerable: false })
     return event
   }
 
@@ -96,12 +149,16 @@ export function createToolBridge({ policy, actor, tools = {}, guard = null, tain
       if (refusal !== null) return result(id, name, false, refusal)
       const handler = handlers.get(name)
       if (!handler) return result(id, name, false, `No such tool available: ${name}`)
+      let ok = true
+      let content
       try {
         const output = await handler(input)
-        return result(id, name, true, typeof output === 'string' || Array.isArray(output) ? output : output == null ? '' : JSON.stringify(output))
+        content = typeof output === 'string' || Array.isArray(output) ? output : output == null ? '' : JSON.stringify(output)
       } catch (err) {
-        return result(id, name, false, String(err?.message ?? err))
+        ok = false
+        content = String(err?.message ?? err)
       }
+      return result(id, name, ok, content, await after(name, input, content, !ok))
     },
 
     /** Did this bridge decide the call with this id, and how did it end? undefined if never. */
