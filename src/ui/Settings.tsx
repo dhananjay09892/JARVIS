@@ -56,6 +56,7 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_WAKE_WORD: { default: 'offline', options: ['offline', 'cloud'], help: '' },
   JARVIS_WAKE_SENSITIVITY: { default: 'medium', options: ['low', 'medium', 'high'], help: '' },
   JARVIS_MODEL: { default: 'claude-opus-5', help: '' },
+  JARVIS_CLAUDE_AUTH: { default: 'subscription', options: ['subscription', 'apikey'], help: '' },
   JARVIS_EFFORT: { default: 'high', options: ['low', 'medium', 'high', 'xhigh'], help: '' },
   JARVIS_ALLOW_WRITES: {
     default: '0',
@@ -118,6 +119,7 @@ export function Settings() {
   const [schema, setSchema] = useState<SettingsSchema | null>(null)
   const [status, setStatus] = useState<SetupStatus | null>(null)
   const [keyDraft, setKeyDraft] = useState('')
+  const [claudeKeyDraft, setClaudeKeyDraft] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -185,6 +187,7 @@ export function Settings() {
     })
 
   const model = def(schema, 'JARVIS_MODEL')
+  const claudeAuth = def(schema, 'JARVIS_CLAUDE_AUTH')
   const effort = def(schema, 'JARVIS_EFFORT')
   const writes = def(schema, 'JARVIS_ALLOW_WRITES')
   const wakeWord = def(schema, 'JARVIS_WAKE_WORD')
@@ -246,13 +249,25 @@ export function Settings() {
     )
   }
 
+  /** Save the Claude API key, then re-check Claude so the line above says whether it is ready. */
+  const saveClaudeKey = async () => {
+    if (!(await patchSetting({ ANTHROPIC_API_KEY: claudeKeyDraft }))) return
+    setClaudeKeyDraft('')
+    void checkClaude()
+  }
+
+  const authMode = s?.JARVIS_CLAUDE_AUTH || claudeAuth.default
   const claudeLine = !status
     ? 'Checking your Claude sign-in…'
     : !status.claudeInstalled
       ? 'Claude was not found on this computer. Reinstall JARVIS to fix it.'
-      : !status.claudeLoggedIn
-        ? 'Not signed in yet. Press Sign in, finish in the browser window that opens, then press Check again.'
-        : `Claude is ready (version ${status.claudeVersion.split(' ')[0]}).`
+      : status.claudeAuthMode === 'apikey'
+        ? status.claudeAuthenticated
+          ? `Claude is ready on your API key (version ${status.claudeVersion.split(' ')[0]}). Usage is billed to that key.`
+          : 'Claude is set to use an API key, but none is saved. Add one under Brain in Settings.'
+        : !status.claudeLoggedIn
+          ? 'Not signed in yet. Press Sign in, finish in the browser window that opens, then press Check again.'
+          : `Claude is ready (version ${status.claudeVersion.split(' ')[0]}).`
 
   const keyBlock = (
     <>
@@ -431,6 +446,56 @@ export function Settings() {
                 </select>
               </label>
             </div>
+
+            <div className="mem-add">
+              <label>
+                Claude sign-in{' '}
+                <select
+                  aria-label="Claude sign-in"
+                  title={claudeAuth.help || undefined}
+                  value={authMode}
+                  onChange={(e) => {
+                    const mode = e.target.value
+                    void run(async () => {
+                      const result = await saveSettings({ JARVIS_CLAUDE_AUTH: mode })
+                      setS(result)
+                      void checkClaude()
+                      return savedNote(result)
+                    })
+                  }}
+                >
+                  <option value="subscription">your Claude subscription (default)</option>
+                  <option value="apikey">your own API key</option>
+                </select>
+              </label>
+            </div>
+            {authMode === 'apikey' && (
+              <>
+                <p className="mem-note">
+                  Uses your own Anthropic API key instead of your subscription; usage is billed to that key&apos;s
+                  account. Key: {s.ANTHROPIC_API_KEY_set ? 'saved ✓' : 'not set'}
+                  {s.secretStorageAvailable && s.secretStorage ? ` · kept in ${s.secretStorage}` : ''}
+                  {s.secretStorageAvailable === false ? ' · this computer has no secure key storage, so a key cannot be saved here' : ''}
+                </p>
+                <div className="mem-add">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    placeholder="Paste Anthropic API key (sk-ant-…)"
+                    aria-label="Claude API key"
+                    value={claudeKeyDraft}
+                    onChange={(e) => setClaudeKeyDraft(e.target.value)}
+                  />
+                  <button disabled={busy || !claudeKeyDraft.trim()} onClick={saveClaudeKey}>Save key</button>
+                  {s.ANTHROPIC_API_KEY_set && (
+                    <button disabled={busy} onClick={() => patchSetting({ ANTHROPIC_API_KEY: '' })}>
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+            <p className="mem-note">Claude sign-in changes apply from the next conversation.</p>
 
             <h3>Actions</h3>
             <label>

@@ -3,6 +3,10 @@ import { probeCapabilities } from './capabilities'
 
 export type PublicSettings = {
   ELEVENLABS_API_KEY_set: boolean
+  /** Whether a Claude API key is saved (ADR 001, Q42). The key itself never reaches the page. */
+  ANTHROPIC_API_KEY_set: boolean
+  /** 'subscription' | 'apikey' — how Claude is paid for. '' means the default (subscription). */
+  JARVIS_CLAUDE_AUTH: string
   JARVIS_MODEL: string
   JARVIS_EFFORT: string
   JARVIS_VOICE_ID: string
@@ -64,6 +68,10 @@ export type SetupStatus = {
   claudeInstalled: boolean
   claudeVersion: string
   claudeLoggedIn: boolean
+  /** 'subscription' | 'apikey'. Older bridges omit it (subscription). */
+  claudeAuthMode?: string
+  /** Whether the chosen way in is ready: signed in, or a key saved. */
+  claudeAuthenticated?: boolean
 }
 
 export async function getSettings(): Promise<PublicSettings> {

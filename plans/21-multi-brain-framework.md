@@ -54,7 +54,7 @@ Two integration modes:
 1. ✅ **Refactor behind an interface (4–5 d):** extract the current Claude code from `server.mjs` into `bridge/brains/claude.mjs` with no behaviour change; add a registry; add tests that pin current behaviour.
 2. ✅ **Event schema and conformance suite (3 d):** *(events, adapter and suite done in Q17; `server.mjs` and `tasks.mjs` read only BrainEvents since Q52)* normalise events; scripted scenarios every brain must pass (plain answer, one tool call, denied tool, cancel mid-stream, long answer, tool error, resume).
 3. ✅ **Policy contract (2 d):** *(done in Q18: tool modes and checks in `brains/registry.mjs`, the tool-loop executor in `brains/tool-bridge.mjs`)* all tool calls flow through `policy.decide()` (15); brains without a pre-execution hook are forced to read-only or tool-loop mode; test that `disallowedTools`-equivalents hold on every brain.
-4. **Brain settings UI (2 d):** pick default brain, per-person brain (01), per-task rules (06), connection status, "test this brain" button, clear subscription-vs-API-key labels and a cost/limit meter.
+4. **Brain settings UI (2 d):** *(Claude subscription-or-API-key choice and key entry done in Q42)* pick default brain, per-person brain (01), per-task rules (06), connection status, "test this brain" button, clear subscription-vs-API-key labels and a cost/limit meter.
 5. **Router and fallback (3 d):** extend plan 06 routing with brain choice (reflex → fast → deep) and failover on outage/429/timeouts, with a spoken notice; sticky per conversation so tool state isn't lost.
 6. **Provider terms register (1 d):** *(research done: [ADR 001](adr/001-subscription-brain-terms.md) has the per-provider findings and a summary table to build the register from; waiting for the owner's decision)* `plans/brain-terms.md` or a doc listing per provider: auth mode, ToS stance for third-party apps, last verified date, risk level; surfaced in Settings before enabling a subscription login for that brain.
 7. **Observability (1 d):** per-brain latency, failure and cost metrics in 16; A/B scoring on the behaviour eval set.
@@ -158,3 +158,19 @@ Conformance suite pass rate per brain; policy-bypass tests = 0 on all brains; fa
   tool-loop results as untrusted (`afterTool`), come with the first real tool-loop brain (Q21);
   the agent-mode bypass check is a detector after the fact (the hook is what prevents), so it is
   worth one real voice session with a few tools to confirm no false stops.
+- **2026-10-25 · Q42 · Claude API-key fallback (ADR 001, Anthropic line).** New settings
+  `JARVIS_CLAUDE_AUTH` (`subscription` default, or `apikey`) and `ANTHROPIC_API_KEY` (a registry
+  secret, so it lives in the OS keychain from Q20 and the page only sees `_set`); both apply from
+  the next conversation. `brains/claude.mjs` gains `resolveClaudeAuth`/`claudeAuthEnv`: every
+  session starts the stock binary with an explicit `env` — subscription mode *removes* any
+  `ANTHROPIC_API_KEY` (the binary bills a key ahead of a login, so leaving a shell key in place
+  would silently bill it), API-key mode sets the saved key. The choice is read per session.
+  `status()` now reports the chosen `authMode`, `apiKeySet`, and `authenticated` for that mode;
+  never the key. API-key mode with no key ends the turn with an `auth` error and does not start
+  the binary. `/setup/status` adds `claudeAuthMode`/`claudeAuthenticated`; Settings → Brain has a
+  "Claude sign-in" control and a key field; README has the how-to and an upgrade note (a shell
+  `ANTHROPIC_API_KEY` alone no longer switches billing). No Claude.ai credentials are read or
+  stored (pinned by a test). Left for phase 4: a "test this key" button (would need a paid call)
+  and the cost meter. Worth knowing: in API-key mode the key is in the binary's environment, so
+  its child processes (Bash, when writes are on and the policy allows) inherit it, as they would
+  from a shell; a later hardening task could scrub it from tool subprocesses if the SDK allows.
