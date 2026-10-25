@@ -71,7 +71,8 @@ can have — Node.js and Chrome. That's the whole list.
   need. Install it with the official method — `npm install -g @anthropic-ai/claude-code`,
   or the platform installer at <https://docs.claude.com/en/docs/claude-code> —
   then run `claude` once and complete login. The bridge reuses that login. **No
-  API key**, and usage is billed to your existing Claude account.
+  API key**, and usage is billed to your existing Claude account. (Prefer an API
+  key? See [Using a Claude API key instead](#using-a-claude-api-key-instead).)
 - **Node.js 22.13 or newer** — free, one installer from <https://nodejs.org>. This
   is a Node web app, so it is the one unavoidable tool. (Older versions fail because
   the bridge uses the built-in `node:sqlite`; `npm start` tells you so.)
@@ -484,6 +485,8 @@ the browser. `JARVIS_MODEL` and `JARVIS_EFFORT` can also be set there when using
 | `JARVIS_VOICE_ID` | — | ElevenLabs voice id |
 | `JARVIS_HINDI_VOICE_ID` | `JARVIS_VOICE_ID` | Optional Hindi-capable ElevenLabs voice id |
 | `ELEVENLABS_API_KEY` | — | Optional; enables the ElevenLabs voice + Scribe |
+| `JARVIS_CLAUDE_AUTH` | `subscription` | `subscription` or `apikey`: how Claude is paid for |
+| `ANTHROPIC_API_KEY` | — | Your Anthropic API key; used only when `JARVIS_CLAUDE_AUTH` is `apikey` |
 
 ### Frontend (`.env.local`)
 
@@ -495,6 +498,24 @@ the browser. `JARVIS_MODEL` and `JARVIS_EFFORT` can also be set there when using
 | `VITE_KOKORO_VOICE` | Voice for the Kokoro engine |
 | `VITE_USE_ELEVENLABS` | Force the ElevenLabs voice on |
 | `VITE_ANTHROPIC_API_KEY` | Direct mode only |
+
+### Using a Claude API key instead
+
+Your Claude subscription is the default and needs nothing here. If you would
+rather pay per use with your own Anthropic API key (from the Anthropic Console),
+open **Settings → Brain**, set **Claude sign-in** to *your own API key*, and paste
+the key. Like the ElevenLabs key it is kept in your operating system's protected
+storage, never in the settings file, and the page is only told whether one is
+saved. JARVIS hands it to the stock Claude Code binary as `ANTHROPIC_API_KEY`;
+usage is then billed to that key's account, not your plan. Switching back to the
+subscription takes effect from the next conversation. JARVIS never reads or
+stores your Claude.ai sign-in in either mode.
+
+**Upgrading from an earlier version:** if you had `ANTHROPIC_API_KEY` set in your
+shell, JARVIS used to bill that key without asking. It now uses your subscription
+unless you choose the API key, and in subscription mode it removes the key from
+Claude's environment. To keep using the key, choose *your own API key* in
+Settings or also set `JARVIS_CLAUDE_AUTH=apikey`.
 
 ### Adding an ElevenLabs key
 

@@ -236,7 +236,7 @@ this file decides *in what order*.
 - **Done when:** with the switch on and a key stored, a voice turn runs on the OpenAI profile end to end (tested against the mock server), tool output from outside sources reaches the model labelled untrusted, and with the switch off nothing changes.
 
 ### Q42 · Plan 21 · Claude API-key fallback
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q20
 - **Scope:** ADR 001 decision (Anthropic line). Add an optional Claude API-key mode next to subscription sign-in: the key is stored in the keychain from Q20 and passed to the stock binary as `ANTHROPIC_API_KEY`; subscription stays the default; `status().authMode` reports which is in use; a Settings control to choose it. Never read or store Claude.ai credentials.
 - **Done when:** JARVIS runs on either the user's subscription or their API key, switchable in Settings, with tests.

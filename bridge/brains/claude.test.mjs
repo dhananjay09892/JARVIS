@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { createPolicy, GENERAL_WRITE_TOOLS, PRE_TOOL_USE_GUARD_TIMEOUT_S } from '../policy.mjs'
-import { createClaudeBrain, claudeOptions, claudeEventMapper, MAX_TURNS } from './claude.mjs'
+import {
+  createClaudeBrain, claudeOptions, claudeEventMapper, claudeAuthEnv, resolveClaudeAuth, AUTH_MODES, MAX_TURNS, NO_KEY_MESSAGE,
+} from './claude.mjs'
 import { createBrainRegistry } from './registry.mjs'
 import { checkBrainEvent } from './events.mjs'
 
@@ -158,16 +160,98 @@ test('status reports the binary and the auth mode', () => {
   const status = () => ({ installed: true, version: '2.1.0 (Claude Code)', loggedIn: true })
   const sub = createClaudeBrain({ query: () => {}, status, env: {} }).status()
   assert.deepEqual(sub, {
-    installed: true, version: '2.1.0 (Claude Code)', loggedIn: true, authenticated: true, authMode: 'subscription',
+    installed: true, version: '2.1.0 (Claude Code)', loggedIn: true, authenticated: true, authMode: 'subscription', apiKeySet: false,
   })
+  const loggedOut = () => ({ installed: true, version: 'x', loggedIn: false })
   const key = createClaudeBrain({
-    query: () => {}, status: () => ({ installed: true, version: 'x', loggedIn: false }), env: { ANTHROPIC_API_KEY: 'k' },
+    query: () => {}, status: loggedOut, env: { JARVIS_CLAUDE_AUTH: 'apikey', ANTHROPIC_API_KEY: 'sk-ant-test-value' },
   }).status()
   assert.equal(key.loggedIn, false)
   assert.equal(key.authenticated, true)
   assert.equal(key.authMode, 'apikey')
+  assert.equal(key.apiKeySet, true)
+  assert.equal(JSON.stringify(key).includes('sk-ant-test-value'), false, 'status never carries the key')
   const missing = createClaudeBrain({ query: () => {}, status: () => ({ installed: false }), env: {} }).status()
-  assert.deepEqual(missing, { installed: false, version: '', loggedIn: false, authenticated: false, authMode: 'subscription' })
+  assert.deepEqual(missing, {
+    installed: false, version: '', loggedIn: false, authenticated: false, authMode: 'subscription', apiKeySet: false,
+  })
+})
+
+test('auth: subscription is the default; a key in the shell alone does not switch modes', () => {
+  assert.equal(AUTH_MODES[0], 'subscription')
+  for (const choice of [null, undefined, {}, { mode: '' }, { mode: 'Claude.ai' }, { mode: 'apikey ' }]) {
+    assert.equal(resolveClaudeAuth(choice).mode, 'subscription')
+  }
+  const shellKey = createClaudeBrain({
+    query: () => {}, status: () => ({ installed: true, loggedIn: true }), env: { ANTHROPIC_API_KEY: 'sk-ant-from-shell' },
+  }).status()
+  assert.equal(shellKey.authMode, 'subscription')
+  assert.equal(shellKey.authenticated, true)
+})
+
+test('auth: API-key mode without a key is not authenticated, even when signed in', () => {
+  const s = createClaudeBrain({
+    query: () => {}, status: () => ({ installed: true, loggedIn: true }), auth: () => ({ mode: 'apikey', apiKey: '  ' }),
+  }).status()
+  assert.equal(s.authMode, 'apikey')
+  assert.equal(s.authenticated, false)
+  assert.equal(s.apiKeySet, false)
+})
+
+test('auth env: subscription strips any key; API-key mode sets the saved one; nothing else changes', () => {
+  const base = { PATH: '/bin', HOME: '/home/a', ANTHROPIC_API_KEY: 'sk-ant-from-shell' }
+  const sub = claudeAuthEnv(base, { mode: 'subscription', apiKey: 'sk-ant-saved' })
+  assert.deepEqual(sub, { PATH: '/bin', HOME: '/home/a' })
+  assert.equal('ANTHROPIC_API_KEY' in sub, false)
+  const key = claudeAuthEnv(base, { mode: 'apikey', apiKey: ' sk-ant-saved ' })
+  assert.deepEqual(key, { PATH: '/bin', HOME: '/home/a', ANTHROPIC_API_KEY: 'sk-ant-saved' })
+  assert.equal(base.ANTHROPIC_API_KEY, 'sk-ant-from-shell', 'the base environment is not modified')
+  assert.equal('ANTHROPIC_API_KEY' in claudeAuthEnv(base, { mode: 'apikey', apiKey: '' }), false)
+})
+
+test('sessions start the binary with the environment for the chosen mode, read per session', () => {
+  const { calls, query } = fakeQuery()
+  let choice = { mode: 'subscription', apiKey: 'sk-ant-saved' }
+  const brain = createClaudeBrain({
+    query, status: () => ({}), login() {}, env: { PATH: '/bin', ANTHROPIC_API_KEY: 'sk-ant-from-shell' }, auth: () => choice,
+  })
+  brain.startSession({ prompt: 'one', ...base() })
+  assert.deepEqual(calls[0].options.env, { PATH: '/bin' })
+  // Switched in Settings: the next session uses the key, the first is untouched.
+  choice = { mode: 'apikey', apiKey: 'sk-ant-saved' }
+  brain.converse({ prompt: 'two', ...base() })
+  assert.deepEqual(calls[1].options.env, { PATH: '/bin', ANTHROPIC_API_KEY: 'sk-ant-saved' })
+  assert.deepEqual(calls[0].options.env, { PATH: '/bin' })
+})
+
+test('API-key mode without a key ends the turn with an auth error and never starts the binary', async () => {
+  const { calls, query } = fakeQuery()
+  const brain = createClaudeBrain({ query, status: () => ({}), login() {}, env: {}, auth: () => ({ mode: 'apikey' }) })
+  const run = brain.converse({ prompt: 'hi', ...base() })
+  const events = []
+  for await (const e of run.events) events.push(e)
+  assert.equal(calls.length, 0)
+  assert.deepEqual(events, [
+    { t: 'error', code: 'auth', retryable: false, message: NO_KEY_MESSAGE },
+    { t: 'done', reason: 'error' },
+  ])
+  for (const e of events) assert.equal(checkBrainEvent(e).ok, true)
+  await run.cancel()
+  run.close()
+  assert.throws(() => brain.startSession({ prompt: 'hi', ...base() }), /API key/)
+  assert.throws(() => brain.converse({ ...base() }), /prompt/)
+})
+
+test('an auth() that throws falls back to the subscription', () => {
+  const { calls, query } = fakeQuery()
+  const brain = createClaudeBrain({
+    query, status: () => ({ loggedIn: true }), login() {}, env: { ANTHROPIC_API_KEY: 'sk-ant-x' },
+    auth: () => { throw new Error('keychain locked') },
+  })
+  assert.equal(brain.status().authMode, 'subscription')
+  brain.startSession({ prompt: 'hi', ...base() })
+  assert.equal('ANTHROPIC_API_KEY' in calls[0].options.env, false)
+  assert.throws(() => createClaudeBrain({ query, auth: 'apikey' }), /auth/)
 })
 
 test('login starts the vendor sign-in and nothing else', () => {
@@ -183,11 +267,25 @@ test('the Claude brain registers as the default brain', () => {
   assert.deepEqual(brains.list().map((b) => b.id), ['claude'])
 })
 
+test('server.mjs takes the Claude auth choice from Settings and the keychain, never from Claude.ai files', () => {
+  const src = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
+  assert.match(src, /mode: setting\('JARVIS_CLAUDE_AUTH'\) \?\? settingDefault\('JARVIS_CLAUDE_AUTH'\)/)
+  assert.match(src, /apiKey: setting\('ANTHROPIC_API_KEY'\) \?\? ''/)
+  assert.match(src, /createClaudeBrain\(\{ query, auth: claudeAuth \}\)/)
+  // /setup/status reports the mode and readiness, and nothing that could carry the key.
+  const route = src.slice(src.indexOf("requestUrl.pathname === '/setup/status'"))
+  assert.match(route.slice(0, 700), /claudeAuthMode: c\.authMode, claudeAuthenticated: c\.authenticated/)
+  assert.doesNotMatch(route.slice(0, 700), /apiKey|ANTHROPIC_API_KEY/)
+  // JARVIS never reads the binary's own sign-in (Claude.ai credentials).
+  const brain = readFileSync(new URL('./claude.mjs', import.meta.url), 'utf8')
+  assert.doesNotMatch(src + brain, /\.credentials\.json|oauthAccount|claudeAiOauth/)
+})
+
 test('server.mjs reaches the SDK only through the brain registry', () => {
   const src = readFileSync(new URL('../server.mjs', import.meta.url), 'utf8')
   // query is imported once and handed to the brain, never called directly.
   assert.equal((src.match(/\bquery\(/g) ?? []).length, 0)
-  assert.match(src, /createClaudeBrain\(\{ query \}\)/)
+  assert.match(src, /createClaudeBrain\(\{ query(, auth: claudeAuth)? \}\)/)
   // Both sessions (voice and task worker) are read as BrainEvents.
   assert.equal((src.match(/brain\.converse\(/g) ?? []).length, 2)
   assert.equal((src.match(/\.startSession\(/g) ?? []).length, 0)

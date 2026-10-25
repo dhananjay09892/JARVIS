@@ -18,6 +18,15 @@
  *
  * The SDK's `query` is passed in rather than imported here, so this module and
  * its tests load without the SDK installed. server.mjs hands over the real one.
+ *
+ * Two ways to pay (ADR 001, task Q42). The default is the user's own Claude
+ * subscription, signed in through Anthropic's own flow in the stock binary.
+ * The fallback is the user's own Claude API key, kept in the OS keychain
+ * (secrets.mjs) and handed to the stock binary as ANTHROPIC_API_KEY. Which one
+ * a session uses is decided here, per session, by `claudeAuthEnv`: the binary
+ * bills an ANTHROPIC_API_KEY ahead of a subscription login, so subscription
+ * mode has to take the key out of its environment, not just leave one unset.
+ * JARVIS never reads, stores or relays Claude.ai credentials in either mode.
  */
 import { homedir } from 'node:os'
 import { claudeStatus, startClaudeLogin } from '../claude-cli.mjs'
@@ -117,6 +126,37 @@ export function claudeOptions({
     canUseTool: policy.canUseTool(actor, log),
   }
 }
+
+/** How the Claude brain pays for its turns (ADR 001). The first is the default. */
+export const AUTH_MODES = Object.freeze(['subscription', 'apikey'])
+
+/**
+ * The auth choice in force: { mode, apiKey }. An unknown or empty mode is the
+ * subscription, so nothing but an explicit choice ever bills a key.
+ */
+export function resolveClaudeAuth(choice) {
+  const mode = AUTH_MODES.includes(choice?.mode) ? choice.mode : 'subscription'
+  const apiKey = typeof choice?.apiKey === 'string' ? choice.apiKey.trim() : ''
+  return { mode, apiKey }
+}
+
+/**
+ * The environment the stock Claude Code binary is started with, for one auth
+ * choice. Subscription mode removes any ANTHROPIC_API_KEY (from the shell, say)
+ * so the user's plan, not a key, is what is used; API-key mode sets the saved
+ * key. Everything else is passed through untouched. Returns a new object.
+ */
+export function claudeAuthEnv(baseEnv, choice) {
+  const { mode, apiKey } = resolveClaudeAuth(choice)
+  const env = { ...baseEnv }
+  delete env.ANTHROPIC_API_KEY
+  if (mode === 'apikey' && apiKey) env.ANTHROPIC_API_KEY = apiKey
+  return env
+}
+
+/** Said when API-key mode is chosen but no key is saved. Never names the key. */
+export const NO_KEY_MESSAGE =
+  'Claude is set to use an API key, but none is saved. Add one in Settings under Brain, or switch back to your Claude subscription.'
 
 /** How each failed `result` subtype ends the turn. Anything unlisted is an error. */
 const RESULT_ENDINGS = Object.freeze({
@@ -330,10 +370,27 @@ function sdkPrompt(prompt, mapper) {
  * @param {Function} deps.query    the Agent SDK's query()
  * @param {Function} [deps.status] reports { installed, version, loggedIn } (claude-cli.mjs)
  * @param {Function} [deps.login]  starts the browser sign-in (claude-cli.mjs)
- * @param {object}   [deps.env]    environment, to tell an API key from a subscription login
+ * @param {object}   [deps.env]    the environment the binary is started from (process.env)
+ * @param {Function} [deps.auth]   () => { mode: 'subscription'|'apikey', apiKey } — read
+ *                                 per session, so a change in Settings applies from the next
+ *                                 conversation. server.mjs reads it from Settings and the
+ *                                 keychain; the default reads JARVIS_CLAUDE_AUTH and
+ *                                 ANTHROPIC_API_KEY from `env`.
  */
-export function createClaudeBrain({ query, status = claudeStatus, login = startClaudeLogin, env = process.env } = {}) {
+export function createClaudeBrain({
+  query, status = claudeStatus, login = startClaudeLogin, env = process.env,
+  auth = () => ({ mode: env.JARVIS_CLAUDE_AUTH, apiKey: env.ANTHROPIC_API_KEY }),
+} = {}) {
   if (typeof query !== 'function') throw new Error('The Claude brain needs the Agent SDK query().')
+  if (typeof auth !== 'function') throw new Error('The Claude brain needs auth() to be a function.')
+  const currentAuth = () => {
+    try {
+      return resolveClaudeAuth(auth())
+    } catch {
+      // Settings or the keychain could not be read: fall back to the plan.
+      return resolveClaudeAuth(null)
+    }
+  }
   return Object.freeze({
     id: 'claude',
     label: 'Claude',
@@ -348,19 +405,22 @@ export function createClaudeBrain({ query, status = claudeStatus, login = startC
     }),
 
     /**
-     * Installed and signed in? Never throws. The Claude Code binary bills an
-     * ANTHROPIC_API_KEY in its environment ahead of a subscription login, so
-     * that is what decides the auth mode (see ADR 001).
+     * Installed and ready to answer? Never throws, and never returns the key.
+     * `authMode` is the choice in force (ADR 001, Q42): 'subscription' needs
+     * the Anthropic sign-in, 'apikey' needs a saved key.
      */
     status() {
       const s = status()
+      const a = currentAuth()
+      const loggedIn = Boolean(s.loggedIn)
       return {
         installed: Boolean(s.installed),
         version: s.version ?? '',
         // Signed in to a Claude account through Anthropic's own flow.
-        loggedIn: Boolean(s.loggedIn),
-        authenticated: Boolean(s.loggedIn) || Boolean(env.ANTHROPIC_API_KEY),
-        authMode: env.ANTHROPIC_API_KEY ? 'apikey' : 'subscription',
+        loggedIn,
+        authenticated: a.mode === 'apikey' ? Boolean(a.apiKey) : loggedIn,
+        authMode: a.mode,
+        apiKeySet: Boolean(a.apiKey),
       }
     },
 
@@ -389,7 +449,18 @@ export function createClaudeBrain({ query, status = claudeStatus, login = startC
      */
     converse({ prompt, tainted, ...options }) {
       const mapper = claudeEventMapper({ tainted })
-      const session = startSession({ prompt: sdkPrompt(prompt, mapper), ...options })
+      const a = currentAuth()
+      if (a.mode === 'apikey' && !a.apiKey) {
+        // Say so as the turn's ending, rather than quietly running on whatever
+        // sign-in the binary happens to find.
+        sdkPrompt(prompt, mapper) // validates the prompt, as a real session would
+        async function* refused() {
+          yield { t: 'error', code: 'auth', retryable: false, message: NO_KEY_MESSAGE }
+          yield { t: 'done', reason: 'error' }
+        }
+        return { events: refused(), async cancel() {}, close() {} }
+      }
+      const session = startSession({ prompt: sdkPrompt(prompt, mapper), ...options }, a)
       async function* events() {
         try {
           for await (const msg of session) yield* mapper.map(msg)
@@ -410,7 +481,12 @@ export function createClaudeBrain({ query, status = claudeStatus, login = startC
     },
   })
 
-  function startSession({ prompt, ...options }) {
-    return query({ prompt, options: claudeOptions(options) })
+  /**
+   * The options from claudeOptions, plus the environment for the auth choice.
+   * The SDK starts the binary with exactly this environment.
+   */
+  function startSession({ prompt, ...options }, a = currentAuth()) {
+    if (a.mode === 'apikey' && !a.apiKey) throw new Error(NO_KEY_MESSAGE)
+    return query({ prompt, options: { ...claudeOptions(options), env: claudeAuthEnv(env, a) } })
   }
 }

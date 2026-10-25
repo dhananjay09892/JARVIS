@@ -415,9 +415,17 @@ const { decideTool } = policy
  * The brains JARVIS can think with (plan 21). Only Claude so far, on the Agent
  * SDK; the bridge talks to it through the registry and never calls the SDK
  * directly, so the policy engine above stays the same whatever brain runs.
+ *
+ * Claude runs on the user's own subscription unless Settings says API key
+ * (ADR 001, Q42); the key comes from the OS keychain (or the environment) and
+ * is read again for each new conversation or task.
  */
+const claudeAuth = () => ({
+  mode: setting('JARVIS_CLAUDE_AUTH') ?? settingDefault('JARVIS_CLAUDE_AUTH'),
+  apiKey: setting('ANTHROPIC_API_KEY') ?? '',
+})
 const brains = createBrainRegistry()
-brains.register(createClaudeBrain({ query }))
+brains.register(createClaudeBrain({ query, auth: claudeAuth }))
 const brain = brains.default()
 
 /**
@@ -1236,8 +1244,12 @@ const handleRequest = async (req, res) => {
   if (req.method === 'GET' && requestUrl.pathname === '/setup/status') {
     const c = brains.get('claude').status()
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    // Which way Claude is paid for, and whether that way is ready. Never the key.
     return res.end(
-      JSON.stringify({ claudeInstalled: c.installed, claudeVersion: c.version, claudeLoggedIn: c.loggedIn }),
+      JSON.stringify({
+        claudeInstalled: c.installed, claudeVersion: c.version, claudeLoggedIn: c.loggedIn,
+        claudeAuthMode: c.authMode, claudeAuthenticated: c.authenticated,
+      }),
     )
   }
 

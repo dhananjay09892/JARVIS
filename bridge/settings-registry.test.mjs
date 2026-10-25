@@ -19,7 +19,11 @@ useSecretVault(createVault(memoryBackend()))
 function sample(def) {
   if (def.type === 'enum') return def.options.find((o) => o !== def.default)
   if (def.type === 'boolean') return def.default === '1' ? '0' : '1'
-  if (def.type === 'secret') return 'test-secret-1234567890'
+  if (def.type === 'secret') {
+    const v = ['test-secret-1234567890', 'sk-ant-test-secret-1234567890'].find((x) => isValid(def, x))
+    assert.ok(v, `no sample for ${def.id}`)
+    return v
+  }
   // A string: the default with a suffix still fits the shapes used today.
   const v = `${def.default}-x`.slice(-40)
   assert.ok(isValid(def, v), `no sample for ${def.id}`)
@@ -34,10 +38,26 @@ test('the registry passes its own rules', () => {
 test('every setting that existed before the registry is declared', () => {
   const ids = REGISTRY.map((d) => d.id).sort()
   assert.deepEqual(ids, [
-    'ELEVENLABS_API_KEY', 'JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_EFFORT',
+    'ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT',
     'JARVIS_MODEL', 'JARVIS_TRACES', 'JARVIS_VOICE_ID',
     'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD', 'setupDone',
   ])
+})
+
+test('Claude runs on the subscription by default; an API key is an opt-in secret (ADR 001, Q42)', () => {
+  const mode = settingDef('JARVIS_CLAUDE_AUTH')
+  assert.equal(mode.section, 'brains')
+  assert.equal(mode.type, 'enum')
+  assert.deepEqual(mode.options, ['subscription', 'apikey'])
+  assert.equal(mode.default, 'subscription')
+  const key = settingDef('ANTHROPIC_API_KEY')
+  assert.equal(key.secret, true, 'the key goes to the OS keychain, never the settings table')
+  assert.equal(key.default, '')
+  assert.equal(key.risk, 'sensitive')
+  assert.equal(isValid(key, 'sk-ant-api03-' + 'a'.repeat(40)), true)
+  for (const bad of ['', 'sk-ant-short', 'not-a-key-at-all-0123456789', 'sk-ant-api03-has space here!!']) {
+    assert.equal(isValid(key, bad), false, bad)
+  }
 })
 
 test('the offline wake word is on by default and can be turned off (plan 02)', () => {
@@ -143,7 +163,7 @@ test('the page keeps its own copy of the shapes it reads in step with the regist
 test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
   const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
   assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
-  assert.deepEqual(by('reconnect'), ['JARVIS_EFFORT', 'JARVIS_MODEL'])
+  assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL'])
   // The writes switch stays restart-only until the Safety section (phase 5)
   // adds confirmation for dangerous changes; the audit log stays on until then too.
   assert.deepEqual(by('restart'), ['JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD'])
