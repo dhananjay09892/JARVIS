@@ -57,6 +57,8 @@ import { openDocumentStore } from './connectors/store.mjs'
 import { documentsConnector } from './connectors/documents.mjs'
 import { connectorsServer } from './connectors/mcp.mjs'
 import { createConnectorRoutes, createGrantsFile } from './connectors/routes.mjs'
+import { gcalendarConnector } from './connectors/gcalendar.mjs'
+import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { checkForUpdate } from './update.mjs'
 import { fileURLToPath } from 'node:url'
@@ -347,8 +349,9 @@ try {
 } catch (err) {
   console.error('[jarvis] could not apply document preferences:', err?.message ?? err)
 }
+const connectorCredentialStore = connectorCredentials()
 const connectors = createConnectorRegistry({
-  credentials: connectorCredentials(),
+  credentials: connectorCredentialStore,
   // Disconnect → Erase data erases what the store kept for that connector.
   onErase: connectorStore ? (id) => { connectorStore.erase(id) } : null,
 })
@@ -367,6 +370,15 @@ connectors.registerAll([
         }),
       }]
     : []),
+  {
+    // Google Calendar (task C07), read-only. Built inside the registry's
+    // try/catch; the owner's Google OAuth client lives under its own `google`
+    // credential id, which no adapter can read through its scoped view.
+    id: 'gcalendar',
+    create: (ctx) => gcalendarConnector({
+      googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
+    }).create(ctx),
+  },
 ])
 
 /**

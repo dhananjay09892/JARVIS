@@ -92,10 +92,16 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** fixture sync, revoked token, injection fixture and erase tests pass.
 
 ### C07 · openjarvis/data-connectors/gcalendar · Google Calendar
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03, C04
 - **Scope:** README "How we implement it" and acceptance tests, read-only scopes through the shared Google OAuth module; incremental sync with cursor, rate-limit backoff.
 - **Done when:** fixture sync, revoked token, injection fixture and erase tests pass.
+
+### C96 · connectors · Deleted items leave the document store
+- **Status:** todo
+- **Depends on:** C07
+- **Scope:** Follow-up from C07. Let an adapter's `sync()` yield a deletion marker (e.g. `{ deleted: '<doc id>' }`) that the registry validates and passes through, and that the C02 store applies by removing that document (no tombstone text kept). Use it in Google Calendar for cancelled/deleted events instead of the short "Cancelled" document, and in Gmail if C06 is merged by then.
+- **Done when:** a cancelled event synced incrementally removes the stored event, with tests; a marker for another connector's document is ignored.
 
 ### C08 · openjarvis/data-connectors/gdrive · Google Drive
 - **Status:** todo
