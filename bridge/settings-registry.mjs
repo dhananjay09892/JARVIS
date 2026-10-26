@@ -100,6 +100,17 @@ const DEFS = [
     visibleIn: 'simple',
   },
   {
+    id: 'JARVIS_QUICK_START',
+    section: 'voice',
+    label: 'Quick start',
+    help: 'Start speaking at the first phrase of an answer instead of waiting for the whole first sentence, and open the ElevenLabs connection while JARVIS thinks. Off: whole sentences only.',
+    type: 'boolean',
+    default: '1',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'advanced',
+  },
+  {
     id: 'JARVIS_MODEL',
     section: 'brains',
     label: 'Model',

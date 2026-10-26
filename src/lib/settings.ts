@@ -25,6 +25,8 @@ export type PublicSettings = {
   JARVIS_WAKE_WORD: string
   /** 'low' | 'medium' | 'high' — plan 02. '' means the default (medium). */
   JARVIS_WAKE_SENSITIVITY: string
+  /** '1' | '0' — speak the first phrase early and warm the voice connection (plan 05). '' means on. */
+  JARVIS_QUICK_START: string
   setupDone: string
   storage: string
   /** Restart-only settings saved but not yet in force (plan 39 phase 4). Older bridges omit it. */
