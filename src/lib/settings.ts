@@ -11,6 +11,8 @@ export type PublicSettings = {
   JARVIS_BRAIN: string
   /** Whether an OpenAI API key is saved. The key itself never reaches the page. */
   OPENAI_API_KEY_set: boolean
+  /** 'apikey' | 'chatgpt' — how the OpenAI brain is paid for (plan 22, Q55). '' means the default (apikey). */
+  JARVIS_OPENAI_AUTH: string
   /** The OpenAI model used when JARVIS_BRAIN is 'openai'. '' means the default. */
   JARVIS_OPENAI_MODEL: string
   JARVIS_MODEL: string
@@ -143,3 +145,75 @@ export async function startClaudeLogin(): Promise<void> {
   const res = await fetch(`${BRIDGE_HTTP_URL}/setup/claude-login`, { method: 'POST' })
   if (!res.ok) throw new Error('Could not open the Claude sign-in page.')
 }
+
+// ---- Settings → Brains: Sign in with ChatGPT (plan 22, Q55) ------------
+// The bridge keeps the sign-in in the OS keychain; the page only ever sees
+// whether it is signed in, the account's email and the consent answer.
+
+/** The sign-in state, as bridge/brains/siwc.mjs `status()` reports it. Never a token. */
+export type SiwcStatus = {
+  signedIn: boolean
+  signingIn: boolean
+  planUsage: boolean
+  backgroundConsent: boolean
+  account: string | null
+  manageUsageUrl: string
+  error?: { code: string; message: string }
+}
+
+export type OpenAIAuthState = {
+  ok: boolean
+  /** 'apikey' | 'chatgpt' */
+  mode: string
+  /** False when this computer has no secure storage, so no sign-in can be kept. */
+  available: boolean
+  siwc: SiwcStatus | null
+  privacyNotice: string[]
+  manageUsageUrl: string
+}
+
+/** A refused request: `code` for the page's logic, `reason` in plain words. */
+export class BrainAuthError extends Error {
+  code: string
+  constructor(code: string, reason: string) {
+    super(reason)
+    this.code = code
+  }
+}
+
+async function brainCall<T>(method: 'GET' | 'POST', path: string, body?: unknown, timeoutMs = 20000): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`${BRIDGE_HTTP_URL}/brains/openai/${path}`, {
+      method,
+      ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch {
+    throw new BrainAuthError('network', 'Cannot reach the JARVIS bridge. Is it running?')
+  }
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || data.ok === false) throw new BrainAuthError(data.code ?? 'error', data.reason ?? 'That did not work.')
+  return data as T
+}
+
+export const getOpenAIAuth = () => brainCall<OpenAIAuthState>('GET', 'auth')
+
+/** Start a sign-in. The bridge opens the system browser; `url` is the fallback link. */
+export const startChatGPTSignIn = () =>
+  brainCall<OpenAIAuthState & { opened: boolean; url: string }>('POST', 'siwc/start', { acceptedNotice: true })
+
+/** Wait (up to the bridge's five minutes) for the browser half to finish. */
+export const finishChatGPTSignIn = () =>
+  brainCall<OpenAIAuthState & { signedIn: boolean; error?: { code: string; reason: string } }>('POST', 'siwc/finish', {}, 6 * 60_000)
+
+export const cancelChatGPTSignIn = () => brainCall<OpenAIAuthState>('POST', 'siwc/cancel', {})
+
+export const signOutChatGPT = () =>
+  brainCall<OpenAIAuthState & { revokedRemotely: boolean; detail?: string }>('POST', 'siwc/sign-out', {})
+
+export const setChatGPTBackgroundConsent = (allow: boolean) =>
+  brainCall<OpenAIAuthState>('POST', 'siwc/background', { allow })
+
+/** The models the chosen key or plan can use (`GET /v1/models` through the bridge). */
+export const getOpenAIModels = () => brainCall<{ ok: boolean; models: string[]; usingPlan: boolean }>('GET', 'models')

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BACKEND } from '../config'
 import { Connectors } from './Connectors'
+import { OpenAISignIn } from './OpenAISignIn'
 import {
   getSettings,
   getSettingsSchema,
@@ -58,6 +59,7 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_MODEL: { default: 'claude-opus-5', help: '' },
   JARVIS_CLAUDE_AUTH: { default: 'subscription', options: ['subscription', 'apikey'], help: '' },
   JARVIS_BRAIN: { default: 'claude', options: ['claude', 'openai'], help: '' },
+  JARVIS_OPENAI_AUTH: { default: 'apikey', options: ['apikey', 'chatgpt'], help: '' },
   JARVIS_OPENAI_MODEL: { default: 'gpt-5-mini', help: '' },
   JARVIS_EFFORT: { default: 'high', options: ['low', 'medium', 'high', 'xhigh'], help: '' },
   JARVIS_ALLOW_WRITES: {
@@ -193,6 +195,7 @@ export function Settings() {
   const claudeAuth = def(schema, 'JARVIS_CLAUDE_AUTH')
   const brainChoice = def(schema, 'JARVIS_BRAIN')
   const openaiModel = def(schema, 'JARVIS_OPENAI_MODEL')
+  const openaiAuthDef = def(schema, 'JARVIS_OPENAI_AUTH')
   const effort = def(schema, 'JARVIS_EFFORT')
   const writes = def(schema, 'JARVIS_ALLOW_WRITES')
   const wakeWord = def(schema, 'JARVIS_WAKE_WORD')
@@ -269,6 +272,7 @@ export function Settings() {
 
   const authMode = s?.JARVIS_CLAUDE_AUTH || claudeAuth.default
   const activeBrain = s?.JARVIS_BRAIN || brainChoice.default
+  const openaiAuth = s?.JARVIS_OPENAI_AUTH || openaiAuthDef.default
   const claudeLine = !status
     ? 'Checking your Claude sign-in…'
     : !status.claudeInstalled
@@ -519,11 +523,34 @@ export function Settings() {
                   onChange={(e) => patchSetting({ JARVIS_BRAIN: e.target.value })}
                 >
                   <option value="claude">Claude (default)</option>
-                  <option value="openai">OpenAI, with your own API key</option>
+                  <option value="openai">OpenAI, with your API key or ChatGPT plan</option>
                 </select>
               </label>
             </div>
             {activeBrain === 'openai' && (
+              <div className="mem-add">
+                <label>
+                  OpenAI sign-in{' '}
+                  <select
+                    aria-label="OpenAI sign-in"
+                    title={openaiAuthDef.help || undefined}
+                    value={openaiAuth}
+                    onChange={(e) => patchSetting({ JARVIS_OPENAI_AUTH: e.target.value })}
+                  >
+                    <option value="apikey">your own API key (default)</option>
+                    <option value="chatgpt">Sign in with ChatGPT</option>
+                  </select>
+                </label>
+              </div>
+            )}
+            {activeBrain === 'openai' && openaiAuth === 'chatgpt' && (
+              <OpenAISignIn
+                model={s.JARVIS_OPENAI_MODEL}
+                defaultModel={openaiModel.default}
+                onModel={(m) => m !== s.JARVIS_OPENAI_MODEL && patchSetting({ JARVIS_OPENAI_MODEL: m })}
+              />
+            )}
+            {activeBrain === 'openai' && openaiAuth !== 'chatgpt' && (
               <>
                 <p className="mem-note">
                   What you say, and what tools read for you, is sent to OpenAI and billed to your key. Background

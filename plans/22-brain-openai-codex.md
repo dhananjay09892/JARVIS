@@ -48,7 +48,11 @@ JARVIS answers voice turns and runs a read-only tool task on Codex, a denied too
 
 ## Progress
 - **SIWC route (ADR 001):** auth module and Responses API wire format done (Q43); bridge
-  routes and Settings screen next (Q55, after Q54 wires the OpenAI brain into the bridge).
+  routes and the Settings → Brains screen done (Q55). A user can choose Sign in with ChatGPT,
+  read the privacy notice, sign in through the system browser, pick a model, talk to JARVIS on
+  their plan, allow or refuse background use, and sign out. Background tasks themselves still
+  run on Claude (as for the API-key OpenAI brain); the consent is stored and enforced for when
+  they can run on OpenAI.
 - The Codex CLI route (Mode A above) is not being built: ADR 001 chose SIWC on the Responses
   API instead.
 
@@ -78,6 +82,30 @@ JARVIS answers voice turns and runs a read-only tool task on Codex, a denied too
   Left (Q55): bridge routes, the Settings screen (auth choice, privacy notice, Manage usage link,
   background consent switch, model picker from `/v1/models`), and checking the Manage usage deep
   link against OpenAI's UI guidelines page, which could not be read in this run.
+- **2026-10-26 · Q55 · Sign in with ChatGPT in Settings.**
+  New `JARVIS_OPENAI_AUTH` setting (`apikey` default, `chatgpt`). The bridge registers one
+  `openai` brain that hands each new conversation to the API-key adapter or the ChatGPT-plan
+  adapter by that setting (`bridge/brains/openai-auth.mjs`), never switching between them on
+  its own; with API key chosen it is exactly the Q54 brain. The SIWC record lives in the OS
+  keychain under its own scoped names (`brain/openai-siwc/…`, new `scopedVault()` in
+  `secrets.mjs`); with no secure store there is no sign-in. Bridge routes under
+  `/brains/openai/`: `auth` (state, privacy notice, Manage usage link), `siwc/start` (refused
+  unless the page confirms it showed the notice; opens the system browser through the new
+  `bridge/open-url.mjs`: https on auth.openai.com only, a stock OS program, no shell),
+  `siwc/finish`, `siwc/cancel`, `siwc/sign-out`, `siwc/background`, and `models`
+  (`GET /v1/models` with the plan token or key; ids only). No route returns a token; POSTs need
+  an allowed Origin. Settings → Brains (`src/ui/OpenAISignIn.tsx`): an OpenAI sign-in choice,
+  the privacy notice above a "Continue with ChatGPT" button, the signed-in account, "Using
+  ChatGPT plan" with a Manage usage link by the model picker, a separate background switch (off
+  by default), Sign out, and `usage_limit` / `not_eligible` / `consent_needed` in plain words
+  (Manage usage as the action for the usage limit, as the guidelines ask). Turn failures with
+  those codes now have spoken sentences in `server.mjs`. `MANAGE_USAGE_URL` checked against
+  OpenAI's SIWC UI guidelines (developers.openai.com/siwc/ui-ux-guidelines, 2026-10-26) and
+  changed to `https://chatgpt.com/settings/usage`. Tests: `openai-auth.test.mjs` (10, a full
+  sign-in → models → voice turn on the plan → consent → sign-out against mocks of
+  auth.openai.com and the API with real RSA-signed ID tokens).
+  Left: nothing in this step. Background tasks moving to OpenAI is plan 25/21 work; a live check
+  with a real ChatGPT account needs the owner (new task Q73, `needs-you`).
 
 ## Related plans
 [21](21-multi-brain-framework.md) · [25 API fallback](25-brain-api-providers.md) · [36 CLI redistribution licence](36-economics-and-licensing.md)

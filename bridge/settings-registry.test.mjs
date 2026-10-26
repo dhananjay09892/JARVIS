@@ -41,7 +41,7 @@ test('every setting that existed before the registry is declared', () => {
     'ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT',
     'JARVIS_MODEL', 'JARVIS_TRACES', 'JARVIS_VOICE_ID',
     'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD', 'setupDone',
-  ].concat(['JARVIS_BRAIN', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY']).sort())
+  ].concat(['JARVIS_BRAIN', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY']).sort())
 })
 
 test('the OpenAI brain is off by default and its key is a keychain secret (plan 25, Q54)', () => {
@@ -59,6 +59,18 @@ test('the OpenAI brain is off by default and its key is a keychain secret (plan 
     assert.equal(isValid(key, bad), false, bad)
   }
   assert.equal(settingDef('JARVIS_OPENAI_MODEL').default, 'gpt-5-mini')
+})
+
+test('the OpenAI brain uses an API key unless Sign in with ChatGPT is chosen (plan 22, Q55)', () => {
+  const auth = settingDef('JARVIS_OPENAI_AUTH')
+  assert.equal(auth.section, 'brains')
+  assert.equal(auth.type, 'enum')
+  assert.deepEqual(auth.options, ['apikey', 'chatgpt'])
+  assert.equal(auth.default, 'apikey', 'API key stays the default')
+  assert.equal(auth.apply, 'reconnect')
+  assert.equal(auth.secret, false, 'the choice is not a secret; the sign-in record lives in the keychain')
+  assert.equal(isValid(auth, 'chatgpt'), true)
+  assert.equal(isValid(auth, 'codex'), false)
 })
 
 test('Claude runs on the subscription by default; an API key is an opt-in secret (ADR 001, Q42)', () => {
@@ -180,7 +192,7 @@ test('the page keeps its own copy of the shapes it reads in step with the regist
 test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
   const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
   assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
-  assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_BRAIN', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
+  assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_BRAIN', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
   // The writes switch stays restart-only until the Safety section (phase 5)
   // adds confirmation for dangerous changes; the audit log stays on until then too.
   assert.deepEqual(by('restart'), ['JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD'])
