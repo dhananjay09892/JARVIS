@@ -24,6 +24,7 @@ Credentials stay on the user's machine. In JARVIS they go to the OS keychain (pl
 8. **Health:** token-expiry detection and plain-language fix-it messages.
 
 ### Alternatives to compare before building
+- The shared read-only reader already exists: `bridge/connectors/imap-reader.mjs` (task C09; TLS only, EXAMINE + BODY.PEEK, host allow-list, UID cursor) with a fake server in `imap-testserver.mjs`. This connector adds host/port fields and the private/loopback address block on top.
 - OpenJarvis blocks private/loopback IPs for IMAP hosts (SSRF protection); keep that rule.
 - Enforce TLS; refuse plain IMAP.
 

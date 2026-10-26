@@ -122,6 +122,8 @@ const isTextList = (v, maxItems) => Array.isArray(v) && v.length <= maxItems && 
  *   scopes?       the provider scopes / permissions it asks for, verbatim
  *   steps?        a short numbered guide (create a token, register an OAuth client)
  *   tokenLabel?   paste pattern: the name of the thing to paste
+ *   accountLabel? paste pattern: the card also asks for an account name (not a
+ *                 secret, e.g. "Gmail address") sent with the token (task C09)
  *   helpUrl?      an https link to the provider page the guide talks about
  *   localWhy?     grant pattern: why it needs local access and exactly what it reads
  *   testQuestion? something to ask JARVIS once it works ("What's on my calendar tomorrow?")
@@ -136,7 +138,7 @@ export function setupProblems(s) {
   if (!isTextList(s.sees, 12) || !s.sees.length) p.push('setup.sees needs 1–12 short lines')
   if (s.scopes !== undefined && !isTextList(s.scopes, 20)) p.push('setup.scopes must be up to 20 short lines')
   if (s.steps !== undefined && !isTextList(s.steps, 10)) p.push('setup.steps must be up to 10 short lines')
-  for (const k of ['tokenLabel', 'localWhy', 'testQuestion', 'clientLabel']) {
+  for (const k of ['tokenLabel', 'accountLabel', 'localWhy', 'testQuestion', 'clientLabel']) {
     if (s[k] !== undefined && !isText(s[k])) p.push(`setup.${k} must be a short line`)
   }
   if (s.helpUrl !== undefined && !(isText(s.helpUrl, 500) && /^https:\/\/[^\s]+$/i.test(s.helpUrl))) {

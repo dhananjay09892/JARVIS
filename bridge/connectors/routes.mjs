@@ -47,6 +47,7 @@ import { DEFAULT_RETENTION_DAYS } from './store.mjs'
 
 const MAX_TOKEN = 16_384
 const MAX_PATH = 1024
+const MAX_ACCOUNT = 254
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const ok = (body) => ({ status: 200, body: { ok: true, ...body } })
@@ -57,11 +58,18 @@ const bad = (reason, status = 400) => ({ status, body: { ok: false, reason } })
  * reaches an adapter. Returns `{ opts }` or `{ error }`.
  */
 export const CONNECT_BODY = Object.freeze({
-  token(body) {
+  token(body, card) {
     const token = typeof body.token === 'string' ? body.token.trim() : ''
     if (!token) return { error: 'Paste the token or key first.' }
     if (token.length > MAX_TOKEN) return { error: 'That token is too long.' }
-    return { opts: { token }, secrets: [token] }
+    // A card with `setup.accountLabel` (Gmail over IMAP, task C09) also sends
+    // the account name: not a secret, but checked and passed on alone.
+    const accountLabel = card?.setup?.accountLabel
+    if (!accountLabel) return { opts: { token }, secrets: [token] }
+    const account = typeof body.account === 'string' ? body.account.trim() : ''
+    if (!account) return { error: `Enter the ${accountLabel} first.` }
+    if (account.length > MAX_ACCOUNT || /[\s\u0000-\u001f]/.test(account)) return { error: `That ${accountLabel} is not valid.` }
+    return { opts: { token, account }, secrets: [token] }
   },
   local(body) {
     if (body.confirmed !== true) return { error: 'Confirm that JARVIS may read this first.' }
@@ -224,7 +232,7 @@ export function createConnectorRoutes({ registry, persist = null, documents = nu
     async connect(id, body) {
       const c = registry.list().find((x) => x.id === id)
       const parse = CONNECT_BODY[c.pattern] ?? CONNECT_BODY.none
-      const { opts, error, secrets = [] } = parse(body)
+      const { opts, error, secrets = [] } = parse(body, c)
       if (error) return bad(error)
       const r = await registry.connect(id, opts)
       if (!r.ok) return { status: 200, body: { ok: false, reason: scrubSecrets(r.error.message, secrets), code: r.error.code, connector: one(id) } }

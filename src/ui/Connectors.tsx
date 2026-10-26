@@ -215,12 +215,25 @@ function OptionsSection({ card, options, busy, act }: { card: ConnectorCard; opt
   )
 }
 
-/** Paste a token or key (pattern 2). */
+/** Paste a token or key (pattern 2), with an account name first when the card asks for one. */
 function TokenFlow({ card, busy, onConnect }: FlowProps) {
   const [draft, setDraft] = useState('')
+  const [account, setAccount] = useState('')
   const label = card.setup?.tokenLabel ?? 'Token or key'
+  const accountLabel = card.setup?.accountLabel
+  const ready = Boolean(draft.trim()) && (!accountLabel || Boolean(account.trim()))
   return (
     <div className="mem-add">
+      {accountLabel && (
+        <input
+          type="email"
+          autoComplete="off"
+          placeholder={accountLabel}
+          aria-label={accountLabel}
+          value={account}
+          onChange={(e) => setAccount(e.target.value)}
+        />
+      )}
       <input
         type="password"
         autoComplete="off"
@@ -230,9 +243,9 @@ function TokenFlow({ card, busy, onConnect }: FlowProps) {
         onChange={(e) => setDraft(e.target.value)}
       />
       <button
-        disabled={busy || !draft.trim()}
+        disabled={busy || !ready}
         onClick={async () => {
-          const ok = await onConnect({ token: draft })
+          const ok = await onConnect(accountLabel ? { token: draft, account } : { token: draft })
           setDraft('')
           return ok
         }}

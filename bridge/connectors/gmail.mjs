@@ -40,6 +40,10 @@
  */
 import { createHttp, ConnectorError } from './http.mjs'
 import { createGoogleOAuth, googleSetup } from './google-oauth.mjs'
+import { htmlToText } from './mime.mjs'
+
+// Shared with the IMAP connectors (task C09); re-exported for existing callers.
+export { htmlToText }
 
 export const GMAIL_HOST = 'gmail.googleapis.com'
 export const GMAIL_API = `https://${GMAIL_HOST}/gmail/v1/users/me`
@@ -93,31 +97,6 @@ function decodePart(part) {
     decoder = new TextDecoder('utf-8')
   }
   return decoder.decode(bytes)
-}
-
-const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
-
-/**
- * HTML mail to readable text. Not a sanitiser — the result is text that the
- * registry wraps as untrusted — just enough to drop markup, scripts and styles.
- */
-export function htmlToText(html) {
-  return String(html ?? '')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<(script|style|head|title)\b[\s\S]*?<\/\1\s*>/gi, ' ')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|li|h[1-6]|blockquote|table)\s*>/gi, '\n')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,8});/gi, (all, e) => {
-      if (e[0] === '#') {
-        const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)
-        return Number.isFinite(n) && n > 0 && n <= 0x10ffff ? String.fromCodePoint(n) : ' '
-      }
-      return ENTITIES[e.toLowerCase()] ?? all
-    })
-    .replace(/[ \t\f\v\r]+/g, ' ')
-    .replace(/ *\n[ \n]*/g, '\n')
-    .trim()
 }
 
 /**
