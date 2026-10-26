@@ -49,7 +49,7 @@ import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
 import { onSettingsChange, publicSettings, readSettings, restartPending, secretVault, setting, settingsDir, updateSettings } from './settings.mjs'
-import { connectorKeychain } from './secrets.mjs'
+import { connectorKeychain, scopedVault } from './secrets.mjs'
 import { settingDefault, settingsSchema } from './settings-registry.mjs'
 import { createRestarter } from './restart.mjs'
 import { createClaudeBrain } from './brains/claude.mjs'
@@ -57,6 +57,9 @@ import { createBrainRegistry } from './brains/registry.mjs'
 import { createOpenAICompatibleBrain, PROFILES } from './brains/openai-compatible.mjs'
 import { createBrainMetrics } from './brains/metrics.mjs'
 import { chooseBrain, toolParams } from './brains/select.mjs'
+import { createSiwcAuth, SIWC_AUTH_BASE } from './brains/siwc.mjs'
+import { createOpenAIAuthRoutes, createOpenAIBrainSwitch, SIWC_VAULT_PREFIX } from './brains/openai-auth.mjs'
+import { openUrl } from './open-url.mjs'
 import { zodSchemaAdapter } from './brains/sdk-tools.mjs'
 import { createConnectorRegistry } from './connectors/registry.mjs'
 import { createCredentialStore, createUnavailableCredentialStore } from './connectors/credentials.mjs'
@@ -475,11 +478,38 @@ const brain = brains.default()
  * never leaves this process. Background tasks stay on Claude for now.
  */
 const openaiKey = () => setting('OPENAI_API_KEY') ?? null
-brains.register(createOpenAICompatibleBrain({
-  profile: PROFILES.openai,
-  getKey: openaiKey,
-  hasKey: () => Boolean(openaiKey()),
+/**
+ * Sign in with ChatGPT for the OpenAI brain (plan 22, Q43 + Q55). Its record
+ * lives in the OS keychain under its own scoped names; with no secure store
+ * on this computer there is no sign-in, only the API key.
+ */
+const siwc = (() => {
+  try {
+    const vault = secretVault()
+    return vault.available ? createSiwcAuth({ store: scopedVault(vault, SIWC_VAULT_PREFIX) }) : null
+  } catch (err) {
+    console.error('[jarvis] Sign in with ChatGPT unavailable:', err?.message ?? err)
+    return null
+  }
+})()
+const openaiAuth = () => setting('JARVIS_OPENAI_AUTH') ?? settingDefault('JARVIS_OPENAI_AUTH')
+// Settings → Brains picks the way to pay (API key by default); each new
+// conversation reads it again and nothing switches between them on its own.
+brains.register(createOpenAIBrainSwitch({
+  apikey: createOpenAICompatibleBrain({
+    profile: PROFILES.openai,
+    getKey: openaiKey,
+    hasKey: () => Boolean(openaiKey()),
+  }),
+  chatgpt: siwc ? createOpenAICompatibleBrain({ profile: PROFILES.openai, auth: 'chatgpt', siwc }) : null,
+  mode: openaiAuth,
 }))
+const openaiAuthRoutes = createOpenAIAuthRoutes({
+  siwc,
+  mode: openaiAuth,
+  getKey: openaiKey,
+  openUrl: (url) => openUrl(url, { hosts: [new URL(SIWC_AUTH_BASE).hostname] }),
+})
 
 /** The brain a new conversation runs on (Settings → Brain; Claude by default). */
 const activeBrain = () => chooseBrain(brains, setting('JARVIS_BRAIN') ?? settingDefault('JARVIS_BRAIN'))
@@ -1251,6 +1281,38 @@ const handleRequest = async (req, res) => {
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(JSON.stringify({ active: activeBrain().id, ...brainMetrics.snapshot() }))
   }
+  // ---- Settings → Brains: OpenAI sign-in (plan 22, Q55) --------------
+  // Sign in with ChatGPT and the model list. Writes need a real, allowed
+  // Origin, as settings writes do. No token ever reaches the page.
+  if (requestUrl.pathname.startsWith('/brains/openai/')) {
+    if (req.method !== 'GET' && !origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    let body
+    if (req.method === 'POST') {
+      let raw = ''
+      for await (const chunk of req) {
+        raw += chunk
+        if (raw.length > 4 * 1024) {
+          req.destroy()
+          res.writeHead(400, cors)
+          return res.end('body too large')
+        }
+      }
+      try {
+        body = raw ? JSON.parse(raw) : {}
+      } catch {
+        res.writeHead(400, { ...cors, 'content-type': 'application/json' })
+        return res.end(JSON.stringify({ ok: false, reason: 'Send JSON.' }))
+      }
+    }
+    const out = await openaiAuthRoutes.handle({ method: req.method, path: requestUrl.pathname, body })
+    if (out) {
+      res.writeHead(out.status, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+      return res.end(JSON.stringify(out.body))
+    }
+  }
   // ---- Audit log (plan 15 phase 5) ------------------------------------
   // Counts and the chain check only; entries themselves are not served yet
   // (the search panel is a later step).
@@ -1638,12 +1700,17 @@ const RESULT_FAILURES = {
   // engine (brains/registry.mjs, plan 21 phase 3).
   policy_bypass: 'I stopped that turn because a tool ran without a safety check.',
   // Tool-loop brains (brains/openai-compatible.mjs, plan 25).
-  auth: 'The brain could not sign in. Check its key under Brain in Settings.',
+  auth: 'The brain could not sign in. Check its key or sign-in under Brain in Settings.',
   rate_limit: 'The brain is rate limited just now. Try again in a moment.',
   max_steps: 'That took too many steps, so I stopped.',
   timeout: 'The brain did not answer in time.',
   network: 'I could not reach the brain. Check the internet connection.',
   provider: 'The brain\'s service had a problem. Try again in a moment.',
+  // Sign in with ChatGPT (plan 22, Q55). Spoken, so no web addresses.
+  usage_limit: 'Your ChatGPT plan has reached its usage limit for me. Check it under Manage usage in Settings, Brains.',
+  not_eligible: 'ChatGPT plan usage is not available for this account. Use an API key instead.',
+  consent_needed: 'Background tasks may not use your ChatGPT plan until you allow it in Settings.',
+  request: 'The brain could not take that request.',
   default: 'The turn ended without an answer.',
 }
 

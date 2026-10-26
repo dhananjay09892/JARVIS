@@ -248,10 +248,17 @@ this file decides *in what order*.
 - **Done when:** the OpenAI profile works with SIWC or an API key, with tests.
 
 ### Q55 · Plan 22 · Sign in with ChatGPT in Settings
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q43, Q54
 - **Scope:** Remainder of Q43. Bridge routes to start, finish and cancel a SIWC sign-in (open the system browser on the URL from `bridge/brains/siwc.mjs`), sign out, and set background consent; keep the SIWC record in the keychain (Q20) under its own scoped name. In Settings → Brains, an OpenAI auth choice (API key / Sign in with ChatGPT, API key the default), the privacy notice shown before the Sign in button, the signed-in account, the "Manage usage" link, a separate "Let background tasks use my ChatGPT plan" switch (off by default), and a model picker filled from `GET /v1/models` with the plan token. Show `usage_limit`, `not_eligible` and `consent_needed` errors in plain words. Check `MANAGE_USAGE_URL` against OpenAI's SIWC UI guidelines page.
 - **Done when:** a user can sign in with ChatGPT from Settings, see the privacy notice and Manage usage link, pick a model, run a voice turn on their plan (tested against mocks), allow or refuse background use, and sign out; with API key chosen nothing changes.
+
+### Q73 · Plan 22 · Live check: Sign in with ChatGPT
+- **Status:** needs-you
+- **Needs you:** on the Windows build, set Brain to OpenAI and OpenAI sign-in to Sign in with ChatGPT in Settings → Brains, sign in with your own ChatGPT account, pick a model, have one voice conversation, turn the background switch on and off, then sign out. Note anything that differs from the mocks (consent page wording, the issued client id, scopes, model list, error codes) in plan 22's autopilot log, then set this to `done`.
+- **Depends on:** Q55
+- **Scope:** A real-account check of Q43 and Q55; the tests only use mocks of auth.openai.com and the API.
+- **Done when:** a real sign-in, voice turn and sign-out worked, or the differences are written down as new tasks.
 
 ### Q44 · Plan 21 · Written confirmation from Anthropic
 - **Status:** needs-you

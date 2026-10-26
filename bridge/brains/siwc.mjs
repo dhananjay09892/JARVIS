@@ -62,11 +62,11 @@ export const AGENT_NAME = 'JARVIS'
 export const CALLBACK_PATH = '/auth/callback'
 
 /**
- * Where the user sets or checks this app's plan usage. OpenAI's errors page
- * says "ChatGPT settings → Usage"; this opens ChatGPT's settings.
- * *verify* the deep link against OpenAI's UI guidelines before release.
+ * Where the user sets or checks this app's plan usage: the "Manage usage"
+ * link. OpenAI's SIWC UI guidelines (developers.openai.com/siwc/ui-ux-guidelines,
+ * checked 2026-10-26, task Q55) name this page as its destination.
  */
-export const MANAGE_USAGE_URL = 'https://chatgpt.com/#settings'
+export const MANAGE_USAGE_URL = 'https://chatgpt.com/settings/usage'
 
 /**
  * Shown before sign-in (the terms: a privacy notice before processing data).

@@ -270,3 +270,25 @@ export function connectorKeychain(vault) {
     keys: (id) => vault.names(`connector/${id}/`).map((n) => n.slice(`connector/${id}/`.length)),
   }
 }
+
+/**
+ * A get/set/delete view of the vault with every name under `prefix` (task
+ * Q55: the Sign in with ChatGPT record, `brain/openai-siwc/<key>`), so one
+ * user of the vault cannot read or clear another's entries by name. Reads on
+ * a vault with no backend return null; writes fail with its readable message.
+ * Setting an empty value removes the entry.
+ */
+export function scopedVault(vault, prefix) {
+  if (!/^[A-Za-z][\w./:-]{0,80}\/$/.test(prefix)) throw new Error('A vault scope must be a name ending in "/".')
+  const name = (key) => {
+    if (typeof key !== 'string' || !/^[A-Za-z][\w.-]{0,60}$/.test(key)) throw new Error('Bad secret key name.')
+    return `${prefix}${key}`
+  }
+  return Object.freeze({
+    get: (key) => vault.get(name(key)) ?? null,
+    // The vault refuses empty values; for a scoped record an empty one means "none".
+    set: (key, value) => (value === '' ? vault.delete(name(key)) : vault.set(name(key), value)),
+    delete: (key) => vault.delete(name(key)),
+    keys: () => vault.names(prefix).map((n) => n.slice(prefix.length)),
+  })
+}
