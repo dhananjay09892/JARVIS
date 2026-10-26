@@ -61,6 +61,8 @@ const secs = (ms: number | null | undefined) => (ms === null || ms === undefined
 
 /** Plan 16's target: median end of speech → first audio ≤ 1.0 s. */
 const LATENCY_TARGET_MS = 1000
+/** Plan 06 phase 2: at least this share of routed turns on the fast path. */
+const FAST_SHARE_TARGET = 0.6
 
 const ago = (t: number) => (t ? `${((Date.now() - t) / 1000).toFixed(1)}s ago` : '—')
 
@@ -219,6 +221,22 @@ export function Diagnostics() {
               v={`${stats.reflex.turns} turns · ${secs(stats.reflex.latency.median)}${stats.reflex.modelCalls ? ` · ${stats.reflex.modelCalls} reached a model` : ''}`}
               bad={stats.reflex.modelCalls > 0}
             />
+          )}
+          {stats.paths && stats.paths.routed > 0 && (
+            // Plan 06 phase 2: which model answered. The plan's target is 60 %
+            // or more on the fast path; a fast turn that used a tool is a hint
+            // the router guessed low.
+            <>
+              <Row
+                k="fast path"
+                v={`${Math.round((stats.paths.fastShare ?? 0) * 100)}% of ${stats.paths.routed} turns · ${secs(stats.paths.fast.latency.median)}${stats.paths.fast.toolTurns ? ` · ${stats.paths.fast.toolTurns} used tools` : ''}`}
+                bad={(stats.paths.fastShare ?? 0) < FAST_SHARE_TARGET}
+              />
+              <Row
+                k="deep path"
+                v={`${stats.paths.deep.turns} turns · ${secs(stats.paths.deep.latency.median)}${stats.paths.reasons.off ? ' · routing off' : ''}`}
+              />
+            </>
           )}
         </>
       ) : (

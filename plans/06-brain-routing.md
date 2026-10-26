@@ -39,7 +39,7 @@ Home-control-tuned small models only after 09 is in place.
 
 ## Phases
 1. Reflex layer + routing rules (3 d). **Done (Q25):** stop, time, date, repeat, volume, timers; Hindi/Gujarati phrasings and telling the model about reflex turns are Q75.
-2. Fast/deep routing + metrics (3 d). 3. Persona v2 + modes (2 d). 4. Context assembler with budgets (3 d). 5. Local fallback (1–2 w).
+2. Fast/deep routing + metrics (3 d). **Done (Q26):** rules router on the bridge, per-turn model switch, path in traces and Diagnostics; "upgrade mid-turn" is not built (a short reply after a tool turn goes deep instead). 3. Persona v2 + modes (2 d). 4. Context assembler with budgets (3 d). 5. Local fallback (1–2 w).
 
 ## Metrics
 % turns answered on fast path ≥ 60 %; cost per turn; user "feel" score on the rubric; zero regression in tool-use success.
@@ -59,3 +59,11 @@ Misrouting a hard question to the fast model → escalate on uncertainty; subscr
   - **Measured in traces:** reflex turns are traced on route `reflex` with their family (never the words). `/traces/stats` now reports `routes` and `reflex { turns, modelCalls, latency }`, and keeps them out of the headline latency so the model's number stays honest. Diagnostics shows "quick commands (no AI)" and flags any reflex turn that reached a model.
   - **Setting:** Settings → Listening → Quick commands (`JARVIS_REFLEXES`, on by default, applies live).
   - **Left:** Hindi and Gujarati phrasings (plan 28), and telling the model what reflexes did (running timers, a changed volume) so a follow-up question makes sense; both are Q75. Real latency numbers need a session on your machine (the autopilot has no microphone). Music/ambient volume is not touched by "louder"/"quieter".
+
+- **2026-10-26 · Q26 · Fast/deep routing (phase 2).**
+  - **Where it runs:** on the bridge, between turns (`bridge/routing.mjs`, wired in `server.mjs` `handOver`). Each turn is routed on the owner's own words only, never the memory context riding along, with plain rules and no model call.
+  - **Rules:** small talk, thanks, greetings and short plain questions go **fast**; anything with a tool word (open, email, calendar, search, weather, remind, screen, file, today…), a link or path, a why/how/explain/compare, arithmetic, or more than 24 words goes **deep**. A short reply straight after a turn that used a tool ("yes", "the second one") stays deep. Unclear medium-length turns take the safe deep path. Tests pin 23 fast phrasings and 26 deep ones.
+  - **What changes on the fast path:** the model only (`Query.setModel` on the Claude session, a per-turn model on the OpenAI-compatible brain, passed through the registry). Tools, the policy engine, the taint guard and the persona are identical on both paths. A failed switch is answered by the main model and traced as deep, so a trace never claims a path it did not take.
+  - **Measured in traces:** the bridge sends a `route` frame per turn (`path`, `reason`, `model`); the page puts it in the turn's trace. `/traces/stats` reports `paths { routed, fastShare, fast, deep, reasons }` with each path's latency and how many fast turns used a tool (a hint the router guessed low). Diagnostics shows "fast path: N% of M turns" (flagged under the 60 % target) and "deep path". `npm run latency` prints the split and each path's median.
+  - **Settings:** Settings → Brain → Fast/deep routing (`JARVIS_ROUTING`, on by default, live) and Fast model (`JARVIS_FAST_MODEL`, default `claude-sonnet-5`, live). Claude only for now; on another brain every turn stays deep (reason `off`).
+  - **Left:** real fast-share and latency numbers need a session on your machine (fold into Q74's day of use). Upgrading a fast turn to the deep model mid-turn when it reaches for tools is not built; the fast model keeps the same tools, and `fast.toolTurns` shows how often that happens. Effort stays the same on both paths (the SDK session takes effort at start). A fast-model setting for the OpenAI brain. Hindi/Gujarati small-talk words for the router belong with Q75.

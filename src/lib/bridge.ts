@@ -1,6 +1,7 @@
 import type { AskHandlers } from './anthropic'
 import type { Blade, Panel } from '../store'
 import { BRIDGE_WS_URL } from '../config'
+import { notePath } from './trace'
 
 /**
  * Client for the local bridge (see bridge/server.mjs).
@@ -647,6 +648,12 @@ export async function ask(
             if (!msg.name) break
             tools.push(msg.name)
             handlers.onTool(prettyToolName(msg.name))
+            break
+
+          // Which path the bridge routed this turn down (plan 06 phase 2),
+          // for the turn's trace. Known words only; the trace checks them.
+          case 'route':
+            notePath(msg.path, msg.reason, msg.model)
             break
 
           case 'done':

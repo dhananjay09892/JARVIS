@@ -66,6 +66,8 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_OPENAI_AUTH: { default: 'apikey', options: ['apikey', 'chatgpt'], help: '' },
   JARVIS_OPENAI_MODEL: { default: 'gpt-5-mini', help: '' },
   JARVIS_EFFORT: { default: 'high', options: ['low', 'medium', 'high', 'xhigh'], help: '' },
+  JARVIS_ROUTING: { default: '1', help: '' },
+  JARVIS_FAST_MODEL: { default: 'claude-sonnet-5', help: '' },
   JARVIS_ALLOW_WRITES: {
     default: '0',
     help: 'Off by default: JARVIS can look at things but changes nothing.',
@@ -206,6 +208,8 @@ export function Settings() {
   const wakeSensitivity = def(schema, 'JARVIS_WAKE_SENSITIVITY')
   const quickStart = def(schema, 'JARVIS_QUICK_START')
   const reflexes = def(schema, 'JARVIS_REFLEXES')
+  const routing = def(schema, 'JARVIS_ROUTING')
+  const fastModel = def(schema, 'JARVIS_FAST_MODEL')
 
   const saveKey = async () => {
     if (!(await patch({ ELEVENLABS_API_KEY: keyDraft }, 'Key saved.'))) return
@@ -492,6 +496,33 @@ export function Settings() {
                 </select>
               </label>
             </div>
+            <div className="mem-add">
+              <label title={routing.help || undefined}>
+                <input
+                  type="checkbox"
+                  checked={(s.JARVIS_ROUTING || routing.default) !== '0'}
+                  onChange={(e) => patchSetting({ JARVIS_ROUTING: e.target.checked ? '1' : '0' })}
+                />{' '}
+                Fast/deep routing
+              </label>
+              <label>
+                Fast model{' '}
+                <input
+                  defaultValue={s.JARVIS_FAST_MODEL}
+                  placeholder={fastModel.default}
+                  aria-label="Fast model"
+                  title={fastModel.help || undefined}
+                  disabled={(s.JARVIS_ROUTING || routing.default) === '0'}
+                  onBlur={(e) =>
+                    e.target.value !== s.JARVIS_FAST_MODEL && patchSetting({ JARVIS_FAST_MODEL: e.target.value })
+                  }
+                />
+              </label>
+            </div>
+            <p className="mem-note">
+              Small talk goes to the fast model; anything that may need tools or thought goes to the main model. Both
+              have the same tools and safety rules. Claude only.
+            </p>
 
             <div className="mem-add">
               <label>

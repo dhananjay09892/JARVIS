@@ -75,6 +75,7 @@ import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.
 import { createConnectorOptions } from './connectors/options.mjs'
 import { checkForUpdate } from './update.mjs'
 import { createVoiceWarmer } from './voice-warm.mjs'
+import { createTurnRouter } from './routing.mjs'
 import { fileURLToPath } from 'node:url'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
@@ -284,6 +285,15 @@ const currentModel = () => setting('JARVIS_MODEL') ?? settingDefault('JARVIS_MOD
  * dead air shows.
  */
 const currentEffort = () => setting('JARVIS_EFFORT') ?? settingDefault('JARVIS_EFFORT')
+
+/**
+ * Fast/deep routing (plan 06 phase 2, routing.mjs). Both read live, so a
+ * change in Settings applies from the next turn. Claude only for now: the
+ * other brains have no fast-model setting, so their turns all stay deep.
+ */
+const routingOn = (b) =>
+  b.id === 'claude' && (setting('JARVIS_ROUTING') ?? settingDefault('JARVIS_ROUTING')) !== '0'
+const currentFastModel = () => setting('JARVIS_FAST_MODEL') || settingDefault('JARVIS_FAST_MODEL')
 
 /**
  * Every MCP server Claude Code has configured, read out of its own config.
@@ -2049,6 +2059,49 @@ wss.on('connection', (socket, req) => {
   }))
   if (voiceBrain.id !== brain.id) console.log(`[jarvis] this conversation runs on ${voiceBrain.label}`)
 
+  /**
+   * Fast/deep routing (plan 06 phase 2). Each turn is routed on the owner's
+   * own words (routing.mjs) and the session's model is switched between turns
+   * when the path changes. Only the model changes: the tools, the policy
+   * engine, the taint guard and the persona are the same on both paths.
+   *
+   * The main model is the one this conversation started with (JARVIS_MODEL
+   * applies from the next conversation); the fast model is read per turn.
+   */
+  const router = createTurnRouter({
+    deepModel: modelFor(voiceBrain),
+    fastModel: currentFastModel,
+    enabled: () => routingOn(voiceBrain),
+    setModel: (model) => session.setModel?.(model) ?? false,
+    log: (m) => console.error(`[jarvis] ${m}`),
+  })
+  let turnUsedTools = false
+  // Model switches and hand-overs run one at a time, in the order asked.
+  let handing = Promise.resolve()
+
+  /**
+   * Route a turn, switch model if needed, tell the page (for the turn's
+   * trace), then hand the text to the brain.
+   */
+  const handOver = (id, said, text) => {
+    handing = handing
+      .then(async () => {
+        const { path, reason, model } = await router.route(said)
+        send({ type: 'route', path, reason, model, ask: id })
+        if (process.env.JARVIS_DEBUG === '1') console.log(`[jarvis] route ${path} (${reason}) · ${model}`)
+      })
+      .catch((err) => console.error('[jarvis] routing failed:', err?.message ?? err))
+      .then(() => {
+        if (deliver) {
+          const resolve = deliver
+          deliver = null
+          resolve(text)
+        } else {
+          inbox.push(text)
+        }
+      })
+  }
+
   // Pump the session's events to the browser for as long as it lives.
   ;(async () => {
     // The turn's last error, said when its `done` arrives.
@@ -2082,6 +2135,7 @@ wss.on('connection', (socket, req) => {
             break
 
           case 'tool_call':
+            turnUsedTools = true
             sm?.toolCall(e)
             announceTool(e.id, e.name)
             break
@@ -2103,6 +2157,9 @@ wss.on('connection', (socket, req) => {
 
           case 'done': {
             sm?.done(e)
+            // A short reply after a tool turn stays on the deep path.
+            router.turnEnded({ usedTools: turnUsedTools })
+            turnUsedTools = false
             // A finished turn is not automatically a success. Reporting a
             // failure as 'done' with empty text is indistinguishable from a turn
             // that simply had nothing to say — the HUD stops spinning and JARVIS
@@ -2190,13 +2247,8 @@ wss.on('connection', (socket, req) => {
         // along with the turn is private content, so it taints the session.
         taint.noteOwnerText(msg.text)
         if (text !== plain && text !== msg.text) taint.markPrivate('saved memories and earlier conversation')
-        if (deliver) {
-          const resolve = deliver
-          deliver = null
-          resolve(text)
-        } else {
-          inbox.push(text)
-        }
+        // Routed on the owner's own words, never the memory context.
+        handOver(id, msg.text, text)
       })
     }
 
