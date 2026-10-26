@@ -110,10 +110,16 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** fixture sync, revoked token, injection fixture and erase tests pass.
 
 ### C97 · openjarvis/data-connectors/gdrive · Google Drive: folder allow-list and shared drives
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C08
 - **Scope:** Follow-up from C08. A folder allow-list on the Google Drive card (only files under the chosen folders are synced and searchable; empty = everything, as now), applied to full sync, changes and both tools, with files moved out of an allowed folder leaving the store. Optional shared-drive support behind its own switch (`includeItemsFromAllDrives`/`supportsAllDrives` on files.list and changes.list), off by default.
 - **Done when:** fixture tests show files outside the allow-list are neither stored nor returned by the tools, a file moved out is deleted from the store, and shared-drive files appear only when the switch is on.
+
+### C98 · openjarvis/data-connectors/gdrive · Google Drive: folders moved in or out of the allow-list
+- **Status:** todo
+- **Depends on:** C97
+- **Scope:** Follow-up from C97. When the changes feed reports a *folder* (not a file) that moved across the allow-list boundary, its files must follow: a folder now outside yields deletion markers for the stored files under it (store lookup by a `meta.parents` field or a files.list of its descendants, bounded per run), and a folder now inside has its files listed and synced. Keep the per-run API budget.
+- **Done when:** fixture tests show a folder moved out of an allowed folder removes its files (and its subfolders' files) from the store, and a folder moved in brings its files in, within the page budget.
 
 ### C09 · openjarvis/data-connectors/gmail_imap · Gmail over IMAP (shared IMAP reader)
 - **Status:** todo

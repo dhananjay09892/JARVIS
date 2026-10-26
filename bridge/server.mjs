@@ -69,9 +69,10 @@ import { connectorsServer } from './connectors/mcp.mjs'
 import { createConnectorRoutes, createGrantsFile, syncConnectorInto } from './connectors/routes.mjs'
 import { gmailConnector } from './connectors/gmail.mjs'
 import { gcalendarConnector } from './connectors/gcalendar.mjs'
-import { gdriveConnector } from './connectors/gdrive.mjs'
+import { gdriveConnector, GDRIVE_OPTIONS } from './connectors/gdrive.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
+import { createConnectorOptions } from './connectors/options.mjs'
 import { checkForUpdate } from './update.mjs'
 import { fileURLToPath } from 'node:url'
 
@@ -361,6 +362,12 @@ try {
 } catch (err) {
   console.error('[jarvis] could not apply document preferences:', err?.message ?? err)
 }
+/** Each card's own settings (task C97): Google Drive's folders and shared-drive switch. */
+const connectorOptions = createConnectorOptions({
+  definitions: { gdrive: GDRIVE_OPTIONS },
+  initial: connectorGrantsFile.loadOptions(),
+  persist: connectorGrantsFile.saveOptions,
+})
 const connectorCredentialStore = connectorCredentials()
 const connectors = createConnectorRegistry({
   credentials: connectorCredentialStore,
@@ -403,8 +410,10 @@ connectors.registerAll([
     // Google Drive (task C08), read-only: Docs and Sheets text, other files by
     // name only. Same pattern: its own credential view plus the shared client.
     id: 'gdrive',
+    // The folder allow-list and shared-drive switch (task C97) are read per call.
     create: (ctx) => gdriveConnector({
       googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
+      options: () => connectorOptions.get('gdrive'),
     }).create(ctx),
   },
 ])
@@ -425,6 +434,7 @@ const connectorRoutes = createConnectorRoutes({
   documents: documentPrefs,
   // "Sync now" on a card (task C06): resume from the stored cursor, keep the result.
   syncNow: connectorStore ? (id) => syncConnectorInto(connectors, connectorStore, id) : null,
+  options: connectorOptions,
 })
 
 /** `{ jarvis_connectors }` for a session, or nothing when no connector tool is available. */

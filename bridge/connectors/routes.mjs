@@ -13,6 +13,8 @@
  *   POST /connectors/:id/grants            { capability, granted, confirm? }  write needs confirm
  *   POST /connectors/:id/retention         { days: number|null, confirm? }  shorter needs confirm
  *   POST /connectors/:id/sync              "Sync now": resume from the stored cursor, keep the documents
+ *   POST /connectors/:id/options           { options, confirm }  the card's own settings (task C97);
+ *                                          a change erases what it kept and syncs again from the start
  *   POST /connectors/vault                 { allow: boolean, confirm? }  allow needs confirm
  *   POST /connectors/retention             { class, days: number|null, confirm? }  shorter needs confirm
  *
@@ -131,8 +133,10 @@ export function connectorHealth(cards, { frozen = false } = {}) {
 }
 
 /** One card, as the page sees it. registry.list() already holds no secrets. */
-function card(summary, backend, docs = null) {
+function card(summary, backend, docs = null, options = null) {
   const extra = {}
+  const settings = options?.view(summary.id)
+  if (settings) extra.options = settings
   if (docs) {
     const stats = docs.stats()[summary.id]
     extra.documents = summary.erasable
@@ -166,10 +170,11 @@ export async function syncConnectorInto(registry, store, id) {
  *   persist?: (snapshot: object) => void,     save grants and switches
  *   documents?: ReturnType<typeof import('./prefs.mjs').createDocumentPrefs> | null,
  *   syncNow?: ((id: string) => Promise<{ ok: boolean, saved?: number, removed?: number, error?: { code: string, message: string } }>) | null,
+ *   options?: ReturnType<typeof import('./options.mjs').createConnectorOptions> | null,
  *   log?: Pick<Console, 'warn' | 'error'>,
  * }} opts
  */
-export function createConnectorRoutes({ registry, persist = null, documents = null, syncNow = null, log = console }) {
+export function createConnectorRoutes({ registry, persist = null, documents = null, syncNow = null, options = null, log = console }) {
   const syncing = new Set()
   const save = () => {
     if (typeof persist !== 'function') return
@@ -182,7 +187,7 @@ export function createConnectorRoutes({ registry, persist = null, documents = nu
 
   const cards = () => {
     const backend = registry.credentialBackend()
-    const list = registry.list().map((s) => card(s, backend, documents))
+    const list = registry.list().map((s) => card(s, backend, documents, options))
     const frozen = registry.grants.isFrozen()
     return {
       frozen,
@@ -193,7 +198,7 @@ export function createConnectorRoutes({ registry, persist = null, documents = nu
       health: connectorHealth(list, { frozen }),
     }
   }
-  const one = (id) => card(registry.list().find((c) => c.id === id), registry.credentialBackend(), documents)
+  const one = (id) => card(registry.list().find((c) => c.id === id), registry.credentialBackend(), documents, options)
 
   /** `days` from a body: a whole number of days, or null for "the default". */
   const daysOf = (body) => {
@@ -282,6 +287,32 @@ export function createConnectorRoutes({ registry, persist = null, documents = nu
       } finally {
         syncing.delete(id)
       }
+    },
+    /**
+     * The card's own settings (task C97). A change can widen what is read
+     * (shared drives) or make kept documents wrong (a folder list), so it
+     * needs `confirm: true`, then erases what this connector kept, which also
+     * drops its cursor: the next sync starts fresh under the new settings.
+     * The erase runs first, so a failed erase leaves the old settings.
+     */
+    async options(id, body) {
+      if (!options?.has(id)) return bad('This connector has no settings.')
+      if (syncing.has(id)) return bad('A sync of this connector is running; try again when it finishes.', 409)
+      const { values, error } = options.check(id, body.options)
+      if (error) return bad(error)
+      if (!options.changed(id, values)) return after(id, { erased: false })
+      if (body.confirm !== true) {
+        return bad('Changing these settings erases what this connector kept and syncs it again from the start; confirm first.')
+      }
+      const c = registry.list().find((x) => x.id === id)
+      let erased = false
+      if (c.erasable) {
+        const r = await registry.erase(id)
+        if (!r.ok) return { status: 200, body: { ok: false, reason: r.error.message, erased: false, connector: one(id) } }
+        erased = true
+      }
+      options.set(id, values)
+      return after(id, { erased })
     },
     async retention(id, body) {
       if (!documents?.available()) return noStore()
@@ -373,7 +404,7 @@ export function createConnectorRoutes({ registry, persist = null, documents = nu
  * a small JSON file beside settings. No secrets in it — only which connector
  * may read, write or subscribe, which are switched off, the freeze, whether
  * health and finance documents may reach the brain, and retention days.
- * `save()` and `saveDocuments()` each replace only their own part.
+ * `save()`, `saveDocuments()` and `saveOptions()` each replace only their own part.
  * @param {string} file
  */
 export function createGrantsFile(file) {
@@ -388,7 +419,7 @@ export function createGrantsFile(file) {
   }
   const write = (patch) => {
     const current = read() ?? {}
-    const next = { v: 1, grants: current.grants ?? null, documents: current.documents ?? null, ...patch }
+    const next = { v: 1, grants: current.grants ?? null, documents: current.documents ?? null, options: current.options ?? null, ...patch }
     mkdirSync(dirname(file), { recursive: true })
     const tmp = `${file}.tmp`
     writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 })
@@ -401,5 +432,8 @@ export function createGrantsFile(file) {
     loadDocuments: () => read()?.documents ?? null,
     save: (snapshot) => write({ grants: snapshot }),
     saveDocuments: (prefs) => write({ documents: prefs }),
+    /** Each connector's own card settings (task C97), e.g. Drive's folder allow-list. */
+    loadOptions: () => read()?.options ?? null,
+    saveOptions: (all) => write({ options: all }),
   }
 }

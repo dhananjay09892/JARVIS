@@ -7,6 +7,7 @@ import {
   setClassRetention,
   setConnectorEnabled,
   setConnectorGrant,
+  setConnectorOptions,
   setConnectorRetention,
   setConnectorsFrozen,
   setVaultAllowed,
@@ -14,6 +15,8 @@ import {
   testConnector,
   type Capability,
   type ConnectorCard,
+  type ConnectorOptionValue,
+  type ConnectorOptions,
   type ConnectorReply,
   type ConnectorsList,
   type CredentialBackend,
@@ -149,6 +152,66 @@ function DocumentsSection({ docs, busy, act }: { docs: DocumentPrefs; busy: bool
         ))}
       </fieldset>
     </section>
+  )
+}
+
+/**
+ * A connector's own settings (task C97), drawn from the fields the bridge
+ * sends: a list (one entry per line) or a switch. Saving a change erases what
+ * the connector kept and syncs it again from the start, so it asks first.
+ */
+function OptionsSection({ card, options, busy, act }: { card: ConnectorCard; options: ConnectorOptions; busy: boolean; act: Act }) {
+  const fromValues = (v: Record<string, ConnectorOptionValue>) =>
+    Object.fromEntries(options.fields.map((f) => [f.key, f.type === 'list' ? (Array.isArray(v[f.key]) ? (v[f.key] as string[]).join('\n') : '') : v[f.key] === true]))
+  // The parent keys this section by the saved values, so a save starts a fresh draft.
+  const [draft, setDraft] = useState<Record<string, string | boolean>>(() => fromValues(options.values))
+
+  const save = () => {
+    const next: Record<string, ConnectorOptionValue> = {}
+    for (const f of options.fields) {
+      const v = draft[f.key]
+      next[f.key] = f.type === 'list'
+        ? String(v ?? '').split('\n').map((line) => line.trim()).filter(Boolean)
+        : v === true
+    }
+    if (JSON.stringify(next) === JSON.stringify(options.values)) return
+    if (!window.confirm(`Save these ${card.name} settings? What JARVIS kept from ${card.name} is erased and synced again from the start.`)) return
+    void act(() => setConnectorOptions(card.id, next, true), (r) => (r.erased ? 'Saved. Press Sync now to fetch again.' : 'Saved.'))
+  }
+
+  return (
+    <fieldset className="conn-grants">
+      <legend className="mem-note">Settings</legend>
+      {options.fields.map((f) =>
+        f.type === 'list' ? (
+          <label key={f.key}>
+            {f.label}
+            <textarea
+              rows={3}
+              aria-label={`${card.name}: ${f.label}`}
+              disabled={busy}
+              value={String(draft[f.key] ?? '')}
+              onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+            />
+            {f.help && <span className="mem-note"> {f.help}</span>}
+          </label>
+        ) : (
+          <label key={f.key}>
+            <input
+              type="checkbox"
+              disabled={busy}
+              checked={draft[f.key] === true}
+              onChange={(e) => setDraft({ ...draft, [f.key]: e.target.checked })}
+            />{' '}
+            {f.label}
+            {f.help && <span className="mem-note"> {f.help}</span>}
+          </label>
+        ),
+      )}
+      <button disabled={busy} onClick={save}>
+        Save settings
+      </button>
+    </fieldset>
   )
 }
 
@@ -377,6 +440,10 @@ function Card({
             }}
           />
         </div>
+      )}
+
+      {card.options && (
+        <OptionsSection key={JSON.stringify(card.options.values)} card={card} options={card.options} busy={busy} act={act} />
       )}
 
       {connected && setup?.testQuestion && (

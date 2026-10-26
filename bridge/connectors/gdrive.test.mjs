@@ -10,6 +10,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   gdriveConnector, fileToDocument, parseDriveCursor, driveCursor, driveQueryLiteral, exportType, MIME, GDRIVE_HOST,
+  GDRIVE_OPTIONS, folderIdOf,
 } from './gdrive.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID, GOOGLE_TOKEN_URL, GOOGLE_REVOKE_URL, GOOGLE_SCOPES } from './google-oauth.mjs'
 import { createMemoryCredentialStore } from './credentials.mjs'
@@ -384,4 +385,143 @@ test('gdrive: test() names the account; disconnect revokes and forgets the token
   assert.deepEqual(credentials.describe('gdrive').keys, [])
   assert.equal(registry.status('gdrive').state, 'disconnected')
   for (const l of lines) assert.ok(!l.includes(REFRESH) && !l.includes(ACCESS))
+})
+
+// ---- Task C97: folder allow-list and shared drives ----
+
+const ROOT = 'myroot0001'
+const folderMeta = (id, parent, extra = {}) => ({ id, mimeType: MIME.folder, parents: parent ? [parent] : [], ...extra })
+/** My Drive: Work (allowed) › Reports; Personal (not allowed); a folder JARVIS cannot see. */
+const TREE = {
+  [ROOT]: folderMeta(ROOT, null),
+  work000001: folderMeta('work000001', ROOT),
+  reports001: folderMeta('reports001', 'work000001'),
+  personal01: folderMeta('personal01', ROOT),
+}
+const ALLOWED = { folders: ['work000001'], sharedDrives: false }
+
+const TREE_PAGES = [[
+  file('doc000001', { name: 'Work plan', parents: ['work000001'] }),
+  file('doc000002', { name: 'Q3 report', parents: ['reports001'] }),
+  file('doc000003', { name: 'Q4 report', parents: ['reports001'] }),
+  file('doc000004', { name: 'Diary', parents: ['personal01'] }),
+  file('doc000005', { name: 'Hidden', parents: ['unseen0001'] }),
+  file('doc000006', { name: 'Loose', parents: [ROOT] }),
+]]
+const TREE_EXPORTS = { doc000001: 'plan', doc000002: 'q3', doc000003: 'q4', doc000004: 'secret diary', doc000005: 'x', doc000006: 'y' }
+
+test('gdrive C97: with a folder allow-list, a full sync keeps only files under those folders (subfolders too)', async () => {
+  const drive = fakeDrive({ pages: TREE_PAGES, exports: TREE_EXPORTS, files: TREE })
+  const { registry, seen } = setup(drive, { options: () => ALLOWED })
+  const r = await registry.sync('gdrive')
+  assert.equal(r.ok, true, JSON.stringify(r.error))
+  assert.deepEqual(r.documents.map((d) => d.id), ['doc000001', 'doc000002', 'doc000003'])
+  assert.deepEqual(r.deleted, [], 'a full sync only skips; the store was erased when the list changed')
+  // Files outside were never read.
+  assert.deepEqual(seen.exports.map((e) => e.id), ['doc000001', 'doc000002', 'doc000003'])
+  // Folder lookups are cached for the run: Reports once, and folders only (no file contents).
+  assert.equal(seen.gets.filter((id) => id === 'reports001').length, 1)
+  assert.ok(seen.gets.includes('unseen0001'), 'an unknown folder is looked up and counts as outside')
+})
+
+test('gdrive C97: an empty allow-list keeps everything, as before', async () => {
+  const drive = fakeDrive({ pages: TREE_PAGES, exports: TREE_EXPORTS, files: TREE })
+  const { registry, seen } = setup(drive, { options: () => ({ folders: [], sharedDrives: false }) })
+  const r = await registry.sync('gdrive')
+  assert.equal(r.documents.length, 6)
+  assert.deepEqual(seen.gets, [], 'no folder lookups without a list')
+})
+
+test('gdrive C97: a file moved out of an allowed folder leaves the store; one moved in arrives', async () => {
+  const store = openDocumentStore({ file: ':memory:', now: () => NOW })
+  const full = await setup(fakeDrive({ pages: TREE_PAGES, exports: TREE_EXPORTS, files: TREE }), { options: () => ALLOWED }).registry.sync('gdrive')
+  store.ingest('gdrive', full)
+  assert.ok(store.get('gdrive', 'doc000002'))
+  const changes = {
+    'start-1': {
+      changes: [
+        { changeType: 'file', fileId: 'doc000002', file: file('doc000002', { name: 'Q3 report', parents: ['personal01'] }) },
+        { changeType: 'file', fileId: 'doc000004', file: file('doc000004', { name: 'Diary', parents: ['work000001'] }) },
+      ],
+      newStartPageToken: 's2',
+    },
+  }
+  const drive = fakeDrive({ changes, exports: TREE_EXPORTS, files: TREE })
+  const inc = await setup(drive, { options: () => ALLOWED }).registry.sync('gdrive', { cursor: store.state('gdrive').cursor })
+  assert.equal(inc.ok, true, JSON.stringify(inc.error))
+  assert.deepEqual(inc.deleted, [{ connectorId: 'gdrive', id: 'doc000002' }])
+  assert.deepEqual(inc.documents.map((d) => d.id), ['doc000004'])
+  const counts = store.ingest('gdrive', inc)
+  assert.equal(counts.removed, 1)
+  assert.equal(store.get('gdrive', 'doc000002'), null, 'moved out: gone from the store')
+  assert.deepEqual(store.search('q3'), [])
+  assert.ok(store.get('gdrive', 'doc000004'), 'moved in: kept')
+  assert.ok(!drive.seen.exports.some((e) => e.id === 'doc000002'), 'the moved-out file was not read')
+  store.close()
+})
+
+test('gdrive C97: the tools return nothing outside the allow-list', async () => {
+  const search = TREE_PAGES[0]
+  const drive = fakeDrive({ search, files: { ...TREE, doc000004: file('doc000004', { name: 'Diary', parents: ['personal01'] }), doc000002: file('doc000002', { name: 'Q3 report', parents: ['reports001'] }) }, exports: TREE_EXPORTS })
+  const { registry, seen } = setup(drive, { options: () => ALLOWED })
+  const found = body(await registry.callTool(connectorToolName('gdrive', 'read', 'search_files'), { query: 'report', limit: 2 }))
+  assert.deepEqual(found.files.map((f) => f.id), ['doc000001', 'doc000002'], 'allowed hits only, up to the limit')
+  assert.equal(seen.lists.at(-1).pageSize, '8', 'asks for more hits so filtering still fills the limit')
+  const outside = body(await registry.callTool(connectorToolName('gdrive', 'read', 'read_file'), { id: 'doc000004' }))
+  assert.deepEqual(outside, { id: 'doc000004', note: 'This file is outside the Drive folders the owner chose for JARVIS.' })
+  assert.ok(!seen.exports.some((e) => e.id === 'doc000004'), 'an outside file is never exported')
+  const inside = body(await registry.callTool(connectorToolName('gdrive', 'read', 'read_file'), { id: 'doc000002' }))
+  assert.equal(inside.content, 'q3')
+})
+
+const SHARED_PAGES = [[
+  file('doc000001', { name: 'Mine', parents: [ROOT] }),
+  file('team000001', { name: 'Team doc', driveId: 'drive00001', parents: ['drive00001'] }),
+]]
+
+test('gdrive C97: shared drives stay out unless the switch is on', async () => {
+  const off = setup(fakeDrive({ pages: SHARED_PAGES, exports: { doc000001: 'a', team000001: 'b' } }), { options: () => ({ folders: [], sharedDrives: false }) })
+  const r1 = await off.registry.sync('gdrive')
+  assert.deepEqual(r1.documents.map((d) => d.id), ['doc000001'], 'a shared-drive file is dropped even if Google returns it')
+  for (const key of ['includeItemsFromAllDrives', 'supportsAllDrives', 'corpora']) assert.equal(off.seen.lists[0][key], undefined)
+
+  const on = setup(fakeDrive({ pages: SHARED_PAGES, exports: { doc000001: 'a', team000001: 'b' }, changes: { s1: { changes: [], newStartPageToken: 's2' } } }), { options: () => ({ folders: [], sharedDrives: true }) })
+  const r2 = await on.registry.sync('gdrive')
+  assert.deepEqual(r2.documents.map((d) => d.id), ['doc000001', 'team000001'])
+  const list = on.seen.lists[0]
+  assert.equal(list.corpora, 'allDrives')
+  assert.equal(list.includeItemsFromAllDrives, 'true')
+  assert.equal(list.supportsAllDrives, 'true')
+  await on.registry.sync('gdrive', { cursor: driveCursor({ s: 's1' }) })
+  assert.equal(on.seen.changes[0].includeItemsFromAllDrives, 'true')
+  assert.equal(on.seen.changes[0].supportsAllDrives, 'true')
+})
+
+test('gdrive C97: a shared drive can itself be on the allow-list', async () => {
+  const { registry } = setup(fakeDrive({ pages: SHARED_PAGES, exports: { doc000001: 'a', team000001: 'b' } }), { options: () => ({ folders: ['drive00001'], sharedDrives: true }) })
+  const r = await registry.sync('gdrive')
+  assert.deepEqual(r.documents.map((d) => d.id), ['team000001'])
+})
+
+test('gdrive C97: settings that are broken or throw fall back to everything in My Drive, never more', async () => {
+  const { registry } = setup(fakeDrive({ pages: SHARED_PAGES, exports: { doc000001: 'a', team000001: 'b' } }), { options: () => { throw new Error('boom') } })
+  const r = await registry.sync('gdrive')
+  assert.deepEqual(r.documents.map((d) => d.id), ['doc000001'])
+  assert.deepEqual(GDRIVE_OPTIONS.normalise({ folders: ['ok_folder1', 'bad id', 42, 'ok_folder1'], sharedDrives: 'yes' }), { folders: ['ok_folder1'], sharedDrives: false })
+})
+
+test('gdrive C97: folder links and ids are accepted; anything else is refused', () => {
+  assert.equal(folderIdOf('https://drive.google.com/drive/folders/1AbCdEfGhIjK'), '1AbCdEfGhIjK')
+  assert.equal(folderIdOf('https://drive.google.com/drive/u/0/folders/1AbCdEfGhIjK?usp=sharing'), '1AbCdEfGhIjK')
+  assert.equal(folderIdOf('https://drive.google.com/open?id=1AbCdEfGhIjK'), '1AbCdEfGhIjK')
+  assert.equal(folderIdOf('  1AbCdEfGhIjK '), '1AbCdEfGhIjK')
+  for (const bad of ['https://evil.example/drive/folders/1AbCdEfGhIjK', 'http://drive.google.com/drive/folders/1AbCdEfGhIjK', "x' or 1=1", '', null]) {
+    assert.equal(folderIdOf(bad), null, String(bad))
+  }
+  assert.deepEqual(GDRIVE_OPTIONS.check({ folders: ['https://drive.google.com/drive/folders/1AbCdEfGhIjK', '1AbCdEfGhIjK', ''], sharedDrives: true }).values,
+    { folders: ['1AbCdEfGhIjK'], sharedDrives: true })
+  assert.match(GDRIVE_OPTIONS.check({ folders: ['not a folder!'] }).error, /not a Drive folder/)
+  assert.match(GDRIVE_OPTIONS.check({ folders: Array.from({ length: 21 }, (_, i) => `folder${String(i).padStart(4, '0')}`) }).error, /at most 20/)
+  assert.match(GDRIVE_OPTIONS.check({ sharedDrives: 'on' }).error, /true or false/)
+  assert.match(GDRIVE_OPTIONS.check(null).error, /object/)
 })

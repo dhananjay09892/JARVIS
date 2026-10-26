@@ -23,6 +23,22 @@ export type ConnectorSetup = {
   clientLabel?: string
 }
 
+/** One of a connector's own settings on its card (task C97). */
+export type ConnectorOptionField = {
+  key: string
+  type: 'list' | 'boolean'
+  label: string
+  help?: string
+  max?: number
+}
+
+export type ConnectorOptionValue = string[] | boolean
+
+export type ConnectorOptions = {
+  fields: ConnectorOptionField[]
+  values: Record<string, ConnectorOptionValue>
+}
+
 export type ConnectorCard = {
   id: string
   name: string
@@ -45,6 +61,8 @@ export type ConnectorCard = {
   credentialBackend: CredentialBackend
   /** Synced documents kept for this connector (task C95); null when it keeps none. */
   documents?: { count: number; classes: Record<string, number>; retentionDays: number | null } | null
+  /** The connector's own settings (task C97), e.g. Google Drive's folders; absent when it has none. */
+  options?: ConnectorOptions
 }
 
 export type SensitivityClass = 'public' | 'personal' | 'work' | 'messages' | 'contacts' | 'finance' | 'health' | 'location'
@@ -130,6 +148,9 @@ export const setConnectorGrant = (id: string, capability: Capability, granted: b
 export const setConnectorsFrozen = (frozen: boolean, confirm = false) => post('/freeze', { frozen, confirm })
 export const setConnectorRetention = (id: string, days: number | null, confirm = false) =>
   post(at(id, 'retention'), { days, confirm })
+/** A change erases what the connector kept and syncs it again from the start, so it needs confirm. */
+export const setConnectorOptions = (id: string, options: Record<string, ConnectorOptionValue>, confirm = false) =>
+  post(at(id, 'options'), { options, confirm })
 export const setVaultAllowed = (allow: boolean, confirm = false) => post('/vault', { allow, confirm })
 export const setClassRetention = (cls: SensitivityClass, days: number | null, confirm = false) =>
   post('/retention', { class: cls, days, confirm })
