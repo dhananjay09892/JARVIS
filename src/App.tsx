@@ -6,7 +6,7 @@ import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
 import { useStore } from './store'
 import { startVoice, diag as voiceDiag, type Voice, type VoiceMode } from './lib/voice'
-import { createSpeaker, cycleVoice, currentVoiceName, diag as ttsDiag } from './lib/tts'
+import { createSpeaker, cycleVoice, currentVoiceName, diag as ttsDiag, setQuickStart, warmVoice } from './lib/tts'
 import * as trace from './lib/trace'
 import * as sfx from './lib/sfx'
 import * as music from './lib/music'
@@ -35,6 +35,18 @@ import {
 import { startAnalyser, micLevel } from './lib/audio'
 import { probeCapabilities } from './lib/capabilities'
 import { getSettings } from './lib/settings'
+import {
+  answerReflex,
+  familyOf,
+  matchReflex,
+  reflexesEnabled,
+  setReflexesEnabled,
+  timerDoneLine,
+  type Reflex,
+  type TimerView,
+} from './lib/reflex'
+import { browserTimers, type Timers } from './lib/timers'
+import { getVolume, setVolume } from './lib/volume'
 import { env } from './config'
 
 /**
@@ -75,6 +87,16 @@ const NEW_CONVERSATION = /^\s*(?:please\s+)?(?:start|begin|open)\s+(?:a\s+)?(?:n
 /** A leading vocative on a real command: "Jarvis, what's the weather". */
 const LEADING_NAME = new RegExp(`^(?:hey|hi|ok|okay|yo)?\\s*${NAME}\\b[\\s,.:!?-]*`, 'i')
 
+/** A finished timer chimes again this often, until stopped or for RING_FOR_MS at most. */
+const RING_EVERY_MS = 4000
+const RING_FOR_MS = 60_000
+
+/** Reflex answers use the browser's English clock style; other languages get British English until plan 28. */
+const reflexLocale = () => {
+  const l = typeof navigator !== 'undefined' ? navigator.language : ''
+  return /^en\b/i.test(l) ? l : 'en-GB'
+}
+
 export default function App() {
   const store = useStore
   const phase = useStore((s) => s.phase)
@@ -91,6 +113,14 @@ export default function App() {
   const booting = useRef(false)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const voicePoll = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  /** Kitchen timers (reflex layer, plan 06). Created at boot, once sound is allowed. */
+  const timers = useRef<Timers | null>(null)
+  /** The repeating chime of a finished timer, and what he says about it. */
+  const ringTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const alarmVoice = useRef<ReturnType<typeof createSpeaker> | null>(null)
+  /** When a timer last finished, so "stop the timer" just after still means it. 0 once dealt with. */
+  const lastRang = useRef(0)
 
   // -- helpers --------------------------------------------------------------
 
@@ -117,6 +147,37 @@ export default function App() {
     s.setPhase('dormant')
   }
 
+  /** Stop a finished timer's chime and announcement. It still counts as "ringing" for a minute. */
+  const quietAlarm = () => {
+    if (ringTimer.current) clearInterval(ringTimer.current)
+    ringTimer.current = null
+    alarmVoice.current?.cancel()
+    alarmVoice.current = null
+  }
+
+  /** A timer finished: chime until stopped (a minute at most), and say which one when he is free. */
+  const onTimerDone = (t: TimerView) => {
+    quietAlarm()
+    lastRang.current = Date.now()
+    const line = timerDoneLine(t)
+    const s = store.getState()
+    s.pushTurn({ id: newId(), role: 'jarvis', text: line })
+    sfx.play('alarm')
+    const since = Date.now()
+    ringTimer.current = setInterval(() => {
+      if (Date.now() - since >= RING_FOR_MS) quietAlarm()
+      else sfx.play('alarm')
+    }, RING_EVERY_MS)
+    // Mid-answer, the chime and the transcript line are enough; talking over
+    // his own answer helps nobody.
+    if (s.phase === 'dormant' || s.phase === 'listening' || s.phase === 'waking') {
+      const spk = createSpeaker()
+      alarmVoice.current = spk
+      spk.say(line)
+      void spk.end()
+    }
+  }
+
   /** Open the mic and wait. `window` is how long before he gives up. */
   const listen = (window: number) => {
     clearIdle()
@@ -125,6 +186,74 @@ export default function App() {
     s.setPhase('listening')
     sfx.play('listen')
     idleTimer.current = setTimeout(goDormant, window)
+  }
+
+  // -- reflexes (plan 06 phase 1) -------------------------------------------
+
+  /**
+   * Answer a quick command on the page: no model call, no bridge, no network.
+   * Traced on route 'reflex' so Diagnostics can show they skip the model.
+   */
+  const runReflex = async (
+    r: Reflex,
+    spk: ReturnType<typeof createSpeaker>,
+    stale: () => boolean,
+  ): Promise<void> => {
+    const s = store.getState()
+    trace.beginTurn('reflex', { stt: voiceDiag.engine, tts: ttsDiag.engine, reflex: familyOf(r) })
+    let failure: string | null = null
+    let then: 'listen' | 'dormant' = 'listen'
+    try {
+      const turns = s.turns
+      let lastAnswer = ''
+      for (let i = turns.length - 1; i >= 0; i--) {
+        if (turns[i].role === 'jarvis' && turns[i].text.trim()) {
+          lastAnswer = turns[i].text
+          break
+        }
+      }
+      const a = answerReflex(r, {
+        now: new Date(),
+        lastAnswer,
+        volume: getVolume(),
+        timers: timers.current?.list() ?? [],
+        ringing: lastRang.current > 0 && Date.now() - lastRang.current < RING_FOR_MS,
+        locale: reflexLocale(),
+      })
+      then = a.then
+      if (a.silence) {
+        quietAlarm()
+        lastRang.current = 0
+      }
+      if (a.cancelTimers) timers.current?.cancel(a.cancelTimers)
+      if (a.startTimer && !timers.current?.start(a.startTimer.ms, a.startTimer.label)) {
+        throw new Error('The timer could not be set.')
+      }
+      // A new volume is heard on the confirmation; "muted" is said before going quiet.
+      if (a.volume && !a.volume.muted) setVolume(a.volume)
+      if (a.say) {
+        s.pushTurn({ id: newId(), role: 'jarvis', text: a.say })
+        s.setPhase('speaking')
+        spk.say(a.say)
+        await spk.end()
+      }
+      if (a.volume?.muted) setVolume(a.volume)
+    } catch (err) {
+      failure = err instanceof Error ? err.message : 'error'
+      if (!stale()) {
+        sfx.play('error')
+        store.getState().setError(failure)
+      }
+    } finally {
+      if (!stale()) {
+        trace.endTurn(failure === null ? 'ok' : 'error', failure ?? undefined)
+        speaker.current = null
+        sfx.duck(false)
+        music.duck(false)
+        if (then === 'dormant') goDormant()
+        else listen(FOLLOW_UP_MS)
+      }
+    }
   }
 
   // -- one turn -------------------------------------------------------------
@@ -145,6 +274,8 @@ export default function App() {
 
     const spk = createSpeaker()
     speaker.current = spk
+    // The cloud voice's connection opens while the model thinks, not after.
+    warmVoice()
     sfx.duck(true)
     music.duck(true)
 
@@ -168,6 +299,14 @@ export default function App() {
           listen(FOLLOW_UP_MS)
         }
       }
+      return
+    }
+
+    // Quick commands: stop, volume, timers, the time and date, "say that again".
+    // Only whole-utterance matches; everything else goes on to the model.
+    const reflex = reflexesEnabled() ? matchReflex(said) : null
+    if (reflex) {
+      await runReflex(reflex, spk, stale)
       return
     }
 
@@ -283,6 +422,8 @@ export default function App() {
     if (phase === 'offline' || phase === 'boot') return
 
     store.getState().setError(null)
+    // Saying his name is attention enough for a ringing timer.
+    quietAlarm()
     sfx.play('wake')
 
     // "Jarvis, what's happening in AI this week" in one breath. Waiting for a
@@ -318,6 +459,8 @@ export default function App() {
       phase === 'thinking' || phase === 'tooling' || phase === 'speaking'
 
     silence()
+    // Talking is how you answer a ringing timer, as with any other sound he makes.
+    quietAlarm()
     if (wasBusy) {
       // Abandon the answer in flight. The turn counter moves in respond()'s
       // replacement; bumping it here covers the case where nothing replaces it.
@@ -598,6 +741,12 @@ export default function App() {
     // Offline wake word on or off, and how easily it wakes (Settings, plan 02).
     // An unreachable bridge leaves both at their defaults: offline, medium.
     const wakeSettings = await getSettings().catch(() => null)
+    // Quick start (plan 05 phase 2): on unless turned off in Settings → Voice.
+    setQuickStart(wakeSettings?.JARVIS_QUICK_START !== '0')
+    // Quick commands (plan 06): on unless turned off in Settings → Voice.
+    setReflexesEnabled(wakeSettings?.JARVIS_REFLEXES !== '0')
+    // Timers from before a reload come back now that sound is allowed.
+    timers.current ??= browserTimers(onTimerDone)
 
     // One voice loop, started once, running until the page closes.
     voice.current = await startVoice({

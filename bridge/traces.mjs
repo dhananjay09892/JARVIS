@@ -27,7 +27,10 @@ import { redact } from './memory.mjs'
  * speech, transcription — are negative.
  */
 export const STAGES = ['speechEnd', 'transcribed', 'firstTool', 'firstToken', 'firstAudio', 'end']
-export const ROUTES = ['bridge', 'direct']
+/** 'reflex': answered on the page with no model call (plan 06 phase 1). */
+export const ROUTES = ['bridge', 'direct', 'reflex']
+/** Reflex families a reflex trace may name; kept in step with src/lib/reflex.ts. */
+export const REFLEXES = ['stop', 'time', 'date', 'repeat', 'volume', 'timer']
 export const OUTCOMES = ['ok', 'error', 'interrupted']
 
 const MAX_TOOLS = 32
@@ -87,6 +90,8 @@ export function normaliseTrace(input, { model = null, now = Date.now() } = {}) {
     model: shortWord(input.model) ?? shortWord(model),
     stt: shortWord(input.stt, /^[\w-]{1,32}$/),
     tts: shortWord(input.tts, /^[\w-]{1,32}$/),
+    // Only on reflex turns, and only a known family: never free text.
+    ...(input.route === 'reflex' && REFLEXES.includes(input.reflex) ? { reflex: input.reflex } : {}),
     marks,
     tools,
     error,
@@ -123,18 +128,39 @@ function stageSummary(traces, stage) {
   return { n: xs.length, median: percentile(xs, 50), p95: percentile(xs, 95) }
 }
 
-/** Rolling summary over the given traces (newest first or any order). */
+const latencySummary = (traces) => {
+  const xs = traces.filter((t) => t.outcome === 'ok').map(latencyOf).filter((v) => v !== null)
+  return { n: xs.length, median: percentile(xs, 50), p95: percentile(xs, 95) }
+}
+
+/**
+ * Rolling summary over the given traces (newest first or any order).
+ *
+ * The headline latency is for turns that reached a model. Reflex turns (no
+ * model call) are reported apart under `reflex`, so answering "what time is
+ * it" instantly does not make the model look faster than it is.
+ */
 export function summarise(traces) {
-  const latencies = traces.filter((t) => t.outcome === 'ok').map(latencyOf).filter((v) => v !== null)
+  const model = traces.filter((t) => t.route !== 'reflex')
+  const reflex = traces.filter((t) => t.route === 'reflex')
+  const routes = {}
+  for (const r of ROUTES) routes[r] = traces.filter((t) => t.route === r).length
   return {
     turns: traces.length,
     errors: traces.filter((t) => t.outcome === 'error').length,
     interrupted: traces.filter((t) => t.outcome === 'interrupted').length,
-    latency: { n: latencies.length, median: percentile(latencies, 50), p95: percentile(latencies, 95) },
+    latency: latencySummary(model),
     stages: {
-      transcribed: stageSummary(traces, 'transcribed'),
-      firstToken: stageSummary(traces, 'firstToken'),
-      firstAudio: stageSummary(traces, 'firstAudio'),
+      transcribed: stageSummary(model, 'transcribed'),
+      firstToken: stageSummary(model, 'firstToken'),
+      firstAudio: stageSummary(model, 'firstAudio'),
+    },
+    routes,
+    reflex: {
+      turns: reflex.length,
+      // The proof a reflex skipped the model: none of its turns has a first token.
+      modelCalls: reflex.filter((t) => t.marks.firstToken !== undefined).length,
+      latency: latencySummary(reflex),
     },
   }
 }

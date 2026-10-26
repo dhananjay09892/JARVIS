@@ -38,7 +38,8 @@ Small local LLM (Ollama) for reflex+basic chat when offline; clearly labelled we
 Home-control-tuned small models only after 09 is in place.
 
 ## Phases
-1. Reflex layer + routing rules (3 d). 2. Fast/deep routing + metrics (3 d). 3. Persona v2 + modes (2 d). 4. Context assembler with budgets (3 d). 5. Local fallback (1–2 w).
+1. Reflex layer + routing rules (3 d). **Done (Q25):** stop, time, date, repeat, volume, timers; Hindi/Gujarati phrasings and telling the model about reflex turns are Q75.
+2. Fast/deep routing + metrics (3 d). 3. Persona v2 + modes (2 d). 4. Context assembler with budgets (3 d). 5. Local fallback (1–2 w).
 
 ## Metrics
 % turns answered on fast path ≥ 60 %; cost per turn; user "feel" score on the rubric; zero regression in tool-use success.
@@ -48,3 +49,13 @@ Misrouting a hard question to the fast model → escalate on uncertainty; subscr
 
 ## Related plans
 [21 multi-brain](21-multi-brain-framework.md) · [07 memory](07-memory-upgrade.md) · [14 context](14-ambient-context.md) · [28 per-language persona](28-multilingual.md) · [38 TurnContext](38-shared-data-contracts.md)
+
+## Autopilot log
+
+- **2026-10-26 · Q25 · Reflex layer (phase 1).**
+  - **Where it runs:** on the page, before anything is sent to the brain (`App.respond` → `src/lib/reflex.ts`), so it needs no bridge, no model and no network. Like the existing "start a new conversation" shortcut.
+  - **Covered:** stop / never mind / that's all (go quiet, back to standby, silence a ringing timer); the time; the date; "say that again"; louder / quieter / mute / unmute / "volume 40 percent" (voice and interface sounds, kept per browser); timers: set (with an optional name), ask what's left, cancel one or all. Timers live on the page (`src/lib/timers.ts`), survive a reload, chime until stopped (a minute at most) and say which one finished when he is free.
+  - **Routing rule:** a pattern must match the whole utterance after polite words are trimmed. Anything else (for example "stop my subscription", "what time is it in Tokyo", "turn the lights down") goes to the model. Tests pin 49 phrasings that must match and 25 that must not.
+  - **Measured in traces:** reflex turns are traced on route `reflex` with their family (never the words). `/traces/stats` now reports `routes` and `reflex { turns, modelCalls, latency }`, and keeps them out of the headline latency so the model's number stays honest. Diagnostics shows "quick commands (no AI)" and flags any reflex turn that reached a model.
+  - **Setting:** Settings → Listening → Quick commands (`JARVIS_REFLEXES`, on by default, applies live).
+  - **Left:** Hindi and Gujarati phrasings (plan 28), and telling the model what reflexes did (running timers, a changed volume) so a follow-up question makes sense; both are Q75. Real latency numbers need a session on your machine (the autopilot has no microphone). Music/ambient volume is not touched by "louder"/"quieter".

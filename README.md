@@ -213,6 +213,18 @@ ElevenLabs key) once at boot and picks the engines.
 Beyond answering, JARVIS reaches every MCP server in your Claude
 configuration, and can drive his own interface.
 
+### Quick commands
+
+A few things are answered straight away on your computer, without asking the AI
+and without the internet: *"stop"*, *"never mind"*, *"what time is it?"*,
+*"what's the date?"*, *"say that again"*, *"louder"*, *"quieter"*, *"mute"*,
+*"volume 40 percent"*, *"set a timer for 10 minutes for the pasta"*,
+*"how long is left on the timer?"* and *"cancel the timer"*. Only the whole
+sentence counts: *"stop my subscription"* still goes to the AI. Timers are kept
+in the browser and survive a reload. Turn quick commands off in
+**Settings → Listening → Quick commands**; Diagnostics shows how many turns they
+answered and how fast.
+
 ### Your tools
 
 Every server in your `~/.claude.json` is handed to the SDK explicitly. Depending

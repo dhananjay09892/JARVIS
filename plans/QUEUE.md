@@ -280,16 +280,29 @@ this file decides *in what order*.
 - **Done when:** changing a live setting needs no restart.
 
 ### Q24 · Plan 05 · Latency cheap wins
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q06
 - **Scope:** 05 phase 2. Start TTS at the first sentence, keep connections warm, cache the persona/system prompt. Report before/after numbers from the traces. Leave the effort default unchanged and note it as an open decision.
 - **Done when:** median latency drops, with numbers in the PR.
 
+### Q74 · Plan 05 · Measure the cheap wins and decide the effort default
+- **Status:** needs-you
+- **Needs you:** the autopilot has no microphone or Claude sign-in, so Q24's numbers are simulated. After merging Q24, note the time, then use JARVIS normally for a day (at least 20 spoken turns; Settings → Diagnostics → Turn traces must be on). Run `npm run latency -- --since <the time you noted>` and paste the table into plan 05's Autopilot log. If you have older traces from before the update, that is the "before" side; otherwise turn Settings → Voice → Quick start off for a day, then on, and split at the switch. Then decide whether the chat effort default moves from `high` to `medium` (plan 05 phase 2): write the choice in plan 05's "Open decision" line. Set this to `done` when both are written.
+- **Depends on:** Q24
+- **Scope:** 05 phase 2 acceptance on real hardware, and the one cheap win that is the owner's call.
+- **Done when:** real before/after numbers and the effort decision are recorded in plan 05.
+
 ### Q25 · Plan 06 · Reflex layer and routing rules
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q06
 - **Scope:** 06 phase 1. Handle stop, volume, timers and similar commands without calling the model.
 - **Done when:** reflex commands respond without a model call, measured in traces.
+
+### Q75 · Plans 06 + 28 · Reflexes in Hindi and Gujarati, and the model knows about them
+- **Status:** todo
+- **Depends on:** Q25, Q30
+- **Scope:** Remainder of 06 phase 1. Add Hindi and Gujarati (and common mixed) phrasings for each reflex family in `src/lib/reflex.ts`, with the same whole-utterance rule and must-not-match tests, answering in the language from the Q30 profile. Tell the brain what reflexes did (running timers, volume changes, the last reflex exchange) as a short line in the next turn's context, so "what was that timer for?" works.
+- **Done when:** each reflex family has tested Hindi and Gujarati phrasings, and a follow-up question about a timer is answered correctly against a mocked brain in a test.
 
 ### Q26 · Plan 06 · Fast/deep routing
 - **Status:** todo

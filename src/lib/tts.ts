@@ -10,6 +10,7 @@ import * as kokoro from './kokoro'
 import { caps } from './capabilities'
 import { languageOption, type Language } from './language'
 import { mark as markTrace } from './trace'
+import { firstPhraseCut } from './phrases'
 
 /**
  * Speech output.
@@ -161,6 +162,32 @@ const ABBREVIATION =
 const MAX_UNSPOKEN = 220
 
 // ---------------------------------------------------------------------------
+// Quick start (plan 05 phase 2, Settings → Voice)
+// ---------------------------------------------------------------------------
+
+/**
+ * On: the first chunk of an answer may be spoken at a clause boundary rather
+ * than a sentence end (lib/phrases.ts), and the cloud voice's connection is
+ * warmed as a turn starts. Off: whole sentences only, no warm-up. Read per
+ * chunk, so a change in Settings applies to the next answer.
+ */
+let quickStart = true
+
+export function setQuickStart(on: boolean): void {
+  quickStart = on
+}
+
+/**
+ * Open the bridge's connection to ElevenLabs before the first sentence needs
+ * it, so that sentence does not also pay for DNS and a TLS handshake. Fire and
+ * forget: only worth doing when the cloud voice is the one that will speak.
+ */
+export function warmVoice(): void {
+  if (!quickStart || !USE_ELEVENLABS || BACKEND !== 'bridge') return
+  fetch(`${BRIDGE_HTTP_URL}/tts/warm`, { method: 'POST' }).catch(() => {})
+}
+
+// ---------------------------------------------------------------------------
 // Voice selection
 // ---------------------------------------------------------------------------
 
@@ -294,6 +321,17 @@ if (typeof speechSynthesis !== 'undefined') {
  */
 let outCtx: AudioContext | null = null
 
+/**
+ * How loud he speaks, 0..1 (the reflex layer's "louder", "quieter", "mute";
+ * plan 06). Read as each sentence starts, so a change applies from the next
+ * sentence. 0 is muted: the words still show as captions.
+ */
+let speechVolume = 1
+
+export function setSpeechVolume(v: number): void {
+  speechVolume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1
+}
+
 function outputContext(): AudioContext | null {
   try {
     if (!outCtx) outCtx = new AudioContext()
@@ -348,6 +386,9 @@ export function createSpeaker(language: Language = 'en'): Speaker {
   let cancelled = false
   let outLevel = 0
   let pumping = false
+  // Whether any of the streamed answer has been queued yet: only the first
+  // chunk may be cut at a phrase rather than a sentence (quick start).
+  let streamedAny = false
 
   let currentAudio: HTMLAudioElement | null = null
   let nativeInFlight = false
@@ -501,6 +542,7 @@ export function createSpeaker(language: Language = 'en'): Speaker {
       // clarity-weighted rather than chest-weighted; dropping it further reads
       // as a film-trailer voiceover, which is the wrong character entirely.
       u.pitch = 0.95
+      u.volume = speechVolume
 
       // speechSynthesis exposes no amplitude, so drive the reactor from a
       // synthetic envelope. It only has to look like speech, not match it.
@@ -610,13 +652,23 @@ export function createSpeaker(language: Language = 'en'): Speaker {
       diag.voice = diag.engine === 'kokoro' ? KOKORO_VOICE : 'ElevenLabs'
 
       let read: (() => number) | null = null
+      // Without a graph the element's own volume is the only control.
+      audio.volume = speechVolume
       const ctx = outputContext()
       if (ctx) {
         try {
+          const source = ctx.createMediaElementSource(audio)
+          // Once captured, the element only sounds through the graph: connect
+          // the output first, so a failure further down still leaves it audible.
+          const level = ctx.createGain()
+          level.gain.value = speechVolume
+          audio.volume = 1
+          source.connect(level).connect(ctx.destination)
+          // The reactor follows the voice before the volume, so a quiet
+          // JARVIS still visibly speaks.
           const analyser = ctx.createAnalyser()
           analyser.fftSize = 256
-          ctx.createMediaElementSource(audio).connect(analyser)
-          analyser.connect(ctx.destination)
+          source.connect(analyser)
           const bins = new Uint8Array(analyser.frequencyBinCount)
           read = () => {
             analyser.getByteFrequencyData(bins as Uint8Array<ArrayBuffer>)
@@ -697,11 +749,24 @@ export function createSpeaker(language: Language = 'en'): Speaker {
           const next = SENTENCE_END.exec(rest)!
           const wider = cut + next.index + next[0].length
           enqueue(buffer.slice(0, wider))
+          streamedAny = true
           buffer = buffer.slice(wider)
           continue
         }
         enqueue(candidate)
+        streamedAny = true
         buffer = buffer.slice(cut)
+      }
+
+      // Quick start: no sentence yet, so speak the opening phrase rather than
+      // wait for the whole first sentence to stream in.
+      if (quickStart && !streamedAny && buffer) {
+        const cut = firstPhraseCut(buffer)
+        if (cut > 0) {
+          enqueue(buffer.slice(0, cut))
+          streamedAny = true
+          buffer = buffer.slice(cut)
+        }
       }
 
       // Unpunctuated prose would otherwise sit here silently until the answer
@@ -710,6 +775,7 @@ export function createSpeaker(language: Language = 'en'): Speaker {
         const cut = buffer.lastIndexOf(' ', MAX_UNSPOKEN)
         if (cut > 40) {
           enqueue(buffer.slice(0, cut))
+          streamedAny = true
           buffer = buffer.slice(cut)
         }
       }

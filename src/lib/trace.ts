@@ -18,7 +18,8 @@ import { BRIDGE_HTTP_URL } from '../config'
  */
 
 export type Stage = 'speechEnd' | 'transcribed' | 'firstTool' | 'firstToken' | 'firstAudio' | 'end'
-export type Route = 'bridge' | 'direct'
+/** 'reflex' turns were answered on the page with no model call (plan 06 phase 1). */
+export type Route = 'bridge' | 'direct' | 'reflex'
 export type Outcome = 'ok' | 'error' | 'interrupted'
 
 export type TurnTrace = {
@@ -28,6 +29,8 @@ export type TurnTrace = {
   outcome: Outcome
   stt?: string
   tts?: string
+  /** For route 'reflex': which family answered (stop, time, timer…). Never the words. */
+  reflex?: string
   marks: Partial<Record<Stage, number>>
   tools: string[]
   error?: string
@@ -82,7 +85,7 @@ const fresh = (t: number, at: number) => (t && at - t >= 0 && at - t < PENDING_M
  * interrupted — a new turn only starts over an old one when the user talked
  * over it.
  */
-export function beginTurn(route: Route, info: { stt?: string; tts?: string } = {}): void {
+export function beginTurn(route: Route, info: { stt?: string; tts?: string; reflex?: string } = {}): void {
   if (active) endTurn('interrupted')
   const t0 = now()
   const trace: TurnTrace = {
@@ -92,6 +95,7 @@ export function beginTurn(route: Route, info: { stt?: string; tts?: string } = {
     outcome: 'ok',
     stt: info.stt,
     tts: info.tts,
+    ...(info.reflex ? { reflex: info.reflex } : {}),
     marks: {},
     tools: [],
   }
@@ -140,7 +144,8 @@ export function endTurn(outcome: Outcome, error?: string): void {
   traceDiag.last = trace
   traceDiag.turns++
   if (outcome === 'ok') traceDiag.lastLatencyMs = latency
-  if (outcome === 'ok' && latency !== null) {
+  // Reflex turns (no model) are counted apart, so they don't flatter the model's number.
+  if (outcome === 'ok' && latency !== null && trace.route !== 'reflex') {
     recentLatencies.push(latency)
     if (recentLatencies.length > LOCAL_WINDOW) recentLatencies.shift()
     traceDiag.localMedianMs = percentile(recentLatencies, 50)
@@ -169,6 +174,10 @@ export type TraceStats = {
   errors?: number
   interrupted?: number
   latency?: { n: number; median: number | null; p95: number | null }
+  /** Turns per route; older bridges omit it. */
+  routes?: Partial<Record<Route, number>>
+  /** Reflex turns (no model call): how many, and end of speech → first audio. */
+  reflex?: { turns: number; modelCalls: number; latency: { n: number; median: number | null; p95: number | null } }
 }
 
 /** Rolling numbers from the bridge's trace store; null if it can't be reached. */
