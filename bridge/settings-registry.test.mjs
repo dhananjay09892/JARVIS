@@ -41,7 +41,16 @@ test('every setting that existed before the registry is declared', () => {
     'ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'JARVIS_ALLOW_WRITES', 'JARVIS_AUDIT', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT',
     'JARVIS_MODEL', 'JARVIS_TRACES', 'JARVIS_VOICE_ID',
     'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD', 'setupDone',
-  ].concat(['JARVIS_BRAIN', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY']).sort())
+  ].concat(['JARVIS_BRAIN', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
+    .concat(['JARVIS_REFLEXES']).sort())
+})
+
+test('quick commands are on by default, live, and can be turned off (plan 06 phase 1, Q25)', () => {
+  const r = settingDef('JARVIS_REFLEXES')
+  assert.equal(r.section, 'voice')
+  assert.equal(r.type, 'boolean')
+  assert.equal(r.default, '1')
+  assert.equal(r.apply, 'live')
 })
 
 test('the OpenAI brain is off by default and its key is a keychain secret (plan 25, Q54)', () => {
@@ -191,7 +200,7 @@ test('the page keeps its own copy of the shapes it reads in step with the regist
 
 test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
   const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
-  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
+  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_REFLEXES', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
   assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_BRAIN', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
   // The writes switch stays restart-only until the Safety section (phase 5)
   // adds confirmation for dangerous changes; the audit log stays on until then too.

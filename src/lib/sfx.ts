@@ -13,7 +13,7 @@
  * this file is only the fallback for when that file isn't there.
  */
 
-type Cue = 'boot' | 'wake' | 'listen' | 'tool' | 'done' | 'error'
+type Cue = 'boot' | 'wake' | 'listen' | 'tool' | 'done' | 'error' | 'alarm'
 
 let ctx: AudioContext | null = null
 let master: GainNode | null = null
@@ -193,6 +193,14 @@ const synth: Record<Cue, () => void> = {
   done: () => {
     blip(1320, { dur: 0.1, gain: 0.14 })
     blip(880, { at: 0.08, dur: 0.2, gain: 0.13 })
+  },
+
+  /** A timer finished (plan 06 reflexes): three bright double pips, hard to miss across a room. */
+  alarm: () => {
+    for (let i = 0; i < 3; i++) {
+      blip(1568, { at: i * 0.5, dur: 0.12, gain: 0.3 })
+      blip(2093, { at: i * 0.5 + 0.14, dur: 0.18, gain: 0.3 })
+    }
   },
 
   /** Something failed — flat, slightly dissonant, not alarming. */

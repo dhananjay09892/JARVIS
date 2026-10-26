@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { BACKEND } from '../config'
 import { Connectors } from './Connectors'
 import { OpenAISignIn } from './OpenAISignIn'
+import { setReflexesEnabled } from '../lib/reflex'
 import {
   getSettings,
   getSettingsSchema,
@@ -56,6 +57,7 @@ const listeningNote = (
 const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>> = {
   JARVIS_WAKE_WORD: { default: 'offline', options: ['offline', 'cloud'], help: '' },
   JARVIS_WAKE_SENSITIVITY: { default: 'medium', options: ['low', 'medium', 'high'], help: '' },
+  JARVIS_REFLEXES: { default: '1', help: '' },
   JARVIS_MODEL: { default: 'claude-opus-5', help: '' },
   JARVIS_CLAUDE_AUTH: { default: 'subscription', options: ['subscription', 'apikey'], help: '' },
   JARVIS_BRAIN: { default: 'claude', options: ['claude', 'openai'], help: '' },
@@ -200,6 +202,7 @@ export function Settings() {
   const writes = def(schema, 'JARVIS_ALLOW_WRITES')
   const wakeWord = def(schema, 'JARVIS_WAKE_WORD')
   const wakeSensitivity = def(schema, 'JARVIS_WAKE_SENSITIVITY')
+  const reflexes = def(schema, 'JARVIS_REFLEXES')
 
   const saveKey = async () => {
     if (!(await patch({ ELEVENLABS_API_KEY: keyDraft }, 'Key saved.'))) return
@@ -432,6 +435,18 @@ export function Settings() {
               </label>
             </div>
             <p className="mem-note">Wake word changes apply the next time you start JARVIS.</p>
+            <label title={reflexes.help || undefined}>
+              <input
+                type="checkbox"
+                checked={(s.JARVIS_REFLEXES || reflexes.default) !== '0'}
+                onChange={(e) => {
+                  const on = e.target.checked
+                  setReflexesEnabled(on)
+                  patchSetting({ JARVIS_REFLEXES: on ? '1' : '0' })
+                }}
+              />{' '}
+              Quick commands: stop, volume, timers, time and date answered instantly, without the AI
+            </label>
 
             <h3>Brain</h3>
             <div className="mem-add">

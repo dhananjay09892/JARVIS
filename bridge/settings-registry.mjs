@@ -100,6 +100,17 @@ const DEFS = [
     visibleIn: 'simple',
   },
   {
+    id: 'JARVIS_REFLEXES',
+    section: 'voice',
+    label: 'Quick commands',
+    help: 'Answer stop, volume, timers, the time and date, and "say that again" instantly on this computer, without asking the AI. Off: every request goes to the AI.',
+    type: 'boolean',
+    default: '1',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'advanced',
+  },
+  {
     id: 'JARVIS_MODEL',
     section: 'brains',
     label: 'Model',

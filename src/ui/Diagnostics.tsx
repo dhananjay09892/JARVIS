@@ -211,6 +211,15 @@ export function Diagnostics() {
           />
           <Row k="p95" v={secs(stats.latency.p95)} />
           <Row k="errors / interrupted" v={`${stats.errors ?? 0} / ${stats.interrupted ?? 0}`} />
+          {stats.reflex && (
+            // Plan 06 phase 1: answered on this page with no model call, so
+            // kept out of the median above. Any model call here is a bug.
+            <Row
+              k="quick commands (no AI)"
+              v={`${stats.reflex.turns} turns · ${secs(stats.reflex.latency.median)}${stats.reflex.modelCalls ? ` · ${stats.reflex.modelCalls} reached a model` : ''}`}
+              bad={stats.reflex.modelCalls > 0}
+            />
+          )}
         </>
       ) : (
         <Row

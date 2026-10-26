@@ -294,6 +294,17 @@ if (typeof speechSynthesis !== 'undefined') {
  */
 let outCtx: AudioContext | null = null
 
+/**
+ * How loud he speaks, 0..1 (the reflex layer's "louder", "quieter", "mute";
+ * plan 06). Read as each sentence starts, so a change applies from the next
+ * sentence. 0 is muted: the words still show as captions.
+ */
+let speechVolume = 1
+
+export function setSpeechVolume(v: number): void {
+  speechVolume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1
+}
+
 function outputContext(): AudioContext | null {
   try {
     if (!outCtx) outCtx = new AudioContext()
@@ -501,6 +512,7 @@ export function createSpeaker(language: Language = 'en'): Speaker {
       // clarity-weighted rather than chest-weighted; dropping it further reads
       // as a film-trailer voiceover, which is the wrong character entirely.
       u.pitch = 0.95
+      u.volume = speechVolume
 
       // speechSynthesis exposes no amplitude, so drive the reactor from a
       // synthetic envelope. It only has to look like speech, not match it.
@@ -610,13 +622,23 @@ export function createSpeaker(language: Language = 'en'): Speaker {
       diag.voice = diag.engine === 'kokoro' ? KOKORO_VOICE : 'ElevenLabs'
 
       let read: (() => number) | null = null
+      // Without a graph the element's own volume is the only control.
+      audio.volume = speechVolume
       const ctx = outputContext()
       if (ctx) {
         try {
+          const source = ctx.createMediaElementSource(audio)
+          // Once captured, the element only sounds through the graph: connect
+          // the output first, so a failure further down still leaves it audible.
+          const level = ctx.createGain()
+          level.gain.value = speechVolume
+          audio.volume = 1
+          source.connect(level).connect(ctx.destination)
+          // The reactor follows the voice before the volume, so a quiet
+          // JARVIS still visibly speaks.
           const analyser = ctx.createAnalyser()
           analyser.fftSize = 256
-          ctx.createMediaElementSource(audio).connect(analyser)
-          analyser.connect(ctx.destination)
+          source.connect(analyser)
           const bins = new Uint8Array(analyser.frequencyBinCount)
           read = () => {
             analyser.getByteFrequencyData(bins as Uint8Array<ArrayBuffer>)
