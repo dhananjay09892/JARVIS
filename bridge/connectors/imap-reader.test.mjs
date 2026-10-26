@@ -10,10 +10,10 @@ import {
   parseImapCursor, imapCursor, READ_COMMANDS,
 } from './imap-reader.mjs'
 import { ConnectorError } from './http.mjs'
-import { startFakeImap, rawMail } from './imap-testserver.mjs'
+import { startFakeImap, rawMail, FAKE_APP_PASSWORD } from './imap-testserver.mjs'
 
 const USER = 'me@gmail.com'
-const PASS = 'abcdefghijklmnop'
+const PASS = FAKE_APP_PASSWORD
 const HOST = 'imap.gmail.com'
 
 const mails = (n, { start = 1, at = 1_790_000_000_000 } = {}) =>
@@ -173,7 +173,7 @@ test('a host off the allow-list is refused before any socket opens', async () =>
 
 test('wrong password is an auth error', async () => {
   await withServer({}, async (fake) => {
-    await assert.rejects(reader(fake).check({ user: USER, pass: 'wrong-password-xx' }), (e) => e.code === 'auth')
+    await assert.rejects(reader(fake).check({ user: USER, pass: PASS.toUpperCase() }), (e) => e.code === 'auth')
   })
 })
 

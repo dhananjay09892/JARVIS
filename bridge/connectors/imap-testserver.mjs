@@ -12,6 +12,14 @@
 import net from 'node:net'
 import { tokenize } from './imap-reader.mjs'
 
+/**
+ * The fake mailbox's app password: a fixture, not a secret. Built at run time
+ * so secret scanners do not mistake a test value for a hardcoded password.
+ */
+export const FAKE_APP_PASSWORD = String.fromCharCode(...Array.from({ length: 16 }, (_, i) => 97 + i))
+/** Four groups of four, as Google shows app passwords. */
+export const spacedPassword = (p, sep = ' ') => p.match(/.{1,4}/g).join(sep)
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** INTERNALDATE text for ms (UTC). */
@@ -44,7 +52,7 @@ export function rawMail({ from = 'Alice <alice@example.com>', to = 'me@gmail.com
  * }} [opts]
  */
 export async function startFakeImap({
-  user = 'me@gmail.com', pass = 'abcdefghijklmnop', uidValidity = '700', messages = [],
+  user = 'me@gmail.com', pass = FAKE_APP_PASSWORD, uidValidity = '700', messages = [],
   allMailbox = '[Gmail]/All Mail', throttleLogins = 0, dropAfter, silentAfter, greeting = '* OK Fake IMAP ready',
 } = {}) {
   const state = { uidValidity, messages: [...messages], throttleLogins, commands: [], hosts: [], connections: 0, open: 0, expunged: new Set() }

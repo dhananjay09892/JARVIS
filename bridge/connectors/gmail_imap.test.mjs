@@ -14,10 +14,12 @@ import { openDocumentStore } from './store.mjs'
 import { setupProblems } from './interface.mjs'
 import { INJECTION_TEXT, ATTACKER_HOST, captureLog } from './testpack.mjs'
 import { isWrapped } from '../untrusted.mjs'
-import { startFakeImap, rawMail } from './imap-testserver.mjs'
+import { startFakeImap, rawMail, FAKE_APP_PASSWORD, spacedPassword } from './imap-testserver.mjs'
 
 const ADDRESS = 'me@gmail.com'
-const APP_PASSWORD = 'abcdefghijklmnop'
+const APP_PASSWORD = FAKE_APP_PASSWORD
+/** Another fixture value: what Google would refuse once the app password is revoked or mistyped. */
+const REFUSED = APP_PASSWORD.split('').reverse().join('')
 const AT = 1_790_000_000_000
 
 const mail = (uid, extra = {}) => ({
@@ -80,12 +82,12 @@ test('connect from Settings: address + app password (spaces allowed), stored onl
     assert.equal(missing.status, 400)
     assert.match(missing.body.reason, /Gmail address/)
 
-    const wrong = await call({ token: 'zzzz zzzz zzzz zzzz', account: ADDRESS })
+    const wrong = await call({ token: spacedPassword(REFUSED), account: ADDRESS })
     assert.equal(wrong.body.ok, false)
     assert.equal(wrong.body.code, 'auth')
     assert.deepEqual(credentials.describe('gmail_imap').keys, [], 'a refused login stores nothing')
 
-    const ok = await call({ token: 'abcd efgh ijkl mnop', account: ` ${ADDRESS} ` })
+    const ok = await call({ token: spacedPassword(APP_PASSWORD), account: ` ${ADDRESS} ` })
     assert.equal(ok.body.ok, true, JSON.stringify(ok.body))
     assert.equal(ok.body.result.account, ADDRESS)
     assert.equal(credentials.get('gmail_imap', 'app_password'), APP_PASSWORD)
@@ -145,13 +147,13 @@ test('drafts are skipped; no X-GM ids falls back to the UID', () => {
   const plain = gmailImapDocument({ uid: 9, raw: rawMail(), internalDate: AT, size: 10, truncated: false })
   assert.equal(plain.id, 'uid-9')
   assert.equal(plain.url, undefined)
-  assert.equal(cleanAppPassword(' abcd efgh\tijkl mnop '), APP_PASSWORD)
+  assert.equal(cleanAppPassword(` ${spacedPassword(APP_PASSWORD, ' \t')} `), APP_PASSWORD)
 })
 
 test('wrong or revoked app password: clear error, no crash, no secret in logs, nothing stored', async () => {
   const { fake, registry, credentials, lines } = await setup()
   try {
-    credentials.set('gmail_imap', 'app_password', 'revokedpassword1') // revoked in Google: same refusal
+    credentials.set('gmail_imap', 'app_password', REFUSED) // revoked in Google: same refusal
     const r = await registry.sync('gmail_imap')
     assert.equal(r.ok, false)
     assert.equal(r.error.code, 'auth')
@@ -160,7 +162,7 @@ test('wrong or revoked app password: clear error, no crash, no secret in logs, n
     const s = registry.status('gmail_imap')
     assert.equal(s.state, 'attention')
     for (const t of [JSON.stringify(r), JSON.stringify(s), ...lines, JSON.stringify(registry.list())]) {
-      assert.ok(!t.includes('revokedpassword1'))
+      assert.ok(!t.includes(REFUSED))
     }
   } finally {
     await fake.close()
