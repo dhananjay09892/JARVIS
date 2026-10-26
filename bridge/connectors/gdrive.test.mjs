@@ -68,6 +68,7 @@ function fakeDrive({
   exports = DEFAULT_EXPORTS,
   search = [],
   files = {},
+  children = {},
   injection,
   startToken = 'start-1',
   seen = { lists: [], changes: [], exports: [], starts: 0, revokes: 0, gets: [] },
@@ -100,6 +101,15 @@ function fakeDrive({
     if (path === '/files') {
       seen.lists.push(q)
       if (q.q?.startsWith('fullText')) return { body: { files: search } }
+      const under = /^'([^']+)' in parents/.exec(q.q ?? '')
+      if (under) {
+        // children[folder] is a list of pages; the page token is "<folder>:<n>".
+        const kids = children[under[1]]
+        if (kids === undefined) return { status: 404, body: { error: { code: 404 } } }
+        const i = q.pageToken ? Number(q.pageToken.split(':')[1]) : 0
+        const all = Array.isArray(kids[0]) ? kids : [kids]
+        return { body: { files: all[i] ?? [], ...(i + 1 < all.length ? { nextPageToken: `${under[1]}:${i + 1}` } : {}) } }
+      }
       const i = Number(q.pageToken ?? 0)
       let items = pages[i] ?? []
       if (injection && i === 0) items = [file('inject0001', { name: `Plan ${injection.slice(0, 40)}`, description: injection }), ...items]
@@ -524,4 +534,154 @@ test('gdrive C97: folder links and ids are accepted; anything else is refused', 
   assert.match(GDRIVE_OPTIONS.check({ folders: Array.from({ length: 21 }, (_, i) => `folder${String(i).padStart(4, '0')}`) }).error, /at most 20/)
   assert.match(GDRIVE_OPTIONS.check({ sharedDrives: 'on' }).error, /true or false/)
   assert.match(GDRIVE_OPTIONS.check(null).error, /object/)
+})
+
+// ---- Task C98: folders moved in or out of the allow-list ----
+
+/** Under Work: Reports (2 docs) › Archive (1 doc). Elsewhere: Personal › Old (1 doc). */
+const REPORT_KIDS = [
+  file('doc000002', { name: 'Q3 report', parents: ['reports001'] }),
+  file('doc000003', { name: 'Q4 report', parents: ['reports001'] }),
+  folderMeta('archive001', 'reports001'),
+]
+const ARCHIVE_KIDS = [file('doc000007', { name: 'Old report', parents: ['archive001'] })]
+
+/** Ingest a full sync of the Work tree (with Reports › Archive) into a fresh store. */
+async function storeWithWork() {
+  const store = openDocumentStore({ file: ':memory:', now: () => NOW })
+  const pages = [[...TREE_PAGES[0], file('doc000007', { name: 'Old report', parents: ['archive001'] })]]
+  const tree = { ...TREE, archive001: folderMeta('archive001', 'reports001') }
+  const full = await setup(fakeDrive({ pages, exports: { ...TREE_EXPORTS, doc000007: 'old' }, files: tree }), { options: () => ALLOWED }).registry.sync('gdrive')
+  assert.equal(full.ok, true, JSON.stringify(full.error))
+  store.ingest('gdrive', full)
+  assert.deepEqual(['doc000001', 'doc000002', 'doc000003', 'doc000007'].map((id) => Boolean(store.get('gdrive', id))), [true, true, true, true])
+  return store
+}
+
+const folderChange = (id, parent, extra = {}) => ({ changeType: 'file', fileId: id, file: { ...file(id, { mimeType: MIME.folder, parents: [parent] }), ...extra } })
+
+test('gdrive C98: a folder moved out of an allowed folder takes its files and its subfolders\' files out of the store', async () => {
+  const store = await storeWithWork()
+  // Reports moved from Work to Personal.
+  const tree = { ...TREE, reports001: folderMeta('reports001', 'personal01'), archive001: folderMeta('archive001', 'reports001') }
+  const drive = fakeDrive({
+    changes: { 'start-1': { changes: [folderChange('reports001', 'personal01')], newStartPageToken: 's2' } },
+    files: tree,
+    children: { reports001: REPORT_KIDS, archive001: ARCHIVE_KIDS },
+  })
+  const inc = await setup(drive, { options: () => ALLOWED }).registry.sync('gdrive', { cursor: store.state('gdrive').cursor })
+  assert.equal(inc.ok, true, JSON.stringify(inc.error))
+  assert.deepEqual(inc.deleted.map((d) => d.id).sort(), ['doc000002', 'doc000003', 'doc000007'])
+  assert.deepEqual(inc.documents, [])
+  assert.deepEqual(drive.seen.exports, [], 'nothing is read on the way out')
+  assert.equal(store.ingest('gdrive', inc).removed, 3)
+  for (const id of ['doc000002', 'doc000003', 'doc000007']) assert.equal(store.get('gdrive', id), null, id)
+  assert.ok(store.get('gdrive', 'doc000001'), 'the rest of Work stays')
+  assert.deepEqual(parseDriveCursor(inc.cursor), { s: 's2' }, 'the walk is finished')
+  store.close()
+})
+
+test('gdrive C98: a folder moved into an allowed folder brings its files (and subfolders\' files) in', async () => {
+  // Old (with a subfolder) moved from Personal into Work.
+  const tree = { ...TREE, old0000001: folderMeta('old0000001', 'work000001'), oldsub0001: folderMeta('oldsub0001', 'old0000001') }
+  const drive = fakeDrive({
+    changes: { s1: { changes: [folderChange('old0000001', 'work000001')], newStartPageToken: 's2' } },
+    files: tree,
+    exports: { doc000010: 'ten', doc000011: 'eleven' },
+    children: {
+      old0000001: [file('doc000010', { parents: ['old0000001'] }), folderMeta('oldsub0001', 'old0000001')],
+      oldsub0001: [file('doc000011', { parents: ['oldsub0001'] }), file('pdf000012', { mimeType: 'application/pdf', parents: ['oldsub0001'] })],
+    },
+  })
+  const inc = await setup(drive, { options: () => ALLOWED }).registry.sync('gdrive', { cursor: driveCursor({ s: 's1' }) })
+  assert.equal(inc.ok, true, JSON.stringify(inc.error))
+  assert.deepEqual(inc.documents.map((d) => d.id), ['doc000010', 'doc000011', 'pdf000012'])
+  assert.deepEqual(inc.deleted, [])
+  const walkList = drive.seen.lists.find((l) => l.q.startsWith("'old0000001' in parents"))
+  assert.match(walkList.q, /trashed = false and \(mimeType = 'application\/vnd\.google-apps\.folder' or modifiedTime > '2025-10-26T12:00:00\.000Z'\)$/, 'same lookback as a full sync')
+  assert.deepEqual(parseDriveCursor(inc.cursor), { s: 's2' })
+})
+
+test('gdrive C98: a big folder walk keeps to the page budget and resumes from the cursor', async () => {
+  const pagesOfKids = [[file('doc000020', { parents: ['big0000001'] })], [file('doc000021', { parents: ['big0000001'] })], [file('doc000022', { parents: ['big0000001'] })]]
+  const tree = { ...TREE, big0000001: folderMeta('big0000001', 'work000001') }
+  const mk = () => fakeDrive({
+    changes: { s1: { changes: [folderChange('big0000001', 'work000001')], newStartPageToken: 's2' }, s2: { changes: [], newStartPageToken: 's2' } },
+    files: tree,
+    exports: { doc000020: 'a', doc000021: 'b', doc000022: 'c' },
+    children: { big0000001: pagesOfKids },
+  })
+  const factory2 = (drive) => setup(drive, { options: () => ALLOWED, maxPagesPerSync: 2 }).registry
+  const d1 = mk()
+  const first = await factory2(d1).sync('gdrive', { cursor: driveCursor({ s: 's1' }) })
+  assert.equal(first.ok, true, JSON.stringify(first.error))
+  assert.deepEqual(first.documents.map((d) => d.id), ['doc000020'], 'one changes page + one walk page')
+  assert.deepEqual(parseDriveCursor(first.cursor), { s: 's2', w: [{ d: 'big0000001', m: 'i', n: 0, p: 'big0000001:1' }] })
+  const d2 = mk()
+  const second = await factory2(d2).sync('gdrive', { cursor: first.cursor })
+  assert.deepEqual(second.documents.map((d) => d.id), ['doc000021', 'doc000022'])
+  assert.deepEqual(d2.seen.changes, [], 'the walk finishes before more changes are read')
+  assert.deepEqual(parseDriveCursor(second.cursor), { s: 's2' })
+})
+
+test('gdrive C98: an "out" walk stops at a chosen folder and keeps files still inside through another parent', async () => {
+  // Personal moved... nothing; but Work2 (on the list) lives inside Box, and Box moved out.
+  const options = () => ({ folders: ['work000001', 'work200001'], sharedDrives: false })
+  const tree = { ...TREE, box0000001: folderMeta('box0000001', 'personal01'), work200001: folderMeta('work200001', 'box0000001') }
+  const drive = fakeDrive({
+    changes: { s1: { changes: [folderChange('box0000001', 'personal01')], newStartPageToken: 's2' } },
+    files: tree,
+    children: {
+      box0000001: [
+        file('doc000030', { parents: ['box0000001'] }),
+        file('doc000031', { parents: ['box0000001', 'work000001'] }),
+        folderMeta('work200001', 'box0000001'),
+      ],
+    },
+  })
+  const inc = await setup(drive, { options }).registry.sync('gdrive', { cursor: driveCursor({ s: 's1' }) })
+  assert.equal(inc.ok, true, JSON.stringify(inc.error))
+  assert.deepEqual(inc.deleted.map((d) => d.id), ['doc000030'])
+  assert.ok(!drive.seen.lists.some((l) => l.q.startsWith("'work200001'")), 'a chosen folder is not walked out')
+})
+
+test('gdrive C98: folder changes cost nothing without an allow-list, and a chosen folder itself is never walked', async () => {
+  const none = fakeDrive({ changes: { s1: { changes: [folderChange('reports001', 'personal01')], newStartPageToken: 's2' } }, files: TREE })
+  const r1 = await setup(none, { options: () => ({ folders: [], sharedDrives: false }) }).registry.sync('gdrive', { cursor: driveCursor({ s: 's1' }) })
+  assert.deepEqual([r1.documents, r1.deleted, none.seen.lists, none.seen.gets], [[], [], [], []])
+  const chosen = fakeDrive({ changes: { s1: { changes: [folderChange('work000001', ROOT, { name: 'Work (renamed)' })], newStartPageToken: 's2' } }, files: TREE })
+  const r2 = await setup(chosen, { options: () => ALLOWED }).registry.sync('gdrive', { cursor: driveCursor({ s: 's1' }) })
+  assert.deepEqual([r2.documents, r2.deleted, chosen.seen.lists], [[], [], []])
+})
+
+test('gdrive C98: a trashed folder takes its files out, even without an allow-list', async () => {
+  const drive = fakeDrive({
+    changes: { s1: { changes: [folderChange('reports001', 'work000001', { trashed: true })], newStartPageToken: 's2' } },
+    files: TREE,
+    children: { reports001: [file('doc000002', { parents: ['reports001'], trashed: true }), file('doc000003', { parents: ['reports001'], trashed: true })] },
+  })
+  const inc = await setup(drive, { options: () => ({ folders: [], sharedDrives: false }) }).registry.sync('gdrive', { cursor: driveCursor({ s: 's1' }) })
+  assert.equal(inc.ok, true, JSON.stringify(inc.error))
+  assert.deepEqual(inc.deleted.map((d) => d.id), ['doc000002', 'doc000003'])
+  assert.doesNotMatch(drive.seen.lists[0].q, /trashed = false/, 'an out walk lists trashed children too')
+})
+
+test('gdrive C98: a folder that cannot be listed any more is dropped from the walk; the sync carries on', async () => {
+  const drive = fakeDrive({
+    changes: { s1: { changes: [folderChange('reports001', 'personal01')], newStartPageToken: 's2' } },
+    files: { ...TREE, reports001: folderMeta('reports001', 'personal01') },
+    children: {}, // 404 for every folder
+  })
+  const inc = await setup(drive, { options: () => ALLOWED }).registry.sync('gdrive', { cursor: driveCursor({ s: 's1' }) })
+  assert.equal(inc.ok, true, JSON.stringify(inc.error))
+  assert.deepEqual(parseDriveCursor(inc.cursor), { s: 's2' })
+})
+
+test('gdrive C98: the walk queue in the cursor is bounded and cleaned', () => {
+  const w = Array.from({ length: 400 }, (_, i) => ({ d: `fold${String(i).padStart(6, '0')}`, m: 'o', n: 1 }))
+  const parsed = parseDriveCursor(JSON.stringify({ v: 1, s: 'tok', w: [{ d: 'bad id', m: 'o' }, { d: 'folder0001', m: 'x' }, ...w] }))
+  assert.equal(parsed.w.length, 150)
+  assert.equal(parsed.w[0].d, 'fold000000')
+  assert.deepEqual(parseDriveCursor(JSON.stringify({ v: 1, s: 'tok', w: [{ d: 'folder0001', m: 'i', n: 999, p: 'a b' }] })), { s: 'tok', w: [{ d: 'folder0001', m: 'i', n: 0 }] })
+  assert.equal(driveCursor({ s: 'tok', w: [] }), '{"v":1,"s":"tok"}')
 })
