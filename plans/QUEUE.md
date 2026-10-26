@@ -305,7 +305,7 @@ this file decides *in what order*.
 - **Done when:** each reflex family has tested Hindi and Gujarati phrasings, and a follow-up question about a timer is answered correctly against a mocked brain in a test.
 
 ### Q26 · Plan 06 · Fast/deep routing
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q25, Q17
 - **Scope:** 06 phase 2. Route turns to a fast or deep path, with routing metrics in Diagnostics.
 - **Done when:** the route is chosen per turn and visible in traces.

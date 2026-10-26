@@ -458,7 +458,7 @@ export function createClaudeBrain({
           yield { t: 'error', code: 'auth', retryable: false, message: NO_KEY_MESSAGE }
           yield { t: 'done', reason: 'error' }
         }
-        return { events: refused(), async cancel() {}, close() {} }
+        return { events: refused(), async cancel() {}, async setModel() { return false }, close() {} }
       }
       const session = startSession({ prompt: sdkPrompt(prompt, mapper), ...options }, a)
       async function* events() {
@@ -473,6 +473,17 @@ export function createClaudeBrain({
         events: events(),
         async cancel() {
           if (mapper.cancel()) await session.interrupt?.()
+        },
+        /**
+         * Answer the next turn with another model (fast/deep routing, plan 06
+         * phase 2). Called between turns, before the next user message is
+         * handed over. True when the SDK took it; false when this session
+         * cannot switch (it then keeps its model).
+         */
+        async setModel(model) {
+          if (typeof session.setModel !== 'function' || typeof model !== 'string' || !model) return false
+          await session.setModel(model)
+          return true
         },
         close() {
           session.close?.()

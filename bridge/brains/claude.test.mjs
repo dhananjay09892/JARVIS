@@ -470,3 +470,24 @@ test('converse: a session that throws ends with an error and done', async () => 
     { t: 'done', reason: 'error' },
   ])
 })
+
+test('converse: setModel switches the SDK session model between turns (plan 06 phase 2, Q26)', async () => {
+  const set = []
+  const query = (args) => ({
+    args, interrupt: async () => {}, close() {}, async *[Symbol.asyncIterator]() {},
+    async setModel(m) { set.push(m) },
+  })
+  const brain = createClaudeBrain({ query, status: () => ({}), login() {} })
+  const run = brain.converse({ prompt: 'hi', ...base() })
+  assert.equal(await run.setModel('claude-sonnet-5'), true)
+  assert.equal(await run.setModel(''), false)
+  assert.deepEqual(set, ['claude-sonnet-5'])
+  // An SDK session without setModel keeps its model and says so.
+  const plain = createClaudeBrain({ query: fakeQuery().query, status: () => ({}), login() {} }).converse({ prompt: 'hi', ...base() })
+  assert.equal(await plain.setModel('claude-sonnet-5'), false)
+  // Through the registry the method is still there, and still only picks a model.
+  const registered = createBrainRegistry({ log: null }).register(brain)
+  const viaRegistry = registered.converse({ prompt: 'hi', ...base() })
+  assert.equal(await viaRegistry.setModel('claude-haiku-5'), true)
+  assert.deepEqual(set, ['claude-sonnet-5', 'claude-haiku-5'])
+})

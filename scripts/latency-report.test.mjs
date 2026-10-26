@@ -46,6 +46,15 @@ test('without a split it summarises everything', () => {
   assert.match(out, /Turns: 2 \(1 with audio, 1 errors, 0 interrupted\)/)
 })
 
+test('reports the fast/deep split (plan 06 phase 2, Q26)', () => {
+  const routed = (id, path, firstAudio) => ({ ...turn(id, SPLIT + 1000, firstAudio - 200, firstAudio), path, tools: [] })
+  const out = report([routed('f1', 'fast', 700), routed('f2', 'fast', 900), routed('d1', 'deep', 2000), turn('old', SPLIT - 1000, 900, 1400)], SPLIT)
+  assert.match(out, /Routing before: no routed turns · after: 67% fast of 3 routed turns/)
+  assert.match(out, /\| fast path → first audio, median \| — \| 1000 ms \| — \|/)
+  assert.match(out, /\| deep path → first audio, median \| — \| 2300 ms \| — \|/)
+  assert.match(report([routed('f1', 'fast', 700)]), /Routing: 100% fast of 1 routed turns/)
+})
+
 test('reads the real trace store', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jarvis-latency-'))
   try {

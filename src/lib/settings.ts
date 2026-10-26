@@ -29,6 +29,10 @@ export type PublicSettings = {
   JARVIS_QUICK_START: string
   /** '1' | '0' — quick commands answered without the AI (plan 06, Q25). '' means on. */
   JARVIS_REFLEXES: string
+  /** '1' | '0' — fast/deep routing (plan 06 phase 2, Q26). '' means on. */
+  JARVIS_ROUTING: string
+  /** The Claude model for the fast path. '' means the default. */
+  JARVIS_FAST_MODEL: string
   setupDone: string
   storage: string
   /** Restart-only settings saved but not yet in force (plan 39 phase 4). Older bridges omit it. */

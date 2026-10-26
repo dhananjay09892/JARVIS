@@ -348,6 +348,8 @@ export function createOpenAICompatibleBrain({
         inTurn = true
         cancelled = false
         history.push({ role: 'user', content: text })
+        // Read once, so a model change between turns never lands mid-turn.
+        const turnModel = model
         const usage = { inTokens: 0, outTokens: 0, seen: false }
         const endUsage = () => (usage.seen ? [{ t: 'usage', inTokens: usage.inTokens, outTokens: usage.outTokens }] : [])
         let callNo = 0
@@ -361,11 +363,11 @@ export function createOpenAICompatibleBrain({
           let body
           if (wire === 'responses') {
             const offered = responsesToolDefinitions(names, toolSpecs)
-            body = { model, ...responsesInput(history), stream: true, store: false, ...(offered.length && { tools: offered }) }
+            body = { model: turnModel, ...responsesInput(history), stream: true, store: false, ...(offered.length && { tools: offered }) }
           } else {
             const offered = toolDefinitions(names, toolSpecs)
             body = {
-              model,
+              model: turnModel,
               messages: history,
               stream: true,
               stream_options: { include_usage: true },
@@ -683,6 +685,15 @@ export function createOpenAICompatibleBrain({
           if (!inTurn) return
           cancelled = true
           controller?.abort()
+        },
+        /**
+         * The model for the next turn (fast/deep routing, plan 06 phase 2).
+         * Takes effect from the next request; a turn in progress keeps its model.
+         */
+        async setModel(next) {
+          if (typeof next !== 'string' || !next) return false
+          model = next
+          return true
         },
         /** End the session. */
         close() {

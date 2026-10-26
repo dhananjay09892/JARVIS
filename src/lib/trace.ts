@@ -20,6 +20,10 @@ import { BRIDGE_HTTP_URL } from '../config'
 export type Stage = 'speechEnd' | 'transcribed' | 'firstTool' | 'firstToken' | 'firstAudio' | 'end'
 /** 'reflex' turns were answered on the page with no model call (plan 06 phase 1). */
 export type Route = 'bridge' | 'direct' | 'reflex'
+/** Bridge turns are routed to a fast or a deep model (plan 06 phase 2, bridge/routing.mjs). */
+export type Path = 'fast' | 'deep'
+const PATHS: readonly string[] = ['fast', 'deep']
+const PATH_REASONS: readonly string[] = ['off', 'chat', 'tools', 'reasoning', 'long', 'follow-up', 'default']
 export type Outcome = 'ok' | 'error' | 'interrupted'
 
 export type TurnTrace = {
@@ -31,6 +35,10 @@ export type TurnTrace = {
   tts?: string
   /** For route 'reflex': which family answered (stop, time, timer…). Never the words. */
   reflex?: string
+  /** For route 'bridge': the path the router chose, why, and the model that answered. */
+  path?: Path
+  pathReason?: string
+  model?: string
   marks: Partial<Record<Stage, number>>
   tools: string[]
   error?: string
@@ -117,6 +125,18 @@ export function mark(stage: Exclude<Stage, 'end' | 'speechEnd' | 'transcribed'>)
   active.trace.marks[stage] = Math.round(now() - active.t0)
 }
 
+/**
+ * The bridge routed the open turn (its `route` frame). Unknown words are
+ * ignored rather than stored; the bridge checks them again on the way in.
+ */
+export function notePath(path: unknown, reason: unknown, model: unknown): void {
+  if (!active || active.trace.route !== 'bridge') return
+  if (typeof path !== 'string' || !PATHS.includes(path)) return
+  active.trace.path = path as Path
+  if (typeof reason === 'string' && PATH_REASONS.includes(reason)) active.trace.pathReason = reason
+  if (typeof model === 'string' && /^[\w.:-]{1,80}$/.test(model)) active.trace.model = model
+}
+
 /** A tool ran in the open turn. Names only, never arguments. */
 export function noteTool(name: string): void {
   if (!active) return
@@ -178,7 +198,18 @@ export type TraceStats = {
   routes?: Partial<Record<Route, number>>
   /** Reflex turns (no model call): how many, and end of speech → first audio. */
   reflex?: { turns: number; modelCalls: number; latency: { n: number; median: number | null; p95: number | null } }
+  /** Fast/deep routing (plan 06 phase 2); older bridges omit it. */
+  paths?: {
+    routed: number
+    /** Share of routed turns on the fast path, 0–1; null before any routed turn. */
+    fastShare: number | null
+    fast: PathStats
+    deep: PathStats
+    reasons: Record<string, number>
+  }
 }
+
+type PathStats = { turns: number; toolTurns: number; latency: { n: number; median: number | null; p95: number | null } }
 
 /** Rolling numbers from the bridge's trace store; null if it can't be reached. */
 export async function fetchTraceStats(size = 50): Promise<TraceStats | null> {

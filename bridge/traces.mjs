@@ -20,6 +20,7 @@ import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { redact } from './memory.mjs'
+import { PATHS, PATH_REASONS } from './routing.mjs'
 
 /**
  * Stages the page may report, as milliseconds relative to the moment the turn
@@ -92,6 +93,11 @@ export function normaliseTrace(input, { model = null, now = Date.now() } = {}) {
     tts: shortWord(input.tts, /^[\w-]{1,32}$/),
     // Only on reflex turns, and only a known family: never free text.
     ...(input.route === 'reflex' && REFLEXES.includes(input.reflex) ? { reflex: input.reflex } : {}),
+    // Only on bridge turns: which path the router chose and why (plan 06
+    // phase 2, routing.mjs). Known words only, never free text.
+    ...(input.route === 'bridge' && PATHS.includes(input.path)
+      ? { path: input.path, ...(PATH_REASONS.includes(input.pathReason) ? { pathReason: input.pathReason } : {}) }
+      : {}),
     marks,
     tools,
     error,
@@ -133,6 +139,33 @@ const latencySummary = (traces) => {
   return { n: xs.length, median: percentile(xs, 50), p95: percentile(xs, 95) }
 }
 
+/** One path's numbers: turns, how many used a tool, and the latency. */
+const pathSummary = (traces) => ({
+  turns: traces.length,
+  // On the fast path a tool call is a hint the router guessed low.
+  toolTurns: traces.filter((t) => (t.tools?.length ?? 0) > 0).length,
+  latency: latencySummary(traces),
+})
+
+/**
+ * Fast/deep routing numbers (plan 06 phase 2). `fastShare` is the share of
+ * routed turns that took the fast path (the plan's target is 60 % or more),
+ * null when no turn was routed. `reasons` counts why, across both paths.
+ */
+function routingSummary(traces) {
+  const routed = traces.filter((t) => PATHS.includes(t.path))
+  const reasons = {}
+  for (const r of PATH_REASONS) reasons[r] = routed.filter((t) => t.pathReason === r).length
+  const fast = routed.filter((t) => t.path === 'fast')
+  return {
+    routed: routed.length,
+    fastShare: routed.length ? Math.round((fast.length / routed.length) * 100) / 100 : null,
+    fast: pathSummary(fast),
+    deep: pathSummary(routed.filter((t) => t.path === 'deep')),
+    reasons,
+  }
+}
+
 /**
  * Rolling summary over the given traces (newest first or any order).
  *
@@ -162,6 +195,7 @@ export function summarise(traces) {
       modelCalls: reflex.filter((t) => t.marks.firstToken !== undefined).length,
       latency: latencySummary(reflex),
     },
+    paths: routingSummary(model),
   }
 }
 

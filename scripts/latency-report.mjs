@@ -36,8 +36,16 @@ function rows(s) {
     ['end of speech → first audio, p95', s.latency.p95],
     ['end of speech → first token, median', s.stages.firstToken.median],
     ['end of speech → first token, p95', s.stages.firstToken.p95],
+    // Fast/deep routing (plan 06 phase 2): each path's own median.
+    ['fast path → first audio, median', s.paths.fast.latency.median],
+    ['deep path → first audio, median', s.paths.deep.latency.median],
   ]
 }
+
+/** One line on routing: how many turns took the fast path (target 60 % or more). */
+const routing = (s) => (s.paths.routed
+  ? `${Math.round((s.paths.fastShare ?? 0) * 100)}% fast of ${s.paths.routed} routed turns`
+  : 'no routed turns')
 
 /** A plain-text report, Markdown-table shaped so it can be pasted into a PR. */
 export function report(traces, since = null) {
@@ -45,6 +53,7 @@ export function report(traces, since = null) {
     const s = summarise(traces)
     return [
       `Turns: ${s.turns} (${s.latency.n} with audio, ${s.errors} errors, ${s.interrupted} interrupted)`,
+      `Routing: ${routing(s)}`,
       '',
       '| Measure | Value |',
       '|---|---|',
@@ -59,6 +68,7 @@ export function report(traces, since = null) {
   return [
     `Split at ${new Date(since).toISOString()}`,
     `Before: ${a.turns} turns (${a.latency.n} with audio) · After: ${b.turns} turns (${b.latency.n} with audio)`,
+    `Routing before: ${routing(a)} · after: ${routing(b)}`,
     '',
     '| Measure | Before | After | Change |',
     '|---|---|---|---|',

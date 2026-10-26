@@ -179,6 +179,22 @@ test('an allowed tool is offered with its spec', async () => {
   assert.equal(tools[0].function.description, 'Read a file')
 })
 
+test('setModel changes the model from the next turn, never mid-turn (plan 06 phase 2, Q26)', async () => {
+  const mock = await mockServer([[{ say: 'one' }], [{ say: 'two' }]])
+  const brain = createBrainRegistry({ log: null }).register(openaiBrain(mock.url))
+  const policy = createPolicy({ allowWrites: false, isMemoryTool: () => false, isWorkflowTool: () => false, isTaskTool: () => false, audit() {} })
+  const run = brain.converse({ prompt: ['first', 'second'], actor: 'voice', model: 'gpt-deep', policy, tools: {} })
+  let dones = 0
+  for await (const e of run.events) {
+    if (e.t !== 'done') continue
+    if (++dones === 1) assert.equal(await run.setModel('gpt-fast'), true)
+    else break
+  }
+  run.close()
+  assert.deepEqual(mock.requests.map((r) => r.body.model), ['gpt-deep', 'gpt-fast'])
+  assert.equal(await run.setModel(''), false)
+})
+
 test('the model gets the whole tool output, the events only the bounded summary', async () => {
   const big = `line one\n${'x'.repeat(5000)}`
   const script = [[{ tool: { id: 'call_1', name: 'Read', args: { file_path: '/a' }, output: big } }, { say: 'Done.' }]]

@@ -11,7 +11,7 @@
  *   status()             → { installed, version, authenticated, authMode, … }
  *   startSession(params) → the provider's own running session (not handed out
  *                          by the registry: the bridge reads only converse())
- *   converse(params)     → { events, cancel, close }: the session as normalised
+ *   converse(params)     → { events, cancel, close, setModel? }: the session as normalised
  *                          BrainEvents (events.mjs); what conformance.mjs tests
  *
  * The policy contract (phase 3). No brain runs a tool without a policy
@@ -235,6 +235,9 @@ function watched(run, brainId, log, breach) {
   return {
     events: events(),
     cancel: () => run.cancel?.(),
+    // The model for the next turn (fast/deep routing, plan 06 phase 2). It
+    // picks a model only; every tool call still passes the checks above.
+    setModel: async (model) => (typeof run.setModel === 'function' ? Boolean(await run.setModel(model)) : false),
     close: () => run.close?.(),
   }
 }

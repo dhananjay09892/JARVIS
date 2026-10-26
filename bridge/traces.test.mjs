@@ -113,6 +113,43 @@ test('summarise reports reflex turns apart from model turns (plan 06, Q25)', () 
   assert.deepEqual(s.reflex.latency, { n: 4, median: 200, p95: 300 })
 })
 
+test('bridge turns keep the routed path and reason, never free text (plan 06 phase 2, Q26)', () => {
+  const t = normaliseTrace(base({ path: 'fast', pathReason: 'chat', model: 'claude-sonnet-5' }), { model: 'claude-opus-5' })
+  assert.equal(t.path, 'fast')
+  assert.equal(t.pathReason, 'chat')
+  // The model that answered this turn wins over the bridge's default.
+  assert.equal(t.model, 'claude-sonnet-5')
+  // Unknown paths and reasons are dropped; only bridge turns carry a path.
+  assert.equal(normaliseTrace(base({ path: 'medium' })).path, undefined)
+  const odd = normaliseTrace(base({ path: 'deep', pathReason: 'because I asked about my bank' }))
+  assert.equal(odd.path, 'deep')
+  assert.equal(odd.pathReason, undefined)
+  assert.equal(normaliseTrace(base({ route: 'direct', path: 'fast', pathReason: 'chat' })).path, undefined)
+  assert.equal(normaliseTrace(base({ route: 'reflex', reflex: 'time', path: 'fast' })).path, undefined)
+})
+
+test('summarise reports fast/deep routing (plan 06 phase 2, Q26)', () => {
+  const turn = (id, path, pathReason, firstAudio, tools = []) =>
+    base({ id, path, pathReason, tools, marks: { speechEnd: 0, firstToken: firstAudio - 100, firstAudio, end: firstAudio + 1 } })
+  const traces = [
+    turn('f1', 'fast', 'chat', 600),
+    turn('f2', 'fast', 'chat', 700),
+    turn('f3', 'fast', 'chat', 800, ['mcp__gcal__list_events']),
+    turn('d1', 'deep', 'tools', 2000, ['WebSearch']),
+    turn('d2', 'deep', 'follow-up', 3000),
+    // Older pages send no path; they count as turns but not as routed.
+    base({ id: 'old', marks: { speechEnd: 0, firstAudio: 1500, end: 1501 } }),
+    base({ id: 'r', route: 'reflex', reflex: 'time', marks: { speechEnd: 0, firstAudio: 100, end: 101 } }),
+  ].map((t) => normaliseTrace(t))
+  const s = summarise(traces).paths
+  assert.equal(s.routed, 5)
+  assert.equal(s.fastShare, 0.6)
+  assert.deepEqual(s.fast, { turns: 3, toolTurns: 1, latency: { n: 3, median: 700, p95: 800 } })
+  assert.deepEqual(s.deep, { turns: 2, toolTurns: 1, latency: { n: 2, median: 2000, p95: 3000 } })
+  assert.deepEqual(s.reasons, { off: 0, chat: 3, tools: 1, reasoning: 0, long: 0, 'follow-up': 1, default: 0 })
+  assert.equal(summarise([]).paths.fastShare, null)
+})
+
 test('store records, returns newest first, and summarises', () => {
   let now = 1_000_000_000_000
   withStore((store) => {
