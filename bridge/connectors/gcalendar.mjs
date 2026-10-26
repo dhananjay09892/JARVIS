@@ -28,9 +28,9 @@
  *   - Paging: up to 250 events a page (Google's default; max 2500), and at
  *     most `maxPagesPerSync` pages per run across all calendars. The rest wait
  *     in the cursor (the page token) for the next sync instead of being
- *     skipped. 429s are retried with Retry-After by http.mjs. (Calendar also
- *     signals rate limits as 403 rateLimitExceeded; http.mjs reports those as
- *     `auth` today — a shared http.mjs change, not one for this adapter.)
+ *     skipped. 429s, and the 403 rateLimitExceeded / userRateLimitExceeded
+ *     Calendar also sends (classified as rate limits since task C08), are
+ *     retried with backoff by http.mjs.
  *   - Recurring events are synced as one document for the series (with its
  *     RRULE) plus any changed instances, not one document per occurrence; the
  *     list_events tool expands occurrences (singleEvents=true) when asked.

@@ -392,7 +392,17 @@ export function createGoogleOAuth({
      * egress allow-list).
      */
     async authorizedJson(api, url, init = {}) {
-      const call = (token) => api.json(url, { ...init, headers: { ...(init.headers ?? {}), authorization: `Bearer ${token}` } })
+      return oauth.authorized((headers) => api.json(url, { ...init, headers }), init)
+    },
+
+    /** The same for a plain-text body (a Drive export, task C08). */
+    async authorizedText(api, url, init = {}, opts = {}) {
+      return oauth.authorized((headers) => api.text(url, { ...init, headers }, opts), init)
+    },
+
+    /** Run `send(headers)` with a bearer token; on a 401 refresh once and retry. */
+    async authorized(send, init = {}) {
+      const call = (token) => send({ ...(init.headers ?? {}), authorization: `Bearer ${token}` })
       try {
         return await call(await oauth.accessToken())
       } catch (err) {

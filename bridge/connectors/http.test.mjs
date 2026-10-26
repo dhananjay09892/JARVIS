@@ -35,6 +35,9 @@ test('responses are classified into readable errors', () => {
     [503, '', {}, 'server'],
     [500, '', {}, 'server'],
     [404, '', {}, 'bad-response'],
+    [403, '{"error":{"code":403,"errors":[{"domain":"usageLimits","reason":"userRateLimitExceeded"}]}}', {}, 'rate-limit'],
+    [403, '{"error":{"errors":[{"reason": "rateLimitExceeded"}]}}', {}, 'rate-limit'],
+    [403, '{"error":{"errors":[{"reason":"exportSizeLimitExceeded"}]}}', {}, 'auth'],
   ]
   for (const [status, body, headers, code] of cases) {
     assert.equal(errorForResponse(status, body, new Headers(headers)).code, code, `${status} ${body}`)
@@ -84,4 +87,18 @@ test('every error code has an owner-facing message with no provider text', () =>
   const e = new ConnectorError('not-a-code', { detail: 'x'.repeat(1000) })
   assert.equal(e.code, 'other')
   assert.equal(e.detail.length, 300)
+})
+
+test('text() returns a plain body, shortened, with the same host rules and retries (C08)', async () => {
+  let n = 0
+  const http = createHttp({
+    fetch: async () => (n++ === 0 ? new Response('', { status: 429, headers: { 'retry-after': '1' } }) : new Response('line one\nline two')),
+    sleep: async () => {},
+    allowedHosts: [host],
+  })
+  assert.equal(await http.text(`https://${host}/export`, {}, { maxChars: 8 }), 'line one')
+  assert.equal(n, 2)
+  await assert.rejects(http.text('https://evil.example/x'), (e) => e.code === 'egress')
+  const empty = createHttp({ fetch: async () => new Response(null, { status: 204 }), allowedHosts: [host] })
+  assert.equal(await empty.text(`https://${host}/x`), '')
 })
