@@ -293,10 +293,16 @@ this file decides *in what order*.
 - **Done when:** real before/after numbers and the effort decision are recorded in plan 05.
 
 ### Q25 · Plan 06 · Reflex layer and routing rules
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q06
 - **Scope:** 06 phase 1. Handle stop, volume, timers and similar commands without calling the model.
 - **Done when:** reflex commands respond without a model call, measured in traces.
+
+### Q75 · Plans 06 + 28 · Reflexes in Hindi and Gujarati, and the model knows about them
+- **Status:** todo
+- **Depends on:** Q25, Q30
+- **Scope:** Remainder of 06 phase 1. Add Hindi and Gujarati (and common mixed) phrasings for each reflex family in `src/lib/reflex.ts`, with the same whole-utterance rule and must-not-match tests, answering in the language from the Q30 profile. Tell the brain what reflexes did (running timers, volume changes, the last reflex exchange) as a short line in the next turn's context, so "what was that timer for?" works.
+- **Done when:** each reflex family has tested Hindi and Gujarati phrasings, and a follow-up question about a timer is answered correctly against a mocked brain in a test.
 
 ### Q26 · Plan 06 · Fast/deep routing
 - **Status:** todo

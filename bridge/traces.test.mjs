@@ -85,6 +85,34 @@ test('summarise reports rolling median and p95 over completed turns', () => {
   assert.deepEqual(s.latency, { n: 5, median: 1000, p95: 3000 })
 })
 
+test('reflex turns keep their family, never free text (plan 06, Q25)', () => {
+  const r = normaliseTrace(base({ route: 'reflex', reflex: 'timer', marks: { speechEnd: -300, firstAudio: 120, end: 900 } }))
+  assert.equal(r.route, 'reflex')
+  assert.equal(r.reflex, 'timer')
+  // Unknown or free-text families are dropped, and only reflex turns carry one.
+  assert.equal(normaliseTrace(base({ route: 'reflex', reflex: 'set a timer for my pasta' })).reflex, undefined)
+  assert.equal(normaliseTrace(base({ reflex: 'time' })).reflex, undefined)
+})
+
+test('summarise reports reflex turns apart from model turns (plan 06, Q25)', () => {
+  const traces = [
+    ...[1000, 1200, 1400].map((ms, i) => base({ id: `m${i}`, marks: { speechEnd: 0, firstToken: ms - 200, firstAudio: ms, end: ms + 1 } })),
+    ...[150, 200, 250, 300].map((ms, i) =>
+      base({ id: `r${i}`, route: 'reflex', reflex: 'time', marks: { speechEnd: 0, firstAudio: ms, end: ms + 1 } })),
+    base({ id: 'stop', route: 'reflex', reflex: 'stop', marks: { speechEnd: 0, end: 5 } }),
+  ].map((t) => normaliseTrace(t))
+  const s = summarise(traces)
+  assert.equal(s.turns, 8)
+  assert.deepEqual(s.routes, { bridge: 3, direct: 0, reflex: 5 })
+  // The headline is the model's number alone.
+  assert.deepEqual(s.latency, { n: 3, median: 1200, p95: 1400 })
+  assert.equal(s.stages.firstAudio.n, 3)
+  // Reflexes: five turns, none with a first token (no model call), four that spoke.
+  assert.equal(s.reflex.turns, 5)
+  assert.equal(s.reflex.modelCalls, 0)
+  assert.deepEqual(s.reflex.latency, { n: 4, median: 200, p95: 300 })
+})
+
 test('store records, returns newest first, and summarises', () => {
   let now = 1_000_000_000_000
   withStore((store) => {
