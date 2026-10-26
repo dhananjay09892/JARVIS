@@ -45,8 +45,26 @@
  * or the shared-drive switch erases what Drive kept and starts a fresh full
  * sync (see routes.mjs), so the store always matches the current choice.
  *
+ * Folders crossing the allow-list (task C98): the changes feed reports a
+ * moved folder, not the files under it. When a folder change lands the
+ * folder outside the list, its files (and its subfolders' files) are walked
+ * with files.list `'<folder>' in parents` and each one yields a deletion
+ * marker; a folder that lands inside has its files walked and synced. A
+ * trashed folder is walked out even without a list (its files are trashed
+ * with it). The walk is a queue of folders kept in the cursor, at most
+ * MAX_WALK folders, and its list pages count against the same per-run page
+ * budget, so a big folder finishes over several runs. Walks are against
+ * Drive as it is now: an "out" walk never descends into a folder on the list
+ * and never removes a file that is still inside through another parent, and
+ * a later change wins because the queue runs in order. A folder that is only
+ * renamed inside the list is walked "in" again (its files are re-read); a
+ * folder that is on the list itself is never walked. A folder JARVIS lost
+ * access to cannot be listed; its files stay until the store is rebuilt (changing the folder list).
+ *
  * The cursor is a small JSON string
  *   {"v":1,"s":"<changes page token>"}                      after a full sync
+ *   {"v":1,"s":"…","w":[{"d":"<folder>","m":"i"|"o","n":<depth>,"p":"<page token>"}]}
+ *                                                           with folder walks pending
  *   {"v":1,"st":"<start token>","f":"<files page token>"}   in a full sync
  *
  * Mapping (plan 38 Document): id = Drive file id, title = file name, author =
@@ -96,6 +114,9 @@ const FOLDER_FIELDS = 'id,mimeType,parents,driveId'
 const MAX_DEPTH = 25
 export const MAX_ALLOWED_FOLDERS = 20
 
+/** Most folders waiting in a walk queue (keeps the cursor small). */
+export const MAX_WALK = 150
+
 const FILE_ID = /^[A-Za-z0-9_-]{5,200}$/
 const TOKEN = /^[\x21-\x7e]{1,4000}$/
 
@@ -109,7 +130,10 @@ export function parseDriveCursor(cursor) {
   try {
     const raw = JSON.parse(cursor)
     if (!isObject(raw) || raw.v !== 1) return {}
-    if (tok(raw.s)) return { s: raw.s }
+    if (tok(raw.s)) {
+      const w = walkQueue(raw.w)
+      return w.length ? { s: raw.s, w } : { s: raw.s }
+    }
     if (tok(raw.st)) return { st: raw.st, ...(tok(raw.f) ? { f: raw.f } : {}) }
     return {}
   } catch {
@@ -117,7 +141,22 @@ export function parseDriveCursor(cursor) {
   }
 }
 
-export const driveCursor = (state) => JSON.stringify({ v: 1, ...state })
+/** The folder-walk queue from a cursor: well-formed entries only, at most MAX_WALK. */
+function walkQueue(raw) {
+  const out = []
+  for (const e of Array.isArray(raw) ? raw : []) {
+    if (out.length >= MAX_WALK) break
+    if (!isObject(e) || typeof e.d !== 'string' || !FILE_ID.test(e.d) || (e.m !== 'i' && e.m !== 'o')) continue
+    const n = Number.isInteger(e.n) && e.n >= 0 && e.n <= MAX_DEPTH ? e.n : 0
+    out.push({ d: e.d, m: e.m, n, ...(tok(e.p) ? { p: e.p } : {}) })
+  }
+  return out
+}
+
+export const driveCursor = (state) => {
+  const { w, ...rest } = state
+  return JSON.stringify({ v: 1, ...rest, ...(Array.isArray(w) && w.length ? { w } : {}) })
+}
 
 const person = (p) => {
   if (!isObject(p)) return ''
@@ -364,12 +403,84 @@ export function gdriveConnector({ googleClient, options = null, maxPagesPerSync 
           }
           return false
         }
-        return async (f) => {
+        const check = async (f) => {
           if (!isObject(f)) return false
           if (!o.sharedDrives && typeof f.driveId === 'string' && f.driveId) return false
           if (allowed.size === 0) return true
           return anyInside(f, 0)
         }
+        check.allowed = allowed
+        return check
+      }
+
+      /**
+       * A folder change from the changes feed (task C98): which walk, if any,
+       * its files need. 'o' = remove them, 'i' = sync them, null = nothing.
+       */
+      async function folderMove(folder, inside) {
+        if (folder.trashed === true) return 'o'
+        if (inside.allowed.size === 0) return null // no list: every folder is inside, nothing moved across
+        if (inside.allowed.has(folder.id)) return null // a chosen folder is always inside
+        return (await inside(folder)) ? 'i' : 'o'
+      }
+
+      /** Add a folder to the walk queue; a newer entry for the same folder replaces the older one. */
+      function enqueue(w, entry) {
+        const rest = w.filter((e) => e.d !== entry.d)
+        if (rest.length >= MAX_WALK) return rest // full: not walked (changing the folder list rebuilds the store)
+        return [...rest, entry]
+      }
+
+      /**
+       * One files.list page of the first folder in the walk queue. Yields
+       * documents (walk in) or deletion markers (walk out); subfolders join
+       * the queue. Returns the new queue.
+       */
+      async function* walkPage(w, o, inside) {
+        const [job, ...rest] = w
+        let queue = rest
+        const since = new Date(now() - lookback).toISOString()
+        const params = {
+          q: job.m === 'i'
+            ? `'${job.d}' in parents and trashed = false and (mimeType = '${MIME.folder}' or modifiedTime > '${since}')`
+            : `'${job.d}' in parents`,
+          pageSize: String(PAGE_SIZE),
+          spaces: 'drive',
+          fields: LIST_FIELDS,
+          ...drives(o, { list: true }),
+        }
+        if (job.p) params.pageToken = job.p
+        let body
+        try {
+          body = await get('/files', params)
+        } catch (err) {
+          // The folder is gone or no longer visible, or a stale page token: drop this job.
+          if (badToken(err) || (err instanceof ConnectorError && err.code === 'auth' && err.status === 403)) return queue
+          throw err
+        }
+        if (!isObject(body)) throw new ConnectorError('bad-response', { detail: 'files.list (folder)' })
+        const next = tok(body.nextPageToken)
+        if (next) queue = [{ ...job, p: next }, ...queue]
+        for (const f of Array.isArray(body.files) ? body.files : []) {
+          if (!isObject(f) || typeof f.id !== 'string' || !FILE_ID.test(f.id)) continue
+          if (f.mimeType === MIME.folder) {
+            // An "out" walk stops at a folder that is on the list; an "in" walk skips it (already synced).
+            if (inside.allowed.has(f.id) || job.n + 1 > MAX_DEPTH) continue
+            queue = enqueue(queue, { d: f.id, m: job.m, n: job.n + 1 })
+            continue
+          }
+          if (f.mimeType === MIME.shortcut) continue
+          if (job.m === 'o') {
+            // Still inside through another parent (or the folder came back): keep it.
+            if (f.trashed !== true && Array.isArray(f.parents) && f.parents.length > 1 && await inside(f)) continue
+            yield { deleted: f.id }
+          } else {
+            if (!o.sharedDrives && typeof f.driveId === 'string' && f.driveId) continue
+            const doc = await toDocument(f)
+            if (doc) yield doc
+          }
+        }
+        return queue
       }
 
       /**
@@ -434,7 +545,22 @@ export function gdriveConnector({ googleClient, options = null, maxPagesPerSync 
           let state = parseDriveCursor(cursor)
           let pages = 0
           let restarted = false
+          let caughtUp = false // the changes feed was read to its end this run
           while (pages < pageBudget) {
+            if (state.s && state.w?.length) {
+              // A folder crossed the allow-list: its files follow it, one list page at a time.
+              const it = walkPage(state.w, o, inside)
+              let step = await it.next()
+              while (!step.done) {
+                yield step.value
+                step = await it.next()
+              }
+              pages++
+              state = { s: state.s, w: step.value }
+              yield { cursor: driveCursor(state) }
+              if (caughtUp && !state.w.length) break
+              continue
+            }
             if (state.s) {
               // Incremental: what changed since the saved page token.
               let body
@@ -450,10 +576,17 @@ export function gdriveConnector({ googleClient, options = null, maxPagesPerSync 
               }
               pages++
               if (!isObject(body)) throw new ConnectorError('bad-response', { detail: 'changes.list' })
+              let w = state.w ?? []
               for (const ch of Array.isArray(body.changes) ? body.changes : []) {
                 if (!isObject(ch) || (ch.changeType && ch.changeType !== 'file')) continue
                 const id = typeof ch.fileId === 'string' && FILE_ID.test(ch.fileId) ? ch.fileId : null
                 if (!id) continue
+                if (ch.removed !== true && isObject(ch.file) && ch.file.id === id && ch.file.mimeType === MIME.folder) {
+                  // A folder: never stored itself, but its files may need to follow it (task C98).
+                  const m = await folderMove(ch.file, inside)
+                  if (m) w = enqueue(w, { d: id, m, n: 0 })
+                  continue
+                }
                 if (ch.removed === true || ch.file?.trashed === true) {
                   yield { deleted: id }
                   continue
@@ -471,11 +604,16 @@ export function gdriveConnector({ googleClient, options = null, maxPagesPerSync 
               const next = tok(body.nextPageToken)
               const fresh = tok(body.newStartPageToken)
               if (next) {
-                state = { s: next }
+                state = { s: next, w }
                 yield { cursor: driveCursor(state) }
                 continue
               }
-              if (fresh) state = { s: fresh }
+              state = { s: fresh ?? state.s, w }
+              caughtUp = true
+              if (w.length) {
+                yield { cursor: driveCursor(state) }
+                continue
+              }
               break
             }
 
