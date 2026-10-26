@@ -16,6 +16,8 @@ export type ConnectorSetup = {
   scopes?: string[]
   steps?: string[]
   tokenLabel?: string
+  /** Paste pattern: also ask for an account name (not a secret), e.g. "Gmail address" (task C09). */
+  accountLabel?: string
   helpUrl?: string
   localWhy?: string
   testQuestion?: string

@@ -116,7 +116,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** fixture tests show files outside the allow-list are neither stored nor returned by the tools, a file moved out is deleted from the store, and shared-drive files appear only when the switch is on.
 
 ### C09 · openjarvis/data-connectors/gmail_imap · Gmail over IMAP (shared IMAP reader)
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03
 - **Scope:** Build a shared read-only IMAP reader (TLS only, app password from the credential store, UID-based incremental sync, MIME to text, attachments listed not opened) and the Gmail IMAP adapter on top of it. Tested against a fake IMAP server.
 - **Done when:** fixture mailbox sync, wrong password, injection fixture and erase tests pass.

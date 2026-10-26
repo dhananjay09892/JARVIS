@@ -70,6 +70,7 @@ import { createConnectorRoutes, createGrantsFile, syncConnectorInto } from './co
 import { gmailConnector } from './connectors/gmail.mjs'
 import { gcalendarConnector } from './connectors/gcalendar.mjs'
 import { gdriveConnector } from './connectors/gdrive.mjs'
+import { gmailImapConnector } from './connectors/gmail_imap.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { checkForUpdate } from './update.mjs'
@@ -406,6 +407,12 @@ connectors.registerAll([
     create: (ctx) => gdriveConnector({
       googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
     }).create(ctx),
+  },
+  {
+    // Gmail over IMAP with an app password (task C09): the simple setup, no
+    // Cloud project. TLS to imap.gmail.com only, mailbox opened read-only.
+    id: 'gmail_imap',
+    create: (ctx) => gmailImapConnector().create(ctx),
   },
 ])
 
