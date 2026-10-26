@@ -6,7 +6,7 @@ import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
 import { useStore } from './store'
 import { startVoice, diag as voiceDiag, type Voice, type VoiceMode } from './lib/voice'
-import { createSpeaker, cycleVoice, currentVoiceName, diag as ttsDiag } from './lib/tts'
+import { createSpeaker, cycleVoice, currentVoiceName, diag as ttsDiag, setQuickStart, warmVoice } from './lib/tts'
 import * as trace from './lib/trace'
 import * as sfx from './lib/sfx'
 import * as music from './lib/music'
@@ -274,6 +274,8 @@ export default function App() {
 
     const spk = createSpeaker()
     speaker.current = spk
+    // The cloud voice's connection opens while the model thinks, not after.
+    warmVoice()
     sfx.duck(true)
     music.duck(true)
 
@@ -739,6 +741,8 @@ export default function App() {
     // Offline wake word on or off, and how easily it wakes (Settings, plan 02).
     // An unreachable bridge leaves both at their defaults: offline, medium.
     const wakeSettings = await getSettings().catch(() => null)
+    // Quick start (plan 05 phase 2): on unless turned off in Settings → Voice.
+    setQuickStart(wakeSettings?.JARVIS_QUICK_START !== '0')
     // Quick commands (plan 06): on unless turned off in Settings → Voice.
     setReflexesEnabled(wakeSettings?.JARVIS_REFLEXES !== '0')
     // Timers from before a reload come back now that sound is allowed.

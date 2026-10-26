@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { BACKEND } from '../config'
 import { Connectors } from './Connectors'
 import { OpenAISignIn } from './OpenAISignIn'
+import { setQuickStart } from '../lib/tts'
 import { setReflexesEnabled } from '../lib/reflex'
 import {
   getSettings,
@@ -57,6 +58,7 @@ const listeningNote = (
 const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>> = {
   JARVIS_WAKE_WORD: { default: 'offline', options: ['offline', 'cloud'], help: '' },
   JARVIS_WAKE_SENSITIVITY: { default: 'medium', options: ['low', 'medium', 'high'], help: '' },
+  JARVIS_QUICK_START: { default: '1', help: '' },
   JARVIS_REFLEXES: { default: '1', help: '' },
   JARVIS_MODEL: { default: 'claude-opus-5', help: '' },
   JARVIS_CLAUDE_AUTH: { default: 'subscription', options: ['subscription', 'apikey'], help: '' },
@@ -202,6 +204,7 @@ export function Settings() {
   const writes = def(schema, 'JARVIS_ALLOW_WRITES')
   const wakeWord = def(schema, 'JARVIS_WAKE_WORD')
   const wakeSensitivity = def(schema, 'JARVIS_WAKE_SENSITIVITY')
+  const quickStart = def(schema, 'JARVIS_QUICK_START')
   const reflexes = def(schema, 'JARVIS_REFLEXES')
 
   const saveKey = async () => {
@@ -403,6 +406,18 @@ export function Settings() {
 
             <h3>Voice</h3>
             {keyBlock}
+            <label title={quickStart.help || undefined}>
+              <input
+                type="checkbox"
+                checked={(s.JARVIS_QUICK_START || quickStart.default) !== '0'}
+                onChange={(e) => {
+                  const on = e.target.checked
+                  setQuickStart(on)
+                  patchSetting({ JARVIS_QUICK_START: on ? '1' : '0' })
+                }}
+              />{' '}
+              Quick start: speak the first phrase without waiting for the whole sentence
+            </label>
 
             <h3>Listening</h3>
             {listeningNote}

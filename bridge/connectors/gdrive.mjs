@@ -17,7 +17,9 @@
  *     the listing is missed), then files.list of files that are not trashed,
  *     not folders, modified in the lookback window (default 365 days), newest
  *     first, 100 a page. The default corpus is the owner's files and files
- *     shared with them; shared drives are left out for now.
+ *     shared with them; shared drives are added only when the owner turns
+ *     them on (task C97: corpora=allDrives, includeItemsFromAllDrives and
+ *     supportsAllDrives on files.list, changes.list and files.get).
  *   - Incremental sync: changes.list?pageToken=… with includeRemoved=true.
  *     `nextPageToken` and `newStartPageToken` do not expire. A removed change
  *     (deleted, or access lost) or a trashed file yields a deletion marker
@@ -32,6 +34,16 @@
  *   - Paging: at most `maxPagesPerSync` list pages per run; the rest wait in
  *     the cursor. 429s, and the 403 rateLimitExceeded / userRateLimitExceeded
  *     Drive also sends, are retried with backoff by http.mjs.
+ *
+ * Folder allow-list (task C97): the owner may name Drive folders (or shared
+ * drives) on the card. When the list is not empty, only files somewhere under
+ * one of them are synced or returned by the tools. A file's place is found by
+ * walking its `parents` up through files.get (folders only, cached for one
+ * sync or tool call, at most MAX_DEPTH levels); a folder JARVIS cannot see
+ * counts as outside. A change to a file now outside the list (moved out)
+ * yields a deletion marker, so the stored copy goes away. Changing the list
+ * or the shared-drive switch erases what Drive kept and starts a fresh full
+ * sync (see routes.mjs), so the store always matches the current choice.
  *
  * The cursor is a small JSON string
  *   {"v":1,"s":"<changes page token>"}                      after a full sync
@@ -76,9 +88,13 @@ const DAY = 86_400_000
 
 const FILE_FIELDS =
   'id,name,mimeType,createdTime,modifiedTime,size,trashed,shared,description,webViewLink,' +
-  'owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress)'
+  'parents,driveId,owners(displayName,emailAddress),lastModifyingUser(displayName,emailAddress)'
 const LIST_FIELDS = `nextPageToken,files(${FILE_FIELDS})`
 const CHANGE_FIELDS = `nextPageToken,newStartPageToken,changes(changeType,removed,fileId,time,file(${FILE_FIELDS}))`
+
+const FOLDER_FIELDS = 'id,mimeType,parents,driveId'
+const MAX_DEPTH = 25
+export const MAX_ALLOWED_FOLDERS = 20
 
 const FILE_ID = /^[A-Za-z0-9_-]{5,200}$/
 const TOKEN = /^[\x21-\x7e]{1,4000}$/
@@ -197,8 +213,80 @@ export function driveQueryLiteral(text) {
   return `'${clean.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 }
 
+/**
+ * A folder id from what the owner pasted: a bare id, or a Drive folder link
+ * (drive.google.com/drive/folders/<id>, …/drive/u/0/folders/<id>, open?id=<id>).
+ * Returns null for anything else.
+ */
+export function folderIdOf(text) {
+  const t = typeof text === 'string' ? text.trim() : ''
+  if (!t || t.length > 600) return null
+  if (FILE_ID.test(t)) return t
+  let u
+  try {
+    u = new URL(t)
+  } catch {
+    return null
+  }
+  if (u.protocol !== 'https:' || !/^(drive|docs)\.google\.com$/i.test(u.hostname)) return null
+  const m = /\/folders\/([A-Za-z0-9_-]{5,200})\/?$/.exec(u.pathname)
+  if (m) return m[1]
+  const id = u.searchParams.get('id')
+  return id && FILE_ID.test(id) ? id : null
+}
+
+/**
+ * The Drive card's own settings (task C97), kept in connectors.json by
+ * options.mjs (no secrets): which folders to sync, and whether shared drives
+ * are included. `check()` is strict (the card's input); `normalise()` is
+ * lenient (a saved file: bad entries are dropped, never widened).
+ */
+export const GDRIVE_OPTIONS = Object.freeze({
+  fields: Object.freeze([
+    Object.freeze({
+      key: 'folders',
+      type: 'list',
+      max: MAX_ALLOWED_FOLDERS,
+      label: 'Only these folders',
+      help: 'Paste Drive folder links or ids, one per line. Files in their subfolders count too. Leave empty for all of your Drive.',
+    }),
+    Object.freeze({
+      key: 'sharedDrives',
+      type: 'boolean',
+      label: 'Include shared drives',
+      help: 'Off by default. On: files in shared drives you can open are synced and searched too (still read-only).',
+    }),
+  ]),
+  defaults: Object.freeze({ folders: Object.freeze([]), sharedDrives: false }),
+  check(raw) {
+    if (!isObject(raw)) return { error: 'Send the Drive settings as an object.' }
+    const list = raw.folders === undefined ? [] : raw.folders
+    if (!Array.isArray(list)) return { error: 'folders must be a list.' }
+    const folders = []
+    for (const entry of list) {
+      if (typeof entry === 'string' && !entry.trim()) continue
+      const id = folderIdOf(entry)
+      if (!id) return { error: `That is not a Drive folder link or id: ${String(entry).slice(0, 80)}` }
+      if (!folders.includes(id)) folders.push(id)
+    }
+    if (folders.length > MAX_ALLOWED_FOLDERS) return { error: `Choose at most ${MAX_ALLOWED_FOLDERS} folders.` }
+    if (raw.sharedDrives !== undefined && typeof raw.sharedDrives !== 'boolean') return { error: 'sharedDrives must be true or false.' }
+    return { values: { folders, sharedDrives: raw.sharedDrives === true } }
+  },
+  normalise(raw) {
+    if (!isObject(raw)) return { folders: [], sharedDrives: false }
+    const folders = []
+    for (const entry of Array.isArray(raw.folders) ? raw.folders : []) {
+      const id = typeof entry === 'string' && FILE_ID.test(entry) ? entry : null
+      if (id && !folders.includes(id) && folders.length < MAX_ALLOWED_FOLDERS) folders.push(id)
+    }
+    return { folders, sharedDrives: raw.sharedDrives === true }
+  },
+})
+
 const GDRIVE_SEES = [
-  'Your Google Drive files and files shared with you (not shared drives yet).',
+  'Your Google Drive files and files shared with you; shared drives only if you turn them on below.',
+  'If you choose folders below, only files inside them (and their subfolders).',
   'For every file: name, type, owner, who last edited it, size, dates and description.',
   'The text of Google Docs, and the first sheet of Google Sheets as a table.',
   'Other files (PDFs, images, Office files, Slides) by name only; their contents are not opened.',
@@ -208,9 +296,11 @@ const GDRIVE_SEES = [
 /**
  * The Google Drive connector factory. `googleClient` is the shared Google
  * OAuth client (createGoogleClient over the bridge's `google` credential view).
- * @param {{ googleClient: any, maxPagesPerSync?: number, lookbackDays?: number, timeoutMs?: number }} opts
+ * `options` returns the card's current settings (GDRIVE_OPTIONS); it is read
+ * at the start of every sync and tool call.
+ * @param {{ googleClient: any, options?: () => any, maxPagesPerSync?: number, lookbackDays?: number, timeoutMs?: number }} opts
  */
-export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDays = 365, timeoutMs } = {}) {
+export function gdriveConnector({ googleClient, options = null, maxPagesPerSync = 5, lookbackDays = 365, timeoutMs } = {}) {
   if (!googleClient || typeof googleClient.get !== 'function') throw new Error('Google Drive needs the shared Google client.')
   const pageBudget = Math.max(1, Math.min(100, Math.floor(maxPagesPerSync)))
   const lookback = Math.max(1, Math.min(3650, Math.floor(lookbackDays))) * DAY
@@ -226,6 +316,61 @@ export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDay
       const url = (path, params) => `${GDRIVE_API}${path}${params ? `?${new URLSearchParams(params).toString()}` : ''}`
       const get = (path, params) => oauth.authorizedJson(api, url(path, params))
       let lastSync
+
+      /** The card's settings now, cleaned again (never trusted to be well formed). */
+      const settings = () => {
+        let raw = null
+        try {
+          raw = typeof options === 'function' ? options() : null
+        } catch {
+          raw = null
+        }
+        return GDRIVE_OPTIONS.normalise(raw)
+      }
+      /** Query parameters that add shared drives, when the switch is on. */
+      const drives = (o, { list = false } = {}) => (o.sharedDrives
+        ? { supportsAllDrives: 'true', includeItemsFromAllDrives: 'true', ...(list ? { corpora: 'allDrives' } : {}) }
+        : {})
+
+      /**
+       * Is this file inside the owner's choice? Shared-drive files only with
+       * the switch on; with an allow-list, only under one of its folders.
+       * `seen` caches folder answers for one sync or tool call.
+       */
+      function scope(o) {
+        const allowed = new Set(o.folders)
+        const seen = new Map()
+        async function folderInside(id, depth) {
+          if (allowed.has(id)) return true
+          if (seen.has(id)) return seen.get(id)
+          if (depth >= MAX_DEPTH || !FILE_ID.test(id)) return false
+          seen.set(id, false) // a loop counts as outside
+          let meta
+          try {
+            meta = await get(`/files/${encodeURIComponent(id)}`, { fields: FOLDER_FIELDS, ...(o.sharedDrives ? { supportsAllDrives: 'true' } : {}) })
+          } catch (err) {
+            // A folder JARVIS cannot see is outside; sign-in, limits and outages still stop the call.
+            if (err instanceof ConnectorError && ((err.code === 'auth' && err.status === 403) || (err.code === 'bad-response' && [400, 404].includes(err.status)))) return false
+            throw err
+          }
+          const inside = isObject(meta) && meta.id === id && await anyInside(meta, depth + 1)
+          seen.set(id, inside)
+          return inside
+        }
+        async function anyInside(f, depth) {
+          if (typeof f.driveId === 'string' && allowed.has(f.driveId)) return true
+          for (const p of Array.isArray(f.parents) ? f.parents.slice(0, 10) : []) {
+            if (typeof p === 'string' && await folderInside(p, depth)) return true
+          }
+          return false
+        }
+        return async (f) => {
+          if (!isObject(f)) return false
+          if (!o.sharedDrives && typeof f.driveId === 'string' && f.driveId) return false
+          if (allowed.size === 0) return true
+          return anyInside(f, 0)
+        }
+      }
 
       /**
        * The exported text of a Doc or Sheet, or `{ note }` when Google will
@@ -284,6 +429,8 @@ export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDay
         },
 
         async *sync({ cursor } = {}) {
+          const o = settings()
+          const inside = scope(o)
           let state = parseDriveCursor(cursor)
           let pages = 0
           let restarted = false
@@ -293,7 +440,7 @@ export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDay
               let body
               try {
                 body = await get('/changes', {
-                  pageToken: state.s, pageSize: String(PAGE_SIZE), includeRemoved: 'true', spaces: 'drive', fields: CHANGE_FIELDS,
+                  pageToken: state.s, pageSize: String(PAGE_SIZE), includeRemoved: 'true', spaces: 'drive', fields: CHANGE_FIELDS, ...drives(o),
                 })
               } catch (err) {
                 if (!badToken(err) || restarted) throw err
@@ -313,6 +460,11 @@ export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDay
                 }
                 if (!isObject(ch.file) || ch.file.id !== id) continue
                 if (skipFile(ch.file)) continue
+                if (!(await inside(ch.file))) {
+                  // Moved out of the chosen folders (or never in them): not kept.
+                  yield { deleted: id }
+                  continue
+                }
                 const doc = await toDocument(ch.file)
                 if (doc) yield doc
               }
@@ -330,7 +482,7 @@ export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDay
             // Full sync. Take the start token before listing, so changes made
             // while the listing runs are picked up by the next incremental sync.
             if (!state.st) {
-              const start = await get('/changes/startPageToken', { fields: 'startPageToken' })
+              const start = await get('/changes/startPageToken', { fields: 'startPageToken', ...(o.sharedDrives ? { supportsAllDrives: 'true' } : {}) })
               const st = tok(start?.startPageToken)
               if (!st) throw new ConnectorError('bad-response', { detail: 'changes.getStartPageToken' })
               state = { st }
@@ -342,6 +494,7 @@ export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDay
               pageSize: String(PAGE_SIZE),
               spaces: 'drive',
               fields: LIST_FIELDS,
+              ...drives(o, { list: true }),
             }
             if (state.f) params.pageToken = state.f
             let body
@@ -356,6 +509,7 @@ export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDay
             pages++
             if (!isObject(body)) throw new ConnectorError('bad-response', { detail: 'files.list' })
             for (const f of Array.isArray(body.files) ? body.files : []) {
+              if (skipFile(f) || !(await inside(f))) continue
               const doc = await toDocument(f)
               if (doc) yield doc
             }
@@ -384,13 +538,22 @@ export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDay
                 const n = Math.max(1, Math.min(MAX_TOOL_FILES, Math.floor(Number(limit) || 10)))
                 const lit = driveQueryLiteral(query)
                 if (lit === "''") return { files: [] }
+                const o = settings()
+                const inside = scope(o)
+                // With an allow-list some hits are dropped, so ask for more and keep n.
                 const body = await get('/files', {
                   q: `fullText contains ${lit} and trashed = false and mimeType != '${MIME.folder}'`,
-                  pageSize: String(n),
+                  pageSize: String(o.folders.length ? Math.min(100, n * 4) : n),
                   spaces: 'drive',
                   fields: LIST_FIELDS,
+                  ...drives(o, { list: true }),
                 })
-                const files = (Array.isArray(body?.files) ? body.files : []).filter((f) => !skipFile(f) && typeof f.id === 'string' && FILE_ID.test(f.id))
+                const files = []
+                for (const f of Array.isArray(body?.files) ? body.files : []) {
+                  if (files.length >= n) break
+                  if (skipFile(f) || typeof f.id !== 'string' || !FILE_ID.test(f.id)) continue
+                  if (await inside(f)) files.push(f)
+                }
                 return {
                   files: files.slice(0, n).map((f) => ({
                     id: f.id,
@@ -415,8 +578,11 @@ export function gdriveConnector({ googleClient, maxPagesPerSync = 5, lookbackDay
               },
               run: async ({ id } = {}) => {
                 if (typeof id !== 'string' || !FILE_ID.test(id)) throw new ConnectorError('bad-response', { detail: 'file id shape' })
-                const f = await get(`/files/${encodeURIComponent(id)}`, { fields: FILE_FIELDS })
+                const o = settings()
+                const f = await get(`/files/${encodeURIComponent(id)}`, { fields: FILE_FIELDS, ...(o.sharedDrives ? { supportsAllDrives: 'true' } : {}) })
                 if (!isObject(f) || f.id !== id || skipFile(f)) throw new ConnectorError('bad-response', { detail: 'files.get' })
+                // Outside the owner's choice: say so, without its name or contents.
+                if (!(await scope(o)(f))) return { id, note: 'This file is outside the Drive folders the owner chose for JARVIS.' }
                 const { content, note } = f.trashed === true ? { content: null, note: 'In the trash' } : await exportText(f, MAX_TOOL_CHARS)
                 const out = {
                   id: f.id,
