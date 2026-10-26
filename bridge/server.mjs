@@ -73,6 +73,7 @@ import { gdriveConnector } from './connectors/gdrive.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { checkForUpdate } from './update.mjs'
+import { createVoiceWarmer } from './voice-warm.mjs'
 import { fileURLToPath } from 'node:url'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
@@ -786,6 +787,14 @@ function elevenKey() {
   }
 }
 
+/**
+ * Quick start (plan 05 phase 2): the page asks for the ElevenLabs connection to
+ * be opened as a turn starts (voice-warm.mjs). Read per request, so turning it
+ * off in Settings applies at once.
+ */
+const voiceWarmer = createVoiceWarmer()
+const quickStartOn = () => (setting('JARVIS_QUICK_START') ?? settingDefault('JARVIS_QUICK_START')) !== '0'
+
 /** Read per request, so a new voice is heard on the next sentence (plan 39 phase 4). */
 const currentVoiceId = () => setting('JARVIS_VOICE_ID') ?? settingDefault('JARVIS_VOICE_ID')
 
@@ -1408,6 +1417,13 @@ const handleRequest = async (req, res) => {
     } catch {
       return res.end(JSON.stringify({ ok: false, reason: 'Could not reach ElevenLabs. Check your internet.' }))
     }
+  }
+
+  // No body and nothing secret: answered at once, the warm-up runs on its own.
+  if (req.method === 'POST' && requestUrl.pathname === '/tts/warm') {
+    if (quickStartOn() && elevenKey()) voiceWarmer.warm()
+    res.writeHead(204, cors)
+    return res.end()
   }
 
   if (req.method === 'POST' && requestUrl.pathname === '/tts') {

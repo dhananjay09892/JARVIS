@@ -280,10 +280,17 @@ this file decides *in what order*.
 - **Done when:** changing a live setting needs no restart.
 
 ### Q24 · Plan 05 · Latency cheap wins
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q06
 - **Scope:** 05 phase 2. Start TTS at the first sentence, keep connections warm, cache the persona/system prompt. Report before/after numbers from the traces. Leave the effort default unchanged and note it as an open decision.
 - **Done when:** median latency drops, with numbers in the PR.
+
+### Q74 · Plan 05 · Measure the cheap wins and decide the effort default
+- **Status:** needs-you
+- **Needs you:** the autopilot has no microphone or Claude sign-in, so Q24's numbers are simulated. After merging Q24, note the time, then use JARVIS normally for a day (at least 20 spoken turns; Settings → Diagnostics → Turn traces must be on). Run `npm run latency -- --since <the time you noted>` and paste the table into plan 05's Autopilot log. If you have older traces from before the update, that is the "before" side; otherwise turn Settings → Voice → Quick start off for a day, then on, and split at the switch. Then decide whether the chat effort default moves from `high` to `medium` (plan 05 phase 2): write the choice in plan 05's "Open decision" line. Set this to `done` when both are written.
+- **Depends on:** Q24
+- **Scope:** 05 phase 2 acceptance on real hardware, and the one cheap win that is the owner's call.
+- **Done when:** real before/after numbers and the effort decision are recorded in plan 05.
 
 ### Q25 · Plan 06 · Reflex layer and routing rules
 - **Status:** todo
