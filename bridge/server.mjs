@@ -66,6 +66,7 @@ import { connectorsServer } from './connectors/mcp.mjs'
 import { createConnectorRoutes, createGrantsFile, syncConnectorInto } from './connectors/routes.mjs'
 import { gmailConnector } from './connectors/gmail.mjs'
 import { gcalendarConnector } from './connectors/gcalendar.mjs'
+import { gdriveConnector } from './connectors/gdrive.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { checkForUpdate } from './update.mjs'
@@ -392,6 +393,14 @@ connectors.registerAll([
     // credential view plus the shared `google` client.
     id: 'gcalendar',
     create: (ctx) => gcalendarConnector({
+      googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
+    }).create(ctx),
+  },
+  {
+    // Google Drive (task C08), read-only: Docs and Sheets text, other files by
+    // name only. Same pattern: its own credential view plus the shared client.
+    id: 'gdrive',
+    create: (ctx) => gdriveConnector({
       googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
     }).create(ctx),
   },

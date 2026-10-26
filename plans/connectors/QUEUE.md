@@ -104,10 +104,16 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** a cancelled event synced incrementally removes the stored event, with tests; a marker for another connector's document is ignored.
 
 ### C08 · openjarvis/data-connectors/gdrive · Google Drive
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03, C04
 - **Scope:** README "How we implement it" and acceptance tests, read-only scopes through the shared Google OAuth module; incremental sync with cursor, rate-limit backoff. Text extraction for Docs/Sheets exports only; binary files listed, not read.
 - **Done when:** fixture sync, revoked token, injection fixture and erase tests pass.
+
+### C97 · openjarvis/data-connectors/gdrive · Google Drive: folder allow-list and shared drives
+- **Status:** todo
+- **Depends on:** C08
+- **Scope:** Follow-up from C08. A folder allow-list on the Google Drive card (only files under the chosen folders are synced and searchable; empty = everything, as now), applied to full sync, changes and both tools, with files moved out of an allowed folder leaving the store. Optional shared-drive support behind its own switch (`includeItemsFromAllDrives`/`supportsAllDrives` on files.list and changes.list), off by default.
+- **Done when:** fixture tests show files outside the allow-list are neither stored nor returned by the tools, a file moved out is deleted from the store, and shared-drive files appear only when the switch is on.
 
 ### C09 · openjarvis/data-connectors/gmail_imap · Gmail over IMAP (shared IMAP reader)
 - **Status:** todo
