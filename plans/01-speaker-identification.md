@@ -26,6 +26,7 @@ Identity → turn context, memory scope, policy role
 - Store in the encrypted local DB beside memory; delete = hard delete.
 
 ## Phases
+0. **Model decision:** options and recommendation in [ADR 006](adr/006-speaker-embedding.md) (Q27, 2026-10-26), waiting for the owner. Recommended: WeSpeaker CAM++ (VoxCeleb, ONNX, CC BY 4.0) in the bridge with `onnxruntime-node`; the page sends 16 kHz PCM in parallel with `/stt`.
 1. **MVP (3–4 d):** `/speaker/enroll`, `/speaker/identify`, spoken enrollment ("learn my voice"), `speaker` field on utterances, name in system prompt, owner/guest split.
 2. **Robustness (3–4 d):** short-utterance carry-over (<1.5 s reuse previous within 20 s), confidence bands (confident / unsure / unknown) — unsure → JARVIS asks "is that you, Priya?" for risky actions only, running adaptive enrollment (add embeddings from confirmed turns, capped and reversible).
 3. **Presence (3 d):** maintain "who is here" from recent speech + (later) satellites/cameras; expire after N minutes; expose to policy and proactive alerts (don't read private mail aloud when a guest is present).
@@ -55,3 +56,10 @@ Identity → turn context, memory scope, policy role
 
 ## Related plans
 [15 roles](15-policy-trust-and-privacy.md) · [03 rooms](03-multi-room-satellites.md) · [28 per-person language](28-multilingual.md) · [30 family](30-household-and-family.md) · [38 Identity contract](38-shared-data-contracts.md)
+
+## Autopilot log
+- **2026-10-26 · Q27 · Speaker model decision record.** Wrote [ADR 006](adr/006-speaker-embedding.md)
+  (the queue said 003, but 003–005 are taken or reserved). Compared WeSpeaker CAM++/ResNet34,
+  3D-Speaker CAM++/ERes2Net, NeMo TitaNet and SpeechBrain ECAPA on licence, accuracy, size,
+  languages and ONNX availability, plus page vs bridge. Recommends WeSpeaker CAM++ in the bridge;
+  `Decision:` left empty. Next: the owner decides, then Q28 (MVP) builds it.

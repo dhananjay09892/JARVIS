@@ -311,7 +311,7 @@ this file decides *in what order*.
 - **Done when:** the route is chosen per turn and visible in traces.
 
 ### Q27 · Plan 01 · Speaker model decision record
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** Write `plans/adr/003-speaker-embedding.md`: candidate speaker-embedding models, licence, accuracy, and whether to run in the browser or the bridge. Leave `Decision:` empty with a recommendation.
 - **Done when:** the ADR is ready for the owner to decide.
