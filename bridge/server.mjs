@@ -71,6 +71,7 @@ import { gmailConnector } from './connectors/gmail.mjs'
 import { gcalendarConnector } from './connectors/gcalendar.mjs'
 import { gdriveConnector, GDRIVE_OPTIONS } from './connectors/gdrive.mjs'
 import { gmailImapConnector } from './connectors/gmail_imap.mjs'
+import { notionConnector } from './connectors/notion.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { createConnectorOptions } from './connectors/options.mjs'
@@ -433,6 +434,12 @@ connectors.registerAll([
     // Cloud project. TLS to imap.gmail.com only, mailbox opened read-only.
     id: 'gmail_imap',
     create: (ctx) => gmailImapConnector().create(ctx),
+  },
+  {
+    // Notion (task C11): paste an internal integration's secret; reads only
+    // the pages shared with it, from api.notion.com only.
+    id: 'notion',
+    create: (ctx) => notionConnector().create(ctx),
   },
 ])
 
