@@ -26,7 +26,7 @@ import { isWrapped } from '../untrusted.mjs'
 const temps = []
 after(() => { for (const t of temps) rmSync(t, { recursive: true, force: true }) })
 const tempDir = (name = 'obs-') => {
-  const d = realpathSync(mkdtempSync(join(tmpdir(), name)))
+  const d = realpathSync.native(mkdtempSync(join(tmpdir(), name)))
   temps.push(d)
   return d
 }
