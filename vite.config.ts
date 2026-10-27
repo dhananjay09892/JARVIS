@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { buildRefusal } from './scripts/bundle-secrets.mjs'
@@ -14,7 +16,30 @@ export default defineConfig(({ command, mode }) => {
     if (refusal) throw new Error(refusal)
   }
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        // onnxruntime-web dynamic-imports its /ort/*.mjs loader at runtime.
+        // Vite's dev server refuses to transform JS that lives in public/
+        // ("should not be imported from source code"), so hand those files
+        // out untouched, ahead of its transform middleware.
+        name: 'serve-ort-untransformed',
+        apply: 'serve',
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            const path = (req.url ?? '').split('?')[0]
+            if (!/^\/ort\/[\w.-]+\.mjs$/.test(path)) return next()
+            try {
+              const file = resolve(server.config.publicDir, path.slice(1))
+              res.setHeader('Content-Type', 'text/javascript')
+              res.end(readFileSync(file))
+            } catch {
+              next()
+            }
+          })
+        },
+      },
+    ],
     server: {
       // Honour PORT so a second instance can run alongside the first. The bridge
       // only accepts sockets from localhost:5173-5199, so stay inside that range

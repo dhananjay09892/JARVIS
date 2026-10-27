@@ -41,7 +41,14 @@ export const ACCOUNT = 'vault'
  * stderr is dropped on purpose: some tools echo their input there.
  */
 export function runTool(cmd, args, input = '') {
-  const r = spawnSync(cmd, args, { input, encoding: 'utf8', windowsHide: true, timeout: 20_000, maxBuffer: 4 * 1024 * 1024 })
+  const spawn = (file) => spawnSync(file, args, { input, encoding: 'utf8', windowsHide: true, timeout: 20_000, maxBuffer: 4 * 1024 * 1024 })
+  let r = spawn(cmd)
+  // A bridge started with a trimmed PATH cannot find powershell.exe by name;
+  // Windows PowerShell always lives at this fixed path.
+  if (r.error?.code === 'ENOENT' && cmd === 'powershell.exe' && process.platform === 'win32') {
+    const root = process.env.SystemRoot || process.env.windir || 'C:\\Windows'
+    r = spawn(`${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`)
+  }
   return { status: r.status, stdout: r.stdout ?? '', missing: r.error?.code === 'ENOENT' }
 }
 
