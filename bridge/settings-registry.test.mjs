@@ -43,7 +43,8 @@ test('every setting that existed before the registry is declared', () => {
     'JARVIS_WAKE_SENSITIVITY', 'JARVIS_WAKE_WORD', 'setupDone',
   ].concat(['JARVIS_BRAIN', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
     .concat(['JARVIS_QUICK_START', 'JARVIS_REFLEXES'])
-    .concat(['JARVIS_ROUTING', 'JARVIS_FAST_MODEL']).sort())
+    .concat(['JARVIS_ROUTING', 'JARVIS_FAST_MODEL'])
+    .concat(['JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_TEXT_SCRIPT']).sort())
 })
 
 test('quick start is on by default, live, and can be turned off (plan 05 phase 2, Q24)', () => {
@@ -223,7 +224,7 @@ test('the page keeps its own copy of the shapes it reads in step with the regist
 
 test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
   const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
-  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_FAST_MODEL', 'JARVIS_QUICK_START', 'JARVIS_REFLEXES', 'JARVIS_ROUTING', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
+  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_FAST_MODEL', 'JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_QUICK_START', 'JARVIS_REFLEXES', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_ROUTING', 'JARVIS_TEXT_SCRIPT', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
   assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_BRAIN', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
   // The writes switch stays restart-only until the Safety section (phase 5)
   // adds confirmation for dangerous changes; the audit log stays on until then too.

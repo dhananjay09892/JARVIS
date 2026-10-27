@@ -68,10 +68,26 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_EFFORT: { default: 'high', options: ['low', 'medium', 'high', 'xhigh'], help: '' },
   JARVIS_ROUTING: { default: '1', help: '' },
   JARVIS_FAST_MODEL: { default: 'claude-sonnet-5', help: '' },
+  JARVIS_LANG_PRIMARY: { default: 'en', options: ['en', 'gu', 'hi'], help: '' },
+  JARVIS_LANG_SECONDARY: { default: 'none', options: ['none', 'en', 'gu', 'hi'], help: '' },
+  JARVIS_REPLY_LANGUAGE: { default: 'primary', options: ['primary', 'mirror', 'en', 'gu', 'hi'], help: '' },
+  JARVIS_TEXT_SCRIPT: { default: 'native', options: ['native', 'roman'], help: '' },
   JARVIS_ALLOW_WRITES: {
     default: '0',
     help: 'Off by default: JARVIS can look at things but changes nothing.',
   },
+}
+
+/** What the language selects show for each stored value (plan 28, Q30). */
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  gu: 'Gujarati (ગુજરાતી)',
+  hi: 'Hindi (हिन्दी)',
+  none: 'None',
+  primary: 'My main language',
+  mirror: 'The language I just used',
+  native: 'Their own script',
+  roman: 'Latin letters',
 }
 
 /** The registry entry for a setting, or the built-in fallback. */
@@ -210,6 +226,10 @@ export function Settings() {
   const reflexes = def(schema, 'JARVIS_REFLEXES')
   const routing = def(schema, 'JARVIS_ROUTING')
   const fastModel = def(schema, 'JARVIS_FAST_MODEL')
+  const langPrimary = def(schema, 'JARVIS_LANG_PRIMARY')
+  const langSecondary = def(schema, 'JARVIS_LANG_SECONDARY')
+  const replyLanguage = def(schema, 'JARVIS_REPLY_LANGUAGE')
+  const textScript = def(schema, 'JARVIS_TEXT_SCRIPT')
 
   const saveKey = async () => {
     if (!(await patch({ ELEVENLABS_API_KEY: keyDraft }, 'Key saved.'))) return
@@ -466,6 +486,76 @@ export function Settings() {
               />{' '}
               Quick commands: stop, volume, timers, time and date answered instantly, without the AI
             </label>
+
+            <h3>Languages</h3>
+            <div className="mem-add">
+              <label>
+                Main language{' '}
+                <select
+                  aria-label="Main language"
+                  title={langPrimary.help || undefined}
+                  value={s.JARVIS_LANG_PRIMARY || langPrimary.default}
+                  onChange={(e) => patchSetting({ JARVIS_LANG_PRIMARY: e.target.value })}
+                >
+                  {(langPrimary.options ?? []).map((x) => (
+                    <option key={x} value={x}>
+                      {LANGUAGE_LABELS[x] ?? x}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Second language{' '}
+                <select
+                  aria-label="Second language"
+                  title={langSecondary.help || undefined}
+                  value={s.JARVIS_LANG_SECONDARY || langSecondary.default}
+                  onChange={(e) => patchSetting({ JARVIS_LANG_SECONDARY: e.target.value })}
+                >
+                  {(langSecondary.options ?? []).map((x) => (
+                    <option key={x} value={x}>
+                      {LANGUAGE_LABELS[x] ?? x}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="mem-add">
+              <label>
+                Reply in{' '}
+                <select
+                  aria-label="Reply language"
+                  title={replyLanguage.help || undefined}
+                  value={s.JARVIS_REPLY_LANGUAGE || replyLanguage.default}
+                  onChange={(e) => patchSetting({ JARVIS_REPLY_LANGUAGE: e.target.value })}
+                >
+                  {(replyLanguage.options ?? []).map((x) => (
+                    <option key={x} value={x}>
+                      {LANGUAGE_LABELS[x] ?? x}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Gujarati and Hindi written in{' '}
+                <select
+                  aria-label="Gujarati and Hindi script"
+                  title={textScript.help || undefined}
+                  value={s.JARVIS_TEXT_SCRIPT || textScript.default}
+                  onChange={(e) => patchSetting({ JARVIS_TEXT_SCRIPT: e.target.value })}
+                >
+                  {(textScript.options ?? []).map((x) => (
+                    <option key={x} value={x}>
+                      {LANGUAGE_LABELS[x] ?? x}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="mem-note">
+              JARVIS understands English, Gujarati and Hindi either way; these decide what he answers in. Spoken Gujarati
+              or Hindi needs a voice that speaks it.
+            </p>
 
             <h3>Brain</h3>
             <div className="mem-add">

@@ -29,14 +29,14 @@ export async function ask(
   history: Msg[],
   handlers: AskHandlers,
 ): Promise<{ text: string; tools: string[] }> {
+  // On the bridge the reply language comes from the owner's language profile
+  // (plan 28 phase 2, Q30), which the bridge adds to every turn itself, so the
+  // page sends none. The direct path has no settings store and keeps English.
+  if (usingBridge) return bridge.ask(prompt, handlers)
   const preface =
     `Reply in English. The user's message may be in English, Gujarati, or Hindi; ` +
     `understand it and answer in English.`
-  // On the bridge the preface travels separately, so the stored conversation
-  // holds what the owner actually said rather than this instruction.
-  return usingBridge
-    ? bridge.ask(prompt, handlers, preface)
-    : direct.ask([...history, { role: 'user', content: `${preface}\n\n${prompt}` }], handlers)
+  return direct.ask([...history, { role: 'user', content: `${preface}\n\n${prompt}` }], handlers)
 }
 
 export async function warm(): Promise<void> {

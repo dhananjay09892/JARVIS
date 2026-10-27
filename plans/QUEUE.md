@@ -331,10 +331,16 @@ this file decides *in what order*.
 - **Done when:** the table is filled in.
 
 ### Q30 · Plan 28 · Per-person language profile
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q19
 - **Scope:** 28 phase 2. Primary/secondary languages, reply-language policy and output script, stored per person through the settings registry.
 - **Done when:** the reply language follows the profile, with tests.
+
+### Q76 · Plan 28 · Language profiles for each person, and the by-topic policy
+- **Status:** todo
+- **Depends on:** Q30, Q28
+- **Scope:** Rest of 28 phase 2. Q30 shipped the profile as `scope: 'person'` settings that are the owner's (`bridge/language-profile.mjs` reads them through a `get` function). Once speaker ID (Q28) names who is speaking, store a profile per person (with the speaker profile from 01, falling back to the owner's), pick it per turn from the identified speaker, and show it per person in Settings. Add the "by topic" reply policy from the plan (for example work in English, family in Gujarati) if the owner still wants it, and a reply-language metric in Diagnostics (16) once the Q29 audit set exists.
+- **Done when:** two people with different profiles each get replies in their own language in a test, and the owner's profile is unchanged for unknown speakers.
 
 ### Q31 · Plan 29 · Wizard audit and hardware self-test
 - **Status:** todo

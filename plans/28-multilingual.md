@@ -1,6 +1,6 @@
 # 28 · Multilingual JARVIS: English, Gujarati, Hindi and mixing them
 
-**Status:** Partial (language option exists) · **Priority:** P1 · **Effort:** 3–5 weeks · **Depends on:** 04 (speech stack), 06 (brain), 01 (per-speaker)
+**Status:** Partial (language option and owner's language profile exist) · **Priority:** P1 · **Effort:** 3–5 weeks · **Depends on:** 04 (speech stack), 06 (brain), 01 (per-speaker)
 
 ## Why this is its own plan
 The product already assumes a multilingual user: `src/lib/brain.ts` tells the model that the
@@ -19,10 +19,13 @@ briefings and chat replies all follow it.
 - `brain.ts` preface: understand English/Gujarati/Hindi, **reply in English**.
 - `language.ts` + `languageOption()`: `speechCode` passed to bridge `/stt?language=` and a `locale` for browser recognition.
 - TTS voice quality for Gujarati/Hindi is unverified.
+- Language profile (phase 2, Q30): main and second language, reply policy (main language,
+  mirror, or always one language) and script for Gujarati/Hindi text, in Settings → Languages.
+  The bridge adds the matching instruction to every turn (`bridge/language-profile.mjs`).
 
 ## Phases
 1. **Audit (2 d):** record 100 sentences per language and code-switched; measure STT word error rate (Scribe, browser, later Whisper), TTS intelligibility, and model answer quality. Publish the table in this file.
-2. **Per-person language profile (2 d):** primary/secondary languages, reply-language policy (mirror / always X / by topic), script for text output (Gujarati script vs. romanised), stored with the speaker profile (01).
+2. **Per-person language profile (2 d) — owner's profile done (Q30); per person waits on 01 (Q76):** primary/secondary languages, reply-language policy (mirror / always X / by topic), script for text output (Gujarati script vs. romanised), stored with the speaker profile (01).
 3. **Language auto-detection per utterance (3 d):** detect language from STT metadata/text; pass `language: auto` for mixed speech; keep an explicit override ("speak Hindi").
 4. **Code-switching STT (1 w):** evaluate multilingual models (Scribe auto-detect, Whisper large/turbo) on Hinglish/Gujlish; add hotwords and name lists from memory; fall back to the browser engine per language where better.
 5. **Reply language and TTS (1 w):** choose voice per language; verify Gujarati/Hindi voices (ElevenLabs multilingual, other TTS); pronunciation dictionary for names and loan words; consistent persona tone across languages.
@@ -45,3 +48,17 @@ briefings and chat replies all follow it.
 
 ## Done when
 A bilingual family can switch languages mid-conversation with correct replies, and each language has a published quality table and a regression set.
+
+## Autopilot log
+- **2026-10-27 — Phase 2 (language profile), Q30.** Four settings in the registry's Languages
+  section, all `scope: 'person'` and applied live: main language, second language, reply
+  language (`primary` / `mirror` / always `en`/`gu`/`hi`) and script for Gujarati and Hindi
+  (`native` / `roman`). `bridge/language-profile.mjs` turns the profile into the turn's
+  preface; the bridge reads it every turn, so a change applies to the next message. Mirror
+  uses the message's letters (Gujarati script → Gujarati, Devanagari → Hindi) and otherwise
+  asks the model to mirror, falling back to the main language. The defaults reproduce the old
+  behaviour exactly (understand all three, answer in English); the page no longer sends its own
+  "reply in English" on the bridge path (the direct API path still does: it has no settings).
+  Tests: `bridge/language-profile.test.mjs`. **Left:** a profile per person once speaker ID
+  exists, the "by topic" policy and a reply-language metric (Q76); spoken replies in Gujarati or
+  Hindi still need a voice that speaks them (phase 5); reflexes in each language (Q75).
