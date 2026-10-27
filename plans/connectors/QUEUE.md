@@ -154,7 +154,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** fixture vault sync, path-escape attempt, injection fixture and erase tests pass.
 
 ### C14 · openjarvis/data-connectors/slack · Slack (data source)
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03
 - **Scope:** Read-only sync of channels the bot is a member of, bot token in the credential store, smallest scopes, cursor pagination and Retry-After handling.
 - **Done when:** fixture workspace sync, revoked token, rate limit, injection fixture and erase tests pass.
