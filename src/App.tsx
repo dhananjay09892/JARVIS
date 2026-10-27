@@ -38,13 +38,19 @@ import { getSettings } from './lib/settings'
 import {
   answerReflex,
   familyOf,
-  matchReflex,
+  languageProfileFrom,
+  matchReflexIn,
   reflexesEnabled,
+  reflexLanguageProfile,
+  replyLanguageFor,
   setReflexesEnabled,
+  setReflexLanguageProfile,
   timerDoneLine,
+  type Heard,
   type Reflex,
   type TimerView,
 } from './lib/reflex'
+import { makeReflexMemory } from './lib/reflexNote'
 import { browserTimers, type Timers } from './lib/timers'
 import { getVolume, setVolume } from './lib/volume'
 import { env } from './config'
@@ -91,7 +97,7 @@ const LEADING_NAME = new RegExp(`^(?:hey|hi|ok|okay|yo)?\\s*${NAME}\\b[\\s,.:!?-
 const RING_EVERY_MS = 4000
 const RING_FOR_MS = 60_000
 
-/** Reflex answers use the browser's English clock style; other languages get British English until plan 28. */
+/** English reflex answers use the browser's clock style when it is English, else British English. Hindi and Gujarati have their own (reflexSay.ts). */
 const reflexLocale = () => {
   const l = typeof navigator !== 'undefined' ? navigator.language : ''
   return /^en\b/i.test(l) ? l : 'en-GB'
@@ -121,6 +127,8 @@ export default function App() {
   const alarmVoice = useRef<ReturnType<typeof createSpeaker> | null>(null)
   /** When a timer last finished, so "stop the timer" just after still means it. 0 once dealt with. */
   const lastRang = useRef(0)
+  /** What reflexes did since the last model turn, told to the model with the next one (Q75). */
+  const reflexMemory = useRef(makeReflexMemory())
 
   // -- helpers --------------------------------------------------------------
 
@@ -159,7 +167,9 @@ export default function App() {
   const onTimerDone = (t: TimerView) => {
     quietAlarm()
     lastRang.current = Date.now()
-    const line = timerDoneLine(t)
+    reflexMemory.current.timerDone(t)
+    const p = reflexLanguageProfile()
+    const line = timerDoneLine(t, replyLanguageFor(p), p.script)
     const s = store.getState()
     s.pushTurn({ id: newId(), role: 'jarvis', text: line })
     sfx.play('alarm')
@@ -195,7 +205,9 @@ export default function App() {
    * Traced on route 'reflex' so Diagnostics can show they skip the model.
    */
   const runReflex = async (
+    said: string,
     r: Reflex,
+    heard: Heard,
     spk: ReturnType<typeof createSpeaker>,
     stale: () => boolean,
   ): Promise<void> => {
@@ -212,6 +224,8 @@ export default function App() {
           break
         }
       }
+      // Answered in the language the owner's profile asks for (plan 28, Q30).
+      const profile = reflexLanguageProfile()
       const a = answerReflex(r, {
         now: new Date(),
         lastAnswer,
@@ -219,8 +233,11 @@ export default function App() {
         timers: timers.current?.list() ?? [],
         ringing: lastRang.current > 0 && Date.now() - lastRang.current < RING_FOR_MS,
         locale: reflexLocale(),
+        lang: replyLanguageFor(profile, heard),
+        script: profile.script,
       })
       then = a.then
+      reflexMemory.current.record(said, a.say, { volumeChanged: Boolean(a.volume) })
       if (a.silence) {
         quietAlarm()
         lastRang.current = 0
@@ -286,6 +303,7 @@ export default function App() {
         await newConversation()
         store.getState().setTurns([])
         history.current = []
+        reflexMemory.current.clear()
         spk.say('A new conversation has begun. The previous one remains in local history.')
         await spk.end()
       } catch (err) {
@@ -304,9 +322,9 @@ export default function App() {
 
     // Quick commands: stop, volume, timers, the time and date, "say that again".
     // Only whole-utterance matches; everything else goes on to the model.
-    const reflex = reflexesEnabled() ? matchReflex(said) : null
+    const reflex = reflexesEnabled() ? matchReflexIn(said) : null
     if (reflex) {
-      await runReflex(reflex, spk, stale)
+      await runReflex(said, reflex.reflex, reflex.heard, spk, stale)
       return
     }
 
@@ -320,6 +338,15 @@ export default function App() {
     trace.beginTurn(usingBridge ? 'bridge' : 'direct', {
       stt: voiceDiag.engine,
       tts: ttsDiag.engine,
+    })
+
+    // What quick commands did since the last model turn, so "what was that
+    // timer for?" has an answer (Q75). Cleared once this turn has gone out.
+    const reflexNote = reflexMemory.current.note({
+      now: new Date(),
+      timers: timers.current?.list() ?? [],
+      volume: getVolume(),
+      locale: reflexLocale(),
     })
 
     try {
@@ -358,7 +385,9 @@ export default function App() {
             spk.say(forTool(name))
           }
         },
-      })
+      }, reflexNote)
+      // The model has had the note; the exchanges in it need not be told again.
+      if (reflexNote) reflexMemory.current.sent()
 
       if (stale()) return
 
@@ -745,6 +774,8 @@ export default function App() {
     setQuickStart(wakeSettings?.JARVIS_QUICK_START !== '0')
     // Quick commands (plan 06): on unless turned off in Settings → Voice.
     setReflexesEnabled(wakeSettings?.JARVIS_REFLEXES !== '0')
+    // Which language quick commands answer in (plan 28, Q75). No bridge: English.
+    setReflexLanguageProfile(languageProfileFrom(wakeSettings))
     // Timers from before a reload come back now that sound is allowed.
     timers.current ??= browserTimers(onTimerDone)
 
