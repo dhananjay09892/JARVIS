@@ -73,6 +73,7 @@ import { gcalendarConnector } from './connectors/gcalendar.mjs'
 import { gdriveConnector, GDRIVE_OPTIONS } from './connectors/gdrive.mjs'
 import { gmailImapConnector } from './connectors/gmail_imap.mjs'
 import { notionConnector } from './connectors/notion.mjs'
+import { slackConnector } from './connectors/slack.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
 import { createConnectorWatcher } from './connectors/watch.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
@@ -445,6 +446,12 @@ connectors.registerAll([
     create: (ctx) => notionConnector().create(ctx),
   },
   {
+    // Slack (task C14): paste a bot token from your own workspace app; reads
+    // only channels the bot was invited to, from slack.com only.
+    id: 'slack',
+    create: (ctx) => slackConnector().create(ctx),
+    
+  },
     // Obsidian (task C13): grant access to one vault folder; reads its notes
     // locally, never follows links, never writes.
     id: 'obsidian',
