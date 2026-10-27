@@ -353,9 +353,50 @@ export const TOPICS = [
   'health.check',
   'budget.warning', 'budget.exceeded',
   'freeze.on', 'freeze.off',
+  // Added with the bus itself (plan 12 block 1, Q32): the scheduler and
+  // background-task completion, the first two publishers.
+  'workflow.started', 'workflow.finished',
+  'task.finished',
 ] as const
 export const Topic = z.enum(TOPICS)
 export type Topic = z.infer<typeof Topic>
+
+/**
+ * A workflow run (bridge/workflows.mjs), started by the scheduler or by hand.
+ * Counts and names only: never a step's command, path or output.
+ */
+export const WorkflowRun = z.object({
+  runId: Id,
+  workflowId: Id,
+  name: z.string().min(1).max(60),
+  trigger: z.enum(['manual', 'schedule']),
+  status: z.enum(['running', 'completed', 'failed']),
+  stepsTotal: Count,
+  stepsCompleted: Count,
+  startedAt: Ts,
+  finishedAt: Ts.optional(),
+}).refine((r) => r.stepsCompleted <= r.stepsTotal, { message: 'more steps completed than exist', path: ['stepsCompleted'] })
+  .refine((r) => (r.status === 'running') === (r.finishedAt === undefined), {
+    message: 'finishedAt is set exactly when the run has ended', path: ['finishedAt'],
+  })
+export type WorkflowRun = z.infer<typeof WorkflowRun>
+
+/**
+ * A background task (bridge/tasks.mjs) that has ended. `summary` is the
+ * result or the error, clipped; it can hold what the task read, so it is
+ * `private` unless the publisher says otherwise.
+ */
+export const TaskOutcome = z.object({
+  taskId: Id,
+  title: z.string().min(1).max(60),
+  status: z.enum(['done', 'failed', 'cancelled', 'interrupted']),
+  summary: z.string().max(300),
+  costUsd: z.number().nonnegative().optional(),
+  startedAt: Ts.optional(),
+  endedAt: Ts,
+  sensitivity: Sensitivity.default('private'),
+})
+export type TaskOutcome = z.infer<typeof TaskOutcome>
 
 /**
  * Payload schema per topic, where one is fixed. Topics not listed here carry
@@ -374,6 +415,9 @@ const TOPIC_PAYLOADS: Partial<Record<Topic, z.ZodType>> = {
   'device.event': DeviceEvent,
   'mission.progress': Mission,
   'mission.finished': Mission,
+  'workflow.started': WorkflowRun,
+  'workflow.finished': WorkflowRun,
+  'task.finished': TaskOutcome,
 }
 
 export const BusEvent = z.object({
@@ -401,6 +445,7 @@ export const CONTRACTS = {
   Identity, Utterance, ContextSlice, ToolManifest, TurnContext, BrainEvent,
   PolicyRequest, PolicyDecision, ApprovalResolution, Notification, MemoryItem,
   Mission, ChannelMessage, SkillManifest, DeviceEvent, AuditRecord, BusEvent,
+  WorkflowRun, TaskOutcome,
 } as const
 export type ContractName = keyof typeof CONTRACTS
 export type Contract<N extends ContractName> = z.infer<(typeof CONTRACTS)[N]>

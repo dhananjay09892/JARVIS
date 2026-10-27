@@ -30,6 +30,7 @@ import { workspaceServer, workspaceFiles, WORKSPACE_ROOT } from './workspace.mjs
 import { openWorkflows, createApprovalHub, createEngine } from './workflows.mjs'
 import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
+import { createBus } from './bus.mjs'
 import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
@@ -148,6 +149,13 @@ if (auditSetting !== '0' && auditSetting !== 'off') {
 const audit = auditStore ? auditSink(auditStore) : null
 
 /**
+ * Event bus (plan 12, Q32): the scheduler and background tasks publish typed
+ * events for later listeners (notifications, briefings). In memory, counts
+ * only at /bus/stats. JARVIS_EVENT_BUS=off leaves it out: nothing publishes.
+ */
+const bus = process.env.JARVIS_EVENT_BUS === 'off' ? null : createBus()
+
+/**
  * Workflows (see bridge/workflows.mjs). Their approval cards go through a hub
  * that keeps requests pending when no browser is open; nothing here is
  * pre-approved, and a workflow only ever runs the structured steps it stores.
@@ -158,7 +166,7 @@ let engine = null
 if (process.env.JARVIS_WORKFLOWS !== 'off') {
   try {
     workflows = openWorkflows()
-    engine = createEngine({ store: workflows, files: workspaceFiles(), approve: auditedApprove(approvalHub.request, audit, 'system') })
+    engine = createEngine({ store: workflows, files: workspaceFiles(), approve: auditedApprove(approvalHub.request, audit, 'system'), bus })
     engine.start()
   } catch (err) {
     console.error('[jarvis] workflows unavailable:', err.message)
@@ -1356,6 +1364,12 @@ const handleRequest = async (req, res) => {
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(JSON.stringify({ active: activeBrain().id, ...brainMetrics.snapshot() }))
   }
+  // Events published on the bus since the bridge started (plan 12; Q32).
+  // Counts per topic only: never a payload.
+  if (requestUrl.pathname === '/bus/stats' && req.method === 'GET') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+    return res.end(JSON.stringify(bus ? { enabled: true, ...bus.stats() } : { enabled: false }))
+  }
   // ---- Settings → Brains: OpenAI sign-in (plan 22, Q55) --------------
   // Sign in with ChatGPT and the model list. Writes need a real, allowed
   // Origin, as settings writes do. No token ever reaches the page.
@@ -1833,6 +1847,7 @@ try {
 
 const taskManager = createTaskManager({
   store: taskStore,
+  bus,
   runAgent: ({ task, signal, report, ask, wrapApprove }) => {
     const approve = auditedApprove(wrapApprove(approvalHub.request), audit, 'worker')
     // A brief is written by a model that may have read private content, so a

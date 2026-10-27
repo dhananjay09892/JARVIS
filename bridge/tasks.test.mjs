@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createTaskManager } from './tasks.mjs'
+import { createBus, checkBusEvent } from './bus.mjs'
 
 const silent = { error() {} }
 const tick = () => new Promise((r) => setImmediate(r))
@@ -198,3 +199,66 @@ test('an approval and a question can overlap without losing the waiting state', 
   await q
   assert.equal(m.get(id).status, 'running')
 })
+
+/** A real bus whose `task.finished` events the test collects. */
+function taskBus() {
+  const bus = createBus({ log: silent })
+  const events = []
+  bus.subscribe('task.finished', (e) => events.push(e))
+  return { bus, events }
+}
+
+test('every way a task ends publishes one valid task.finished event', async () => {
+  const { bus, events } = taskBus()
+  const { runAgent, runs } = fakeAgent()
+  const m = createTaskManager({ runAgent, bus, concurrency: 5, log: silent })
+  const done = m.spawn({ title: 'Audit', goal: 'look at things' }).task.id
+  const failed = m.spawn({ title: 'Break', goal: 'fail' }).task.id
+  const cancelled = m.spawn({ title: 'Stop', goal: 'wait' }).task.id
+  await tick()
+  runs[0].push(result({ text: 'x'.repeat(1000), costUsd: 0.03 }))
+  runs[1].push(new Error('disk on fire'))
+  m.cancel(cancelled)
+  await tick(); await tick(); await tick()
+  assert.equal(events.length, 3)
+  const by = Object.fromEntries(events.map((e) => [e.payload.taskId, e]))
+  for (const e of events) assert.deepEqual(checkBusEvent(e), { ok: true })
+  assert.deepEqual(
+    { ...by[done].payload, summary: by[done].payload.summary.length },
+    { taskId: done, title: 'Audit', status: 'done', summary: 300, costUsd: 0.03, startedAt: by[done].payload.startedAt, endedAt: by[done].payload.endedAt, sensitivity: 'private' },
+  )
+  assert.equal(by[failed].payload.status, 'failed')
+  assert.equal(by[failed].payload.summary, 'disk on fire')
+  assert.equal(by[cancelled].payload.status, 'cancelled')
+  assert.equal('costUsd' in by[cancelled].payload, false, 'no cost when none was reported')
+  // Ending twice (a cancel after the end) publishes nothing more.
+  m.cancel(done)
+  await tick()
+  assert.equal(events.length, 3)
+})
+
+test('a task cut off by a restart is published as interrupted', async () => {
+  const { bus, events } = taskBus()
+  const saved = [{
+    id: 'told', title: 'Long job', goal: 'g', status: 'running', steps: [], note: '', log: [], result: '', error: '',
+    costUsd: null, createdAt: 1, startedAt: 2, endedAt: null,
+  }]
+  const store = { load: () => saved, save() {}, remove() {} }
+  createTaskManager({ runAgent: fakeAgent().runAgent, store, bus, now: () => 10, log: silent })
+  await tick()
+  assert.equal(events.length, 1)
+  assert.equal(events[0].payload.status, 'interrupted')
+  assert.equal(events[0].payload.endedAt, 10)
+  assert.match(events[0].payload.summary, /restarted/)
+})
+
+test('without a bus, tasks work exactly as before', async () => {
+  const { runAgent, runs } = fakeAgent()
+  const m = createTaskManager({ runAgent, log: silent })
+  const id = m.spawn({ title: 'a', goal: 'g' }).task.id
+  await tick()
+  runs[0].push(result())
+  await tick(); await tick()
+  assert.equal(m.get(id).status, 'done')
+})
+

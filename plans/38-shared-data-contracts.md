@@ -98,7 +98,8 @@ type AuditRecord = { id; ts; actor; request: PolicyRequest; decision: PolicyDeci
 `utterance.received` · `turn.started|finished` · `tool.requested|allowed|denied` ·
 `approval.requested|resolved` · `notification.created|delivered|suppressed` ·
 `device.event` · `presence.changed` · `mission.progress|finished` · `health.check` ·
-`budget.warning|exceeded` · `freeze.on|off`.
+`budget.warning|exceeded` · `freeze.on|off` · `workflow.started|finished` · `task.finished`
+(the last three added with the bus itself, Q32).
 
 ## Phases
 1. ✅ **Design review (3 d):** walk three end-to-end scenarios (voice command with tool call; Telegram approval; morning briefing) and adjust the types.
@@ -143,3 +144,8 @@ The three scenarios run through typed boundaries, and CI fails on a contract-bre
   **Left:** phase 3 (adopt in the bridge; the bridge is `.mjs` and `engines` allows Node 22.13,
   which cannot import `.ts` without a flag — adoption needs either a build step, `tsx`, or a
   Node ≥ 22.18 floor), phase 4 (contract tests on every PR — there is no PR CI yet), phase 5.
+- **2026-10-27 — Event bus topics (Q32, plan 12).** Additive change: topics
+  `workflow.started`, `workflow.finished` (payload `WorkflowRun`) and `task.finished` (payload
+  `TaskOutcome`) added to `TOPICS`, with tests. First step of phase 3 for the bus: the bridge
+  publishes through a plain-JS copy of `BusEvent` in `bridge/bus.mjs`, kept in step with the
+  contract by a parity test (same pattern as `bridge/brains/events.mjs`).

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { openWorkflows, validateWorkflow, describeWorkflow, isDue, createApprovalHub, createEngine } from './workflows.mjs'
 import { workflowOperations } from './workflow-tools.mjs'
+import { createBus, checkBusEvent } from './bus.mjs'
 
 const silent = { error() {} }
 const recipe = (extra = {}) => ({
@@ -167,3 +168,50 @@ test('the model cannot save, change or delete a workflow without approval', asyn
   assert.equal((await ops.remove({ name: 'Morning check' })).deleted, true)
   assert.equal((await ops.create({ ...recipe(), steps: [{ type: 'run_command', cwd: 'Repo' }] })).saved, false)
 })
+
+test('the scheduler publishes workflow.started and workflow.finished, with counts and no step details', async () => {
+  const store = openWorkflows({ file: ':memory:' })
+  const w = saved(store)
+  const bus = createBus({ log: silent })
+  const events = []
+  bus.subscribe('workflow.*', (e) => events.push(e))
+  const files = { list: async () => [1], directory: async () => 'C:\\Repo' }
+  const engine = createEngine({
+    store, files, bus, log: silent, approve: async () => false,
+    clock: () => new Date(2026, 9, 15, 9, 0),
+  })
+  assert.equal(engine.tick(), 1)
+  await new Promise((r) => setTimeout(r, 30))
+  assert.deepEqual(events.map((e) => e.topic), ['workflow.started', 'workflow.finished'])
+  for (const e of events) assert.deepEqual(checkBusEvent(e), { ok: true })
+  const [start, end] = events.map((e) => e.payload)
+  assert.equal(start.runId, end.runId)
+  assert.equal(start.runId, store.runs(w.id)[0].id)
+  assert.deepEqual(
+    { ...start },
+    { runId: start.runId, workflowId: w.id, name: 'Morning check', trigger: 'schedule', status: 'running', stepsTotal: 2, stepsCompleted: 0, startedAt: start.startedAt },
+  )
+  assert.equal(end.status, 'failed', 'the action step was not approved')
+  assert.equal(end.stepsCompleted, 1)
+  assert.ok(end.finishedAt >= end.startedAt)
+  assert.ok(!JSON.stringify(events).includes('npm test'), 'no command in the events')
+})
+
+test('a manual run that completes publishes completed', async () => {
+  const store = openWorkflows({ file: ':memory:' })
+  const v = validateWorkflow({ name: 'Look', steps: [{ type: 'list_files', path: 'Repo' }] })
+  store.create(v.value)
+  const w = store.get('Look')
+  const bus = createBus({ log: silent })
+  const events = []
+  bus.subscribe('workflow.finished', (e) => events.push(e))
+  const engine = createEngine({ store, files: { list: async () => [] }, bus, log: silent, approve: async () => true })
+  const r = await engine.run(w, 'manual')
+  await r.done
+  await new Promise((res) => setImmediate(res))
+  assert.equal(events.length, 1)
+  assert.equal(events[0].payload.status, 'completed')
+  assert.equal(events[0].payload.trigger, 'manual')
+  assert.equal(events[0].payload.stepsCompleted, 1)
+})
+

@@ -242,7 +242,13 @@ export function createApprovalHub({ ttlMs = APPROVAL_TTL_MS } = {}) {
 // Running
 // ---------------------------------------------------------------------------
 
-export function createEngine({ store, files, approve, execute, log = console, clock = () => new Date() }) {
+/**
+ * Runs workflows and, with `start()`, is the bridge's scheduler. With a `bus`
+ * (bus.mjs, plan 12) every run publishes `workflow.started` and
+ * `workflow.finished`: names, trigger and step counts only, never a step's
+ * command, path or output.
+ */
+export function createEngine({ store, files, approve, execute, bus = null, log = console, clock = () => new Date() }) {
   const active = new Set()
 
   async function run(workflow, trigger) {
@@ -250,6 +256,19 @@ export function createEngine({ store, files, approve, execute, log = console, cl
     active.add(workflow.id)
     const { id, steps } = store.startRun(workflow, trigger)
     const save = (status, finished) => store.saveRun(id, status, steps, finished)
+    const startedAt = clock().getTime()
+    const announce = (status) => bus?.publish(status === 'running' ? 'workflow.started' : 'workflow.finished', {
+      runId: id,
+      workflowId: workflow.id,
+      name: workflow.name,
+      trigger,
+      status,
+      stepsTotal: steps.length,
+      stepsCompleted: steps.filter((s) => s.status === 'completed').length,
+      startedAt,
+      ...(status !== 'running' && { finishedAt: Math.max(startedAt, clock().getTime()) }),
+    })
+    announce('running')
     const finish = (async () => {
       let failed = false
       try {
@@ -288,9 +307,11 @@ export function createEngine({ store, files, approve, execute, log = console, cl
           }
         }
         save(failed ? 'failed' : 'completed', true)
+        announce(failed ? 'failed' : 'completed')
       } catch (err) {
         log.error('[jarvis] workflow run crashed:', err)
         save('failed', true)
+        announce('failed')
       } finally {
         active.delete(workflow.id)
       }

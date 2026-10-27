@@ -495,6 +495,7 @@ the browser. `JARVIS_MODEL` and `JARVIS_EFFORT` can also be set there when using
 | `JARVIS_MEMORY_DIR` | `%LOCALAPPDATA%\JARVIS\memory` | Where the memory database lives |
 | `JARVIS_MEMORY_RETENTION_DAYS` | `0` (keep) | Delete conversations and journal older than N days at startup |
 | `JARVIS_WORKFLOWS` | on | `off` disables workflows and the scheduler |
+| `JARVIS_EVENT_BUS` | on | `off` builds no event bus, so the scheduler and background tasks publish nothing (plan 12) |
 | `JARVIS_FILE_ROOTS` | — | Roots the `/file` endpoint may serve from |
 | `JARVIS_VOICE_ID` | — | ElevenLabs voice id |
 | `JARVIS_HINDI_VOICE_ID` | `JARVIS_VOICE_ID` | Optional Hindi-capable ElevenLabs voice id |
