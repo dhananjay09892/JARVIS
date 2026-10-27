@@ -299,7 +299,7 @@ this file decides *in what order*.
 - **Done when:** reflex commands respond without a model call, measured in traces.
 
 ### Q75 · Plans 06 + 28 · Reflexes in Hindi and Gujarati, and the model knows about them
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q25, Q30
 - **Scope:** Remainder of 06 phase 1. Add Hindi and Gujarati (and common mixed) phrasings for each reflex family in `src/lib/reflex.ts`, with the same whole-utterance rule and must-not-match tests, answering in the language from the Q30 profile. Tell the brain what reflexes did (running timers, volume changes, the last reflex exchange) as a short line in the next turn's context, so "what was that timer for?" works.
 - **Done when:** each reflex family has tested Hindi and Gujarati phrasings, and a follow-up question about a timer is answered correctly against a mocked brain in a test.
@@ -343,10 +343,16 @@ this file decides *in what order*.
 - **Done when:** two people with different profiles each get replies in their own language in a test, and the owner's profile is unchanged for unknown speakers.
 
 ### Q31 · Plan 29 · Wizard audit and hardware self-test
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q06
 - **Scope:** 29 phases 1–2. Audit the current welcome wizard; add mic level, noise floor, speaker and echo tests with fix-it advice per failure.
 - **Done when:** the wizard catches a muted mic and a wrong default device.
+
+### Q77 · Plan 29 · Setup drop-off metric and the rest of the hardware check
+- **Status:** todo
+- **Depends on:** Q31
+- **Scope:** The rest of 29 phases 1–2 after Q31. Record, locally and only when the owner opts in, which wizard step people reach and finish (and the self-test's finding ids, never audio or device names), and show the completion rate and the most common self-test failures in Diagnostics (16). Add a "Choose microphone" control so a wrong default can be fixed in JARVIS as well as in Windows (set it in `getMic()` in `src/lib/audio.ts`, which feeds the wake word, VAD and clap; the browser's own speech recognition always uses the system default, so the control must say so), and the optional camera check from the plan.
+- **Done when:** a test shows a completed and an abandoned wizard counted correctly with metrics on, nothing stored with them off, and the self-test using the microphone chosen in Settings.
 
 ## Phase 2 · Proactive and connected
 

@@ -34,7 +34,9 @@ because the installer is not code-signed yet: click **More info**, then
 **Run anyway**.
 
 **3. First start.** JARVIS opens in its own window and shows a short welcome:
-**Sign in** with your Claude account (the Claude software is already included in the
+a fifteen-second **microphone and speakers check** (it says what to fix if the
+microphone is blocked, muted or the wrong one; you can skip it and run it later
+from Settings), then **sign in** with your Claude account (the Claude software is already included in the
 installer — there is nothing else to install), optionally paste an ElevenLabs key
 for a better voice (you can skip it), then click **INITIALISE**, allow the
 microphone, and say **"Hey Jarvis"**.

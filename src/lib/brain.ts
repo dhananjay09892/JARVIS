@@ -28,14 +28,17 @@ export async function ask(
   prompt: string,
   history: Msg[],
   handlers: AskHandlers,
+  /** Context from the page for this turn only, e.g. what quick commands did (reflexNote.ts). */
+  context = '',
 ): Promise<{ text: string; tools: string[] }> {
   // On the bridge the reply language comes from the owner's language profile
-  // (plan 28 phase 2, Q30), which the bridge adds to every turn itself, so the
-  // page sends none. The direct path has no settings store and keeps English.
-  if (usingBridge) return bridge.ask(prompt, handlers)
+  // (plan 28 phase 2, Q30), which the bridge adds to every turn itself; the
+  // page adds only its own context. The direct path has no settings store and
+  // keeps English.
+  if (usingBridge) return bridge.ask(prompt, handlers, context)
   const preface =
     `Reply in English. The user's message may be in English, Gujarati, or Hindi; ` +
-    `understand it and answer in English.`
+    `understand it and answer in English.` + (context ? `\n${context}` : '')
   return direct.ask([...history, { role: 'user', content: `${preface}\n\n${prompt}` }], handlers)
 }
 

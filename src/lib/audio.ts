@@ -21,6 +21,11 @@ export async function getMic(): Promise<MediaStream> {
   return stream
 }
 
+/** The shared stream if something has already opened it, without opening it. */
+export function currentMic(): MediaStream | null {
+  return stream
+}
+
 export async function startAnalyser(): Promise<void> {
   if (analyser) return
   const s = await getMic()
