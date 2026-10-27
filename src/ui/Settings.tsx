@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { BACKEND } from '../config'
 import { Connectors } from './Connectors'
 import { OpenAISignIn } from './OpenAISignIn'
+import { SelfTest } from './SelfTest'
 import { setQuickStart } from '../lib/tts'
 import { setReflexesEnabled } from '../lib/reflex'
 import {
@@ -23,8 +24,9 @@ import {
 /**
  * Settings and first-run setup, in one dialog.
  *
- * The first time JARVIS opens (setupDone is not "1") it shows a three-step
- * wizard: Claude sign-in, an optional voice key, then done. Afterwards the same
+ * The first time JARVIS opens (setupDone is not "1") it shows a four-step
+ * wizard: microphone and speakers check (plan 29, Q31), Claude sign-in, an
+ * optional voice key, then done. Afterwards the same
  * button opens the full settings form. Every step can be skipped — nothing
  * here is required for JARVIS to run on the browser's own speech.
  */
@@ -182,7 +184,7 @@ export function Settings() {
   }, [])
 
   useEffect(() => {
-    if (open && (step === 0 || !wizard)) void checkClaude()
+    if (open && (step === 1 || !wizard)) void checkClaude()
   }, [open, step, wizard, checkClaude])
 
   if (BACKEND !== 'bridge') return null
@@ -372,7 +374,7 @@ export function Settings() {
         }}
       >
         <header className="mem-head">
-          <h2 id="set-title">{wizard ? `Welcome — step ${step + 1} of 3` : 'Settings'}</h2>
+          <h2 id="set-title">{wizard ? `Welcome — step ${step + 1} of 4` : 'Settings'}</h2>
           <button onClick={close}>{wizard ? 'Skip setup' : 'Close'}</button>
         </header>
         {note && <p role="status" className="mem-note">{note}</p>}
@@ -380,7 +382,16 @@ export function Settings() {
 
         {wizard && step === 0 && (
           <>
-            <h3>1 · Claude</h3>
+            <h3>1 · Microphone and speakers</h3>
+            <SelfTest />
+            <p>
+              <button onClick={() => setStep(1)}>Next</button>
+            </p>
+          </>
+        )}
+        {wizard && step === 1 && (
+          <>
+            <h3>2 · Claude</h3>
             <p className="mem-note">JARVIS thinks with your own Claude account. There is no API key to copy.</p>
             <p role="status">{claudeLine}</p>
             <button
@@ -390,28 +401,29 @@ export function Settings() {
               Sign in
             </button>
             <button onClick={checkClaude}>Check again</button>
-            <button onClick={() => setStep(1)}>Next</button>
-          </>
-        )}
-        {wizard && step === 1 && (
-          <>
-            <h3>2 · Better voice (optional)</h3>
-            {keyBlock}
-            <p>
-              <button onClick={() => setStep(0)}>Back</button>
-              <button onClick={() => setStep(2)}>{s?.ELEVENLABS_API_KEY_set ? 'Next' : 'Skip'}</button>
-            </p>
+            <button onClick={() => setStep(0)}>Back</button>
+            <button onClick={() => setStep(2)}>Next</button>
           </>
         )}
         {wizard && step === 2 && (
           <>
-            <h3>3 · All set</h3>
+            <h3>3 · Better voice (optional)</h3>
+            {keyBlock}
+            <p>
+              <button onClick={() => setStep(1)}>Back</button>
+              <button onClick={() => setStep(3)}>{s?.ELEVENLABS_API_KEY_set ? 'Next' : 'Skip'}</button>
+            </p>
+          </>
+        )}
+        {wizard && step === 3 && (
+          <>
+            <h3>4 · All set</h3>
             <p>
               Click INITIALISE, allow the microphone when your browser asks, then say <b>“Hey Jarvis”</b>. You can
               change any of this later under SETTINGS.
             </p>
             {listeningNote}
-            <button onClick={() => setStep(1)}>Back</button>
+            <button onClick={() => setStep(2)}>Back</button>
             <button disabled={busy} onClick={finish}>Finish</button>
           </>
         )}
@@ -427,6 +439,9 @@ export function Settings() {
               Sign in
             </button>
             <button onClick={checkClaude}>Check again</button>
+
+            <h3>Microphone and speakers</h3>
+            <SelfTest />
 
             <h3>Voice</h3>
             {keyBlock}
