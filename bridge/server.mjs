@@ -458,8 +458,8 @@ connectors.registerAll([
     // only channels the bot was invited to, from slack.com only.
     id: 'slack',
     create: (ctx) => slackConnector().create(ctx),
-    
   },
+  {
     // Obsidian (task C13): grant access to one vault folder; reads its notes
     // locally, never follows links, never writes.
     id: 'obsidian',
