@@ -4,7 +4,7 @@ import { BACKEND } from '../config'
 import { Connectors } from './Connectors'
 import { OpenAISignIn } from './OpenAISignIn'
 import { setQuickStart } from '../lib/tts'
-import { setReflexesEnabled } from '../lib/reflex'
+import { languageProfileFrom, setReflexesEnabled, setReflexLanguageProfile } from '../lib/reflex'
 import {
   getSettings,
   getSettingsSchema,
@@ -212,6 +212,12 @@ export function Settings() {
       setS(result)
       return savedNote(result)
     })
+
+  /** A language setting: saved, and quick commands answer in the new language at once (Q75). */
+  const patchLanguage = (change: Record<string, string>) => {
+    setReflexLanguageProfile(languageProfileFrom({ ...s, ...change }))
+    return patchSetting(change)
+  }
 
   const model = def(schema, 'JARVIS_MODEL')
   const claudeAuth = def(schema, 'JARVIS_CLAUDE_AUTH')
@@ -495,7 +501,7 @@ export function Settings() {
                   aria-label="Main language"
                   title={langPrimary.help || undefined}
                   value={s.JARVIS_LANG_PRIMARY || langPrimary.default}
-                  onChange={(e) => patchSetting({ JARVIS_LANG_PRIMARY: e.target.value })}
+                  onChange={(e) => patchLanguage({ JARVIS_LANG_PRIMARY: e.target.value })}
                 >
                   {(langPrimary.options ?? []).map((x) => (
                     <option key={x} value={x}>
@@ -510,7 +516,7 @@ export function Settings() {
                   aria-label="Second language"
                   title={langSecondary.help || undefined}
                   value={s.JARVIS_LANG_SECONDARY || langSecondary.default}
-                  onChange={(e) => patchSetting({ JARVIS_LANG_SECONDARY: e.target.value })}
+                  onChange={(e) => patchLanguage({ JARVIS_LANG_SECONDARY: e.target.value })}
                 >
                   {(langSecondary.options ?? []).map((x) => (
                     <option key={x} value={x}>
@@ -527,7 +533,7 @@ export function Settings() {
                   aria-label="Reply language"
                   title={replyLanguage.help || undefined}
                   value={s.JARVIS_REPLY_LANGUAGE || replyLanguage.default}
-                  onChange={(e) => patchSetting({ JARVIS_REPLY_LANGUAGE: e.target.value })}
+                  onChange={(e) => patchLanguage({ JARVIS_REPLY_LANGUAGE: e.target.value })}
                 >
                   {(replyLanguage.options ?? []).map((x) => (
                     <option key={x} value={x}>
@@ -542,7 +548,7 @@ export function Settings() {
                   aria-label="Gujarati and Hindi script"
                   title={textScript.help || undefined}
                   value={s.JARVIS_TEXT_SCRIPT || textScript.default}
-                  onChange={(e) => patchSetting({ JARVIS_TEXT_SCRIPT: e.target.value })}
+                  onChange={(e) => patchLanguage({ JARVIS_TEXT_SCRIPT: e.target.value })}
                 >
                   {(textScript.options ?? []).map((x) => (
                     <option key={x} value={x}>

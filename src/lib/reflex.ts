@@ -15,8 +15,14 @@
  * things on this page (its own voice, its own timers), so they never pass
  * through the policy engine: there is nothing for it to decide.
  *
- * English only for now. Hindi and Gujarati phrasings are a follow-up (plan 28).
+ * English here; Hindi and Gujarati phrasings, in their own scripts and in
+ * Latin letters, are in reflexIndic.ts and answer in the language the owner's
+ * language profile asks for (plan 28, Q75; reflexSay.ts).
  */
+import { matchIndic, type Heard } from './reflexIndic.ts'
+import { indicPhrasebook, type Phrasebook } from './reflexSay.ts'
+
+export type { Heard }
 
 export type VolumeOp = 'up' | 'down' | 'mute' | 'unmute' | 'set'
 
@@ -50,19 +56,45 @@ const LEAD = /^(?:(?:please|ok|okay|hey|um|uh|er|so|and|now|right|alright|all ri
 const ASK = /^(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?)/
 const TAIL = /(?:\s+(?:please|now|for me|thanks|thank you|sir|ma'am|madam|right now|then))+$/
 
-/** Lower case, plain apostrophes, no sentence punctuation (decimal points kept), polite words trimmed. */
+// Hindi and Gujarati polite words and fillers, in both scripts ("ज़रा", "please", "जी", "ને").
+const INDIC_LEAD = /^(?:(?:कृपया|जरा|प्लीज|अरे|ओके|ठीक है|kripya|zara|jara|plz|arre|જરા|પ્લીઝ|ઓકે|અરે|મહેરબાની કરીને|meherbani karine)\s+)+/u
+const INDIC_TAIL = /(?:\s+(?:जी|प्लीज|ना|यार|सर|ji|plz|na|yaar|yar|bhai|પ્લીઝ|ને|ભાઈ|સર|ne|જરા|जरा|zara|jara))+$/u
+
+/** Devanagari letters written with a nukta, as the plain letter (क़ → क). */
+const NUKTA_LETTERS: Record<string, string> = {
+  '\u0958': 'क', '\u0959': 'ख', '\u095A': 'ग', '\u095B': 'ज', '\u095C': 'ड', '\u095D': 'ढ', '\u095E': 'फ', '\u095F': 'य',
+}
+/** Gujarati postpositions people write joined to the word: "મિનિટનું" is matched as "મિનિટ નું". */
+const GU_JOINED = /(\p{Script=Gujarati})(નું|નો|ની|ના|માં|વાળું|વાળો|વાળી|વાળા)(?=\s|$)/gu
+
+/**
+ * Lower case, plain apostrophes, no sentence punctuation (decimal points kept),
+ * polite words trimmed. For Hindi and Gujarati also: no nukta or zero-width
+ * joiners, one form of the nasal mark, Indian digits as 0-9, and Gujarati
+ * postpositions split off, so one spelling of each pattern covers the common
+ * ways speech-to-text writes it.
+ */
 export function normalise(text: string): string {
   let s = text
     .toLowerCase()
     .replace(/[‘’ʼ]/g, "'")
+    .replace(/[\u0958-\u095F]/g, (c) => NUKTA_LETTERS[c] ?? c)
+    .replace(/[\u093C\u0ABC\u200C\u200D]/g, '')
+    .replace(/\u0901/g, '\u0902')
+    .replace(/\u0A81/g, '\u0A82')
+    .replace(/[\u0966-\u096F]/g, (c) => String(c.charCodeAt(0) - 0x0966))
+    .replace(/[\u0AE6-\u0AEF]/g, (c) => String(c.charCodeAt(0) - 0x0ae6))
     .replace(/(\d)\.(\d)/g, '$1\u0000$2')
-    .replace(/[.,!?;:"()…]+/g, ' ')
+    .replace(/[.,!?;:"()…।॥]+/g, ' ')
     .replace(/\u0000/g, '.')
     .replace(/-/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+  s = s.replace(GU_JOINED, '$1 $2')
   // Twice, so "okay can you please ... now thanks" loses both ends.
-  for (let i = 0; i < 2; i++) s = s.replace(LEAD, '').replace(ASK, '').replace(TAIL, '').trim()
+  for (let i = 0; i < 2; i++) {
+    s = s.replace(LEAD, '').replace(ASK, '').replace(TAIL, '').replace(INDIC_LEAD, '').replace(INDIC_TAIL, '').trim()
+  }
   return s
 }
 
@@ -177,8 +209,27 @@ const notLabel = (l?: string) => !l || /^(?:the|my|all|a|an|this|that)$/.test(l.
  * Only whole-utterance matches count.
  */
 export function matchReflex(text: string): Reflex | null {
+  return matchReflexIn(text)?.reflex ?? null
+}
+
+/**
+ * The reflex and the language it was asked in ('mixed' for romanised words
+ * Hindi and Gujarati share), or null to send the utterance to the model.
+ */
+export function matchReflexIn(text: string): { reflex: Reflex; heard: Heard } | null {
   const s = normalise(text)
   if (!s || s.length > 120) return null
+  const en = matchEnglish(s)
+  if (en) return { reflex: en, heard: 'en' }
+  const indic = matchIndic(s)
+  if (!indic) return null
+  // The same limits as English: a timer is a second to a day.
+  const r = indic.reflex
+  if (r.kind === 'timer-set' && (r.ms < 1000 || r.ms > MAX_TIMER_MS)) return null
+  return indic
+}
+
+function matchEnglish(s: string): Reflex | null {
 
   if (STOP.test(s)) return { kind: 'stop' }
   if (TIME.test(s)) return { kind: 'time' }
@@ -307,6 +358,10 @@ export function nextVolume(cur: VolumeState, op: VolumeOp, level?: number): Volu
 
 export type TimerView = { id: string; ms: number; label?: string; endsAt: number }
 
+/** The language a reflex answers in, and how Gujarati and Hindi are written. */
+export type ReplyLang = 'en' | 'hi' | 'gu'
+export type Script = 'native' | 'roman'
+
 export type ReflexContext = {
   now: Date
   /** The last thing JARVIS said this session, or '' if nothing yet. */
@@ -316,6 +371,9 @@ export type ReflexContext = {
   /** Whether a finished timer is ringing right now. */
   ringing: boolean
   locale?: string
+  /** The language to answer in (replyLanguageFor). English when absent. */
+  lang?: ReplyLang
+  script?: Script
 }
 
 /** What App.respond carries out. Everything a reflex changes is named here. */
@@ -331,48 +389,73 @@ export type ReflexAnswer = {
   silence?: boolean
 }
 
-const pct = (v: number) => `${Math.round(v * 100)} percent`
+const englishBook = (locale: string): Phrasebook => ({
+  time: (d) => `It's ${speakTime(d, locale)}.`,
+  date: (d) => `It's ${speakDate(d, locale)}.`,
+  duration: speakDuration,
+  timerName,
+  nothingYet: "I haven't said anything yet, sir.",
+  muted: 'Muted. Say "unmute" to hear me again.',
+  loudest: "That's as loud as I go, sir.",
+  quietest: 'That is as quiet as I go. Say "mute" for silence.',
+  volume: (p) => `Volume ${p} percent.`,
+  tooMany: (n) => `You already have ${n} timers running, sir. Cancel one first.`,
+  timerSet: (dur, label) => `Timer set for ${dur}${label ? ` for ${label.replace(/^(?:the|my)\s+/, 'the ')}` : ''}.`,
+  noTimers: 'There are no timers running.',
+  cantFind: (label) => `I can't find a ${label} timer.`,
+  cancelled: (name) => `Cancelled ${name}.`,
+  cancelledAll: (n) => `Cancelled all ${n} timers.`,
+  cancelledOne: (name, rest) => `Cancelled ${name}. ${rest === 1 ? 'One other timer is' : `${rest} other timers are`} still running.`,
+  left: (dur, name) => `${dur} left on ${name}.`,
+  several: (n, lines, more) =>
+    `${n} timers. ${lines.join('; ')}${more ? `, and ${more} more` : ''}.`.replace(/^(\d+ timers\. )the/, '$1The'),
+  timerDone: (name) => `Sir, ${name} is done.`,
+})
+
+/** The words for this reply: English, or Hindi or Gujarati in the chosen script. */
+export function phrasebook(lang: ReplyLang = 'en', script: Script = 'native', locale = 'en-GB'): Phrasebook {
+  return lang === 'en' ? englishBook(locale) : indicPhrasebook(lang, script)
+}
 
 export function answerReflex(r: Reflex, ctx: ReflexContext): ReflexAnswer {
-  const locale = ctx.locale ?? 'en-GB'
+  const say = phrasebook(ctx.lang, ctx.script, ctx.locale ?? 'en-GB')
   const soonest = [...ctx.timers].sort((a, b) => a.endsAt - b.endsAt)
-  const left = (t: TimerView) => speakDuration(Math.max(0, t.endsAt - ctx.now.getTime()))
+  const left = (t: TimerView) => say.duration(Math.max(0, t.endsAt - ctx.now.getTime()))
 
   switch (r.kind) {
     case 'stop':
       return { say: null, then: 'dormant', silence: true }
 
     case 'time':
-      return { say: `It's ${speakTime(ctx.now, locale)}.`, then: 'listen' }
+      return { say: say.time(ctx.now), then: 'listen' }
 
     case 'date':
-      return { say: `It's ${speakDate(ctx.now, locale)}.`, then: 'listen' }
+      return { say: say.date(ctx.now), then: 'listen' }
 
     case 'repeat':
       return ctx.lastAnswer.trim()
         ? { say: ctx.lastAnswer, then: 'listen' }
-        : { say: "I haven't said anything yet, sir.", then: 'listen' }
+        : { say: say.nothingYet, then: 'listen' }
 
     case 'volume': {
       const v = nextVolume(ctx.volume, r.op, r.level)
       // Muting says so first, at the old volume; there is nothing to hear after.
-      if (v.muted) return { say: 'Muted. Say "unmute" to hear me again.', then: 'listen', volume: v }
+      if (v.muted) return { say: say.muted, then: 'listen', volume: v }
       if (r.op === 'up' && ctx.volume.level >= 1 && !ctx.volume.muted) {
-        return { say: "That's as loud as I go, sir.", then: 'listen', volume: v }
+        return { say: say.loudest, then: 'listen', volume: v }
       }
       if (r.op === 'down' && ctx.volume.level <= VOLUME_FLOOR && !ctx.volume.muted) {
-        return { say: 'That is as quiet as I go. Say "mute" for silence.', then: 'listen', volume: v }
+        return { say: say.quietest, then: 'listen', volume: v }
       }
-      return { say: `Volume ${pct(v.level)}.`, then: 'listen', volume: v }
+      return { say: say.volume(Math.round(v.level * 100)), then: 'listen', volume: v }
     }
 
     case 'timer-set': {
       if (ctx.timers.length >= MAX_TIMERS) {
-        return { say: `You already have ${MAX_TIMERS} timers running, sir. Cancel one first.`, then: 'listen' }
+        return { say: say.tooMany(MAX_TIMERS), then: 'listen' }
       }
-      const name = r.label ? ` for ${r.label.replace(/^(?:the|my)\s+/, 'the ')}` : ''
       return {
-        say: `Timer set for ${speakDuration(r.ms)}${name}.`,
+        say: say.timerSet(say.duration(r.ms), r.label),
         then: 'listen',
         startTimer: r.label ? { ms: r.ms, label: r.label } : { ms: r.ms },
       }
@@ -382,18 +465,18 @@ export function answerReflex(r: Reflex, ctx: ReflexContext): ReflexAnswer {
       if (!ctx.timers.length) {
         return ctx.ringing
           ? { say: null, then: 'listen', silence: true }
-          : { say: 'There are no timers running.', then: 'listen' }
+          : { say: say.noTimers, then: 'listen' }
       }
       if (r.label) {
         const want = r.label.replace(/^(?:the|my)\s+/, '')
         const hit = soonest.filter((t) => t.label?.replace(/^(?:the|my)\s+/, '') === want)
-        if (!hit.length) return { say: `I can't find a ${want} timer.`, then: 'listen' }
-        return { say: `Cancelled ${timerName(hit[0])}.`, then: 'listen', cancelTimers: hit.map((t) => t.id), silence: ctx.ringing }
+        if (!hit.length) return { say: say.cantFind(want), then: 'listen' }
+        return { say: say.cancelled(say.timerName(hit[0])), then: 'listen', cancelTimers: hit.map((t) => t.id), silence: ctx.ringing }
       }
       if (r.all || ctx.timers.length === 1) {
         const n = ctx.timers.length
         return {
-          say: n === 1 ? `Cancelled ${timerName(ctx.timers[0])}.` : `Cancelled all ${n} timers.`,
+          say: n === 1 ? say.cancelled(say.timerName(ctx.timers[0])) : say.cancelledAll(n),
           then: 'listen',
           cancelTimers: ctx.timers.map((t) => t.id),
           silence: ctx.ringing,
@@ -401,9 +484,8 @@ export function answerReflex(r: Reflex, ctx: ReflexContext): ReflexAnswer {
       }
       // Several running and none named: the one that would ring next.
       const t = soonest[0]
-      const rest = ctx.timers.length - 1
       return {
-        say: `Cancelled ${timerName(t)}. ${rest === 1 ? 'One other timer is' : `${rest} other timers are`} still running.`,
+        say: say.cancelledOne(say.timerName(t), ctx.timers.length - 1),
         then: 'listen',
         cancelTimers: [t.id],
         silence: ctx.ringing,
@@ -411,19 +493,83 @@ export function answerReflex(r: Reflex, ctx: ReflexContext): ReflexAnswer {
     }
 
     case 'timer-query': {
-      if (!soonest.length) return { say: 'There are no timers running.', then: 'listen' }
-      if (soonest.length === 1) return { say: `${left(soonest[0])} left on ${timerName(soonest[0])}.`, then: 'listen' }
-      const lines = soonest.slice(0, 3).map((t) => `${timerName(t)}: ${left(t)}`)
-      const more = soonest.length > 3 ? `, and ${soonest.length - 3} more` : ''
-      return { say: `${soonest.length} timers. ${lines.join('; ')}${more}.`.replace(/^(\d+ timers\. )the/, '$1The'), then: 'listen' }
+      if (!soonest.length) return { say: say.noTimers, then: 'listen' }
+      if (soonest.length === 1) return { say: say.left(left(soonest[0]), say.timerName(soonest[0])), then: 'listen' }
+      const lines = soonest.slice(0, 3).map((t) => `${say.timerName(t)}: ${left(t)}`)
+      return { say: say.several(soonest.length, lines, Math.max(0, soonest.length - 3)), then: 'listen' }
     }
   }
 }
 
 /** What JARVIS says when a timer finishes. */
-export function timerDoneLine(t: { ms: number; label?: string }): string {
-  const name = timerName(t)
-  return `Sir, ${name} is done.`
+export function timerDoneLine(t: { ms: number; label?: string }, lang: ReplyLang = 'en', script: Script = 'native'): string {
+  const say = phrasebook(lang, script)
+  return say.timerDone(say.timerName(t))
+}
+
+// ---------------------------------------------------------------------------
+// Which language a reflex answers in (plan 28, Q30's language profile)
+// ---------------------------------------------------------------------------
+
+export type ReflexLanguageProfile = {
+  primary: ReplyLang
+  secondary: ReplyLang | 'none'
+  reply: 'primary' | 'mirror' | ReplyLang
+  script: Script
+}
+
+export const DEFAULT_LANGUAGE_PROFILE: ReflexLanguageProfile = Object.freeze({
+  primary: 'en',
+  secondary: 'none',
+  reply: 'primary',
+  script: 'native',
+})
+
+const LANGS: readonly string[] = ['en', 'hi', 'gu']
+
+/**
+ * The profile from the settings the bridge serves (JARVIS_LANG_PRIMARY and so
+ * on). The same fallbacks as bridge/language-profile.mjs: anything missing or
+ * unknown is the default, so reflexes keep answering whatever arrives.
+ */
+export function languageProfileFrom(s: Partial<Record<string, unknown>> | null | undefined): ReflexLanguageProfile {
+  const pick = <T extends string>(v: unknown, allowed: readonly string[], d: T): T =>
+    typeof v === 'string' && allowed.includes(v) ? (v as T) : d
+  const primary = pick<ReplyLang>(s?.JARVIS_LANG_PRIMARY, LANGS, 'en')
+  let secondary = pick<ReplyLang | 'none'>(s?.JARVIS_LANG_SECONDARY, ['none', ...LANGS], 'none')
+  if (secondary === primary) secondary = 'none'
+  return {
+    primary,
+    secondary,
+    reply: pick<ReflexLanguageProfile['reply']>(s?.JARVIS_REPLY_LANGUAGE, ['primary', 'mirror', ...LANGS], 'primary'),
+    script: pick<Script>(s?.JARVIS_TEXT_SCRIPT, ['native', 'roman'], 'native'),
+  }
+}
+
+/**
+ * The language a reflex answers in. The profile's policy, as for the model:
+ * always the main language, always a fixed one, or (mirror) the language the
+ * command was said in. Romanised words both languages share are answered in
+ * whichever of Hindi or Gujarati the owner speaks, Hindi if neither.
+ * `heard` absent (a timer ringing, not a reply) mirrors the main language.
+ */
+export function replyLanguageFor(p: ReflexLanguageProfile, heard?: Heard): ReplyLang {
+  if (p.reply === 'primary') return p.primary
+  if (p.reply !== 'mirror') return p.reply
+  if (!heard) return p.primary
+  if (heard !== 'mixed') return heard
+  if (p.primary !== 'en') return p.primary
+  if (p.secondary === 'hi' || p.secondary === 'gu') return p.secondary
+  return 'hi'
+}
+
+let profile: ReflexLanguageProfile = DEFAULT_LANGUAGE_PROFILE
+
+/** The owner's language profile, as last loaded from or saved in Settings. */
+export const reflexLanguageProfile = (): ReflexLanguageProfile => profile
+
+export function setReflexLanguageProfile(p: ReflexLanguageProfile): void {
+  profile = p
 }
 
 // ---------------------------------------------------------------------------

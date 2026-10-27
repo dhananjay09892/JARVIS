@@ -108,5 +108,6 @@ test('the bridge adds the profile to every turn, and the page no longer forces E
   const server = readFileSync(new URL('./server.mjs', import.meta.url), 'utf8')
   assert.match(server, /languagePreface\(readLanguageProfile\(setting\), msg\.text\)/)
   const brain = readFileSync(new URL('../src/lib/brain.ts', import.meta.url), 'utf8')
-  assert.match(brain, /if \(usingBridge\) return bridge\.ask\(prompt, handlers\)/)
+  // The page adds only its own context (what quick commands did, Q75), never a language line.
+  assert.match(brain, /if \(usingBridge\) return bridge\.ask\(prompt, handlers, context\)/)
 })

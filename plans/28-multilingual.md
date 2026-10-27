@@ -30,7 +30,7 @@ briefings and chat replies all follow it.
 4. **Code-switching STT (1 w):** evaluate multilingual models (Scribe auto-detect, Whisper large/turbo) on Hinglish/Gujlish; add hotwords and name lists from memory; fall back to the browser engine per language where better.
 5. **Reply language and TTS (1 w):** choose voice per language; verify Gujarati/Hindi voices (ElevenLabs multilingual, other TTS); pronunciation dictionary for names and loan words; consistent persona tone across languages.
 6. **Model prompting (3 d):** persona translated/adapted per language (not literal), humour calibrated, formality levels (Hindi/Gujarati honorifics), date/number/currency formats, units (INR, local time).
-7. **Wake and commands (3 d):** wake word and the reflex commands (stop, volume, timers) recognised in each language (06 reflex layer needs multilingual patterns).
+7. **Wake and commands (3 d) — reflex commands done (Q75); wake word per language waits on 02:** wake word and the reflex commands (stop, volume, timers) recognised in each language (06 reflex layer needs multilingual patterns).
 8. **Text channels (with 20):** reply in the user's script; right-to-left support not needed for these, but test Unicode in HUD and messaging.
 9. **Translation mode:** "translate this to Gujarati", live interpreter mode for conversations, and reading foreign text through the camera (11).
 10. **More languages:** add via the same profile mechanism; a checklist for adding a language (STT, TTS, persona, patterns, eval set).
@@ -62,3 +62,8 @@ A bilingual family can switch languages mid-conversation with correct replies, a
   Tests: `bridge/language-profile.test.mjs`. **Left:** a profile per person once speaker ID
   exists, the "by topic" policy and a reply-language metric (Q76); spoken replies in Gujarati or
   Hindi still need a voice that speaks them (phase 5); reflexes in each language (Q75).
+- **2026-10-27 — Phase 7 (reflex commands), Q75.** Stop, time, date, "say that again", volume and
+  timers are recognised in Hindi and Gujarati, in each script and in Latin letters, and answered
+  on the page in the language and script the profile asks for (see plan 06's log for the
+  details). Mirror uses the language the command was said in. **Left:** wake words per language
+  (plan 02); checking the phrasings against real speech-to-text output (Q29 recordings).
