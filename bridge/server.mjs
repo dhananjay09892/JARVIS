@@ -51,6 +51,7 @@ import { probeUrl, renderPage } from './page.mjs'
 import { onSettingsChange, publicSettings, readSettings, restartPending, secretVault, setting, settingsDir, updateSettings } from './settings.mjs'
 import { connectorKeychain, scopedVault } from './secrets.mjs'
 import { settingDefault, settingsSchema } from './settings-registry.mjs'
+import { languagePreface, readLanguageProfile } from './language-profile.mjs'
 import { createRestarter } from './restart.mjs'
 import { createClaudeBrain } from './brains/claude.mjs'
 import { createBrainRegistry } from './brains/registry.mjs'
@@ -2241,7 +2242,11 @@ wss.on('connection', (socket, req) => {
        * already-resolved promise — and removes the cross-talk when there is.
        */
       const id = typeof msg.id === 'string' ? msg.id : null
-      const preface = typeof msg.preface === 'string' ? msg.preface.slice(0, 1000) : ''
+      // The reply language comes from the language profile (plan 28 phase 2,
+      // Q30), read per turn so a change in Settings applies at once. Whatever
+      // the page adds rides after it.
+      const pagePreface = typeof msg.preface === 'string' ? msg.preface.slice(0, 1000) : ''
+      const preface = [languagePreface(readLanguageProfile(setting), msg.text), pagePreface].filter(Boolean).join('\n')
       // Persisted now, so a refresh right after cannot lose the question. A turn
       // id this conversation has already seen is a retry and is dropped.
       const stored = sm && id ? sm.receive({ id, text: msg.text, preface }) : null

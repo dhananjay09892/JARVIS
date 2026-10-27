@@ -33,6 +33,14 @@ export type PublicSettings = {
   JARVIS_ROUTING: string
   /** The Claude model for the fast path. '' means the default. */
   JARVIS_FAST_MODEL: string
+  /** 'en' | 'gu' | 'hi' — the owner's main language (plan 28, Q30). '' means the default (en). */
+  JARVIS_LANG_PRIMARY: string
+  /** 'none' | 'en' | 'gu' | 'hi' — a second language. '' means the default (none). */
+  JARVIS_LANG_SECONDARY: string
+  /** 'primary' | 'mirror' | 'en' | 'gu' | 'hi' — which language replies are in. '' means the default (primary). */
+  JARVIS_REPLY_LANGUAGE: string
+  /** 'native' | 'roman' — how Gujarati and Hindi replies are written. '' means the default (native). */
+  JARVIS_TEXT_SCRIPT: string
   setupDone: string
   storage: string
   /** Restart-only settings saved but not yet in force (plan 39 phase 4). Older bridges omit it. */

@@ -13,7 +13,8 @@
  *   options    allowed values, for 'enum'
  *   pattern    allowed shape, for 'string' and 'secret'
  *   default    effective value when nothing is set ('' for secrets: no default)
- *   scope      'global' | 'person' | 'device' (all 'global' until plans 01/30)
+ *   scope      'global' | 'person' | 'device' ('person' settings are the owner's
+ *              until speaker profiles exist, plans 01/30)
  *   risk       'normal' | 'sensitive' | 'dangerous'
  *   apply      when a change takes effect (plan 39 phase 4):
  *                'live'       at once; the subsystem listens for the change
@@ -238,6 +239,61 @@ const DEFS = [
     default: 'gpt-5-mini',
     risk: 'normal',
     apply: 'reconnect',
+    visibleIn: 'advanced',
+  },
+  // The language profile (plan 28 phase 2, Q30). Scope 'person': each person
+  // will have their own once speaker profiles exist (plan 01); until then they
+  // are the owner's. See bridge/language-profile.mjs.
+  {
+    id: 'JARVIS_LANG_PRIMARY',
+    section: 'languages',
+    label: 'Main language',
+    help: 'The language you mostly speak. JARVIS answers in it unless the reply setting says otherwise.',
+    type: 'enum',
+    options: ['en', 'gu', 'hi'],
+    default: 'en',
+    scope: 'person',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'simple',
+  },
+  {
+    id: 'JARVIS_LANG_SECONDARY',
+    section: 'languages',
+    label: 'Second language',
+    help: 'Another language you speak, if any. JARVIS always understands English, Gujarati and Hindi; this helps him guess when a message mixes them.',
+    type: 'enum',
+    options: ['none', 'en', 'gu', 'hi'],
+    default: 'none',
+    scope: 'person',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'simple',
+  },
+  {
+    id: 'JARVIS_REPLY_LANGUAGE',
+    section: 'languages',
+    label: 'Reply language',
+    help: 'Which language JARVIS answers in: your main language, the language you just used (mirror), or always one language. Spoken Gujarati or Hindi needs a voice that speaks it.',
+    type: 'enum',
+    options: ['primary', 'mirror', 'en', 'gu', 'hi'],
+    default: 'primary',
+    scope: 'person',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'simple',
+  },
+  {
+    id: 'JARVIS_TEXT_SCRIPT',
+    section: 'languages',
+    label: 'Gujarati and Hindi script',
+    help: 'How Gujarati and Hindi replies are written: in their own script (native) or in Latin letters (roman).',
+    type: 'enum',
+    options: ['native', 'roman'],
+    default: 'native',
+    scope: 'person',
+    risk: 'normal',
+    apply: 'live',
     visibleIn: 'advanced',
   },
   {
