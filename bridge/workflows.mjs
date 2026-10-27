@@ -169,11 +169,11 @@ export function openWorkflows({ file, dir = defaultMemoryDir() } = {}) {
     setEnabled(id, enabled) { return Number(db.prepare('UPDATE workflows SET enabled=?, updated_at=? WHERE id=?').run(enabled ? 1 : 0, now(), id).changes) > 0 },
     remove(id) { return Number(db.prepare('DELETE FROM workflows WHERE id = ?').run(id).changes) > 0 },
 
-    startRun(w, trigger) {
+    startRun(w, trigger, day = localDay(new Date())) {
       const id = `run-${randomUUID()}`
       const steps = w.steps.map((s, i) => ({ index: i + 1, type: s.type, status: 'pending', detail: '' }))
       db.prepare('INSERT INTO runs (id, workflow_id, workflow_name, trigger_kind, day, status, steps, started_at) VALUES (?,?,?,?,?,?,?,?)')
-        .run(id, w.id, w.name, trigger, localDay(new Date()), 'running', JSON.stringify(steps), now())
+        .run(id, w.id, w.name, trigger, day, 'running', JSON.stringify(steps), now())
       return { id, steps }
     },
     saveRun(id, status, steps, finished = false) {
@@ -254,7 +254,7 @@ export function createEngine({ store, files, approve, execute, bus = null, log =
   async function run(workflow, trigger) {
     if (active.has(workflow.id)) return { ok: false, reason: 'That workflow is already running.' }
     active.add(workflow.id)
-    const { id, steps } = store.startRun(workflow, trigger)
+    const { id, steps } = store.startRun(workflow, trigger, localDay(clock()))
     const save = (status, finished) => store.saveRun(id, status, steps, finished)
     const startedAt = clock().getTime()
     const announce = (status) => bus?.publish(status === 'running' ? 'workflow.started' : 'workflow.finished', {
