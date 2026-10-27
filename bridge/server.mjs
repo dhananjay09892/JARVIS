@@ -73,6 +73,8 @@ import { gcalendarConnector } from './connectors/gcalendar.mjs'
 import { gdriveConnector, GDRIVE_OPTIONS } from './connectors/gdrive.mjs'
 import { gmailImapConnector } from './connectors/gmail_imap.mjs'
 import { notionConnector } from './connectors/notion.mjs'
+import { obsidianConnector } from './connectors/obsidian.mjs'
+import { createConnectorWatcher } from './connectors/watch.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { createConnectorOptions } from './connectors/options.mjs'
@@ -442,6 +444,12 @@ connectors.registerAll([
     id: 'notion',
     create: (ctx) => notionConnector().create(ctx),
   },
+  {
+    // Obsidian (task C13): grant access to one vault folder; reads its notes
+    // locally, never follows links, never writes.
+    id: 'obsidian',
+    create: (ctx) => obsidianConnector().create(ctx),
+  },
 ])
 
 /**
@@ -454,9 +462,25 @@ try {
 } catch (err) {
   console.error('[jarvis] could not restore connector switches:', err?.message ?? err)
 }
+/**
+ * Obsidian's folder watcher (task C13): runs only while the vault is connected
+ * and "Sync in the background" is on; a change syncs into the document store.
+ */
+const obsidianWatcher = connectorStore
+  ? createConnectorWatcher({
+      registry: connectors,
+      id: 'obsidian',
+      syncNow: (id) => syncConnectorInto(connectors, connectorStore, id),
+    })
+  : null
+obsidianWatcher?.start()
 const connectorRoutes = createConnectorRoutes({
   registry: connectors,
-  persist: connectorGrantsFile.save,
+  // Saving switches also re-checks the watcher, so turning background sync on or off acts at once.
+  persist: (snapshot) => {
+    connectorGrantsFile.save(snapshot)
+    obsidianWatcher?.reconcile()
+  },
   documents: documentPrefs,
   // "Sync now" on a card (task C06): resume from the stored cursor, keep the result.
   syncNow: connectorStore ? (id) => syncConnectorInto(connectors, connectorStore, id) : null,

@@ -148,7 +148,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** a real workspace syncs read-only.
 
 ### C13 · openjarvis/data-connectors/obsidian · Obsidian vault
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03
 - **Scope:** Grant-local-access pattern: read Markdown in a chosen vault folder only (no path escape, symlinks not followed), frontmatter and wikilinks mapped, file watcher for changes. No credentials needed.
 - **Done when:** fixture vault sync, path-escape attempt, injection fixture and erase tests pass.

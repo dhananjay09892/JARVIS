@@ -99,7 +99,7 @@ export function deletionId(v) {
 const STATE_FOR_CODE = {
   'auth': 'attention', 'revoked': 'attention', 'not-connected': 'attention',
   'not-granted': 'attention', 'disabled': 'attention', 'frozen': 'attention',
-  'consent-denied': 'attention', 'setup-needed': 'attention',
+  'consent-denied': 'attention', 'setup-needed': 'attention', 'folder-missing': 'attention',
 }
 
 /**

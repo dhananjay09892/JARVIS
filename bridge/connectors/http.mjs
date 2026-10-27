@@ -19,6 +19,7 @@
  *   egress      the adapter asked for a host outside its allow-list (rule 7)
  *   consent-denied  the owner cancelled a guided sign-in or did not grant what it needs
  *   setup-needed    a setup step on the card is not done (e.g. no OAuth client pasted)
+ *   folder-missing  a local connector's folder is gone, moved or not usable (task C13)
  *   not-granted / disabled / frozen / other  — set by the registry
  *
  * Retry-After is honoured (seconds or an HTTP date), capped, and retried at
@@ -27,7 +28,7 @@
 
 export const ERROR_CODES = Object.freeze([
   'auth', 'revoked', 'rate-limit', 'offline', 'server', 'bad-response', 'egress',
-  'consent-denied', 'setup-needed',
+  'consent-denied', 'setup-needed', 'folder-missing',
   'not-granted', 'disabled', 'frozen', 'not-connected', 'other',
 ])
 
@@ -42,6 +43,7 @@ export const ERROR_MESSAGES = Object.freeze({
   'egress': 'The connector tried to reach a site it is not allowed to.',
   'consent-denied': 'The sign-in was cancelled, or the permission it needs was not given. Press Connect to try again.',
   'setup-needed': 'Finish the setup steps on this card first (for Google: paste the OAuth client ID from your Cloud project).',
+  'folder-missing': 'The folder could not be found or read. Check the folder path in Settings → Connectors.',
   'not-granted': 'That permission has not been granted for this connector.',
   'disabled': 'This connector is turned off.',
   'frozen': 'All connectors are frozen by the kill switch.',
