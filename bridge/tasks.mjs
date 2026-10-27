@@ -13,6 +13,9 @@
  * `runAgent` returns the session as BrainEvents (brains/events.mjs), so this
  * module never sees a provider's own message shapes.
  *
+ * When a task ends, a `task.finished` event goes on the event bus (bus.mjs,
+ * plan 12) if one is passed in: status, title and a clipped summary only.
+ *
  * Nothing here grants anything. A task asks for approval through the same cards
  * as everything else; the manager only tags the card with the task it came from
  * and marks the task as waiting while the card is open.
@@ -50,9 +53,24 @@ function snapshot(t) {
   }
 }
 
-export function createTaskManager({ runAgent, store = null, concurrency = MAX_CONCURRENT, now = () => Date.now(), log = console } = {}) {
+export function createTaskManager({ runAgent, store = null, bus = null, concurrency = MAX_CONCURRENT, now = () => Date.now(), log = console } = {}) {
   const tasks = new Map()
   const listeners = new Set()
+
+  /** A `TaskOutcome` (shared/contracts.ts) on the bus. The bus never throws. */
+  const announce = (t) => {
+    if (!bus) return
+    bus.publish('task.finished', {
+      taskId: t.id,
+      title: clip(t.title, 60) || 'Task',
+      status: t.status,
+      summary: clip(t.status === 'done' ? t.result : t.error, 300),
+      ...(typeof t.costUsd === 'number' && t.costUsd >= 0 && { costUsd: t.costUsd }),
+      ...(Number.isInteger(t.startedAt) && { startedAt: t.startedAt }),
+      endedAt: t.endedAt,
+      sensitivity: 'private',
+    })
+  }
 
   const emit = (t) => {
     const snap = snapshot(t)
@@ -79,6 +97,7 @@ export function createTaskManager({ runAgent, store = null, concurrency = MAX_CO
         t.endedAt = now()
         note(t, 'interrupted', t.error)
         emit(t)
+        announce(t)
       }
       tasks.set(t.id, t)
     }
@@ -115,6 +134,7 @@ export function createTaskManager({ runAgent, store = null, concurrency = MAX_CO
     if (status === 'done') t.step = t.steps.length + 1
     note(t, status, fields.error ?? fields.result ?? status)
     emit(t)
+    announce(t)
     prune()
     pump()
   }

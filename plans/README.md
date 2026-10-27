@@ -24,7 +24,7 @@ anything marked *unaudited* was not read in depth.
 | 09 | [Smart home](09-smart-home.md) | Pending | Later | Nothing → Home Assistant with risk tiers |
 | 10 | [Computer and phone control](10-computer-and-phone-control.md) | Partial | P1/Later | Windows-only launching, Android MCP → execution ladder, skills, cross-platform |
 | 11 | [Vision and presence](11-vision.md) | Partial (*unaudited*) | Later | Camera + hands → audit, local detection, events |
-| 12 | [Proactive alerts](12-proactive-alerts.md) | Pending | P1 | Daily workflows only → event bus, notification policy, briefings |
+| 12 | [Proactive alerts](12-proactive-alerts.md) | Partial | P1 | Daily workflows + event bus → notification policy, briefings |
 | 13 | [Autonomy and background agents](13-autonomy-and-background-agents.md) | Partial | P1 | Mission board exists → planner/verifier, budgets, parallel agents |
 | 14 | [Ambient context](14-ambient-context.md) | Pending | P2 | Nothing → context broker, screen/calendar awareness |
 | 15 | [Policy, trust, privacy](15-policy-trust-and-privacy.md) | Partial | **P0** | Approvals + `decideTool` → policy engine, roles, audit, kill switch |

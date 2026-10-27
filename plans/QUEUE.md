@@ -351,7 +351,7 @@ this file decides *in what order*.
 ## Phase 2 · Proactive and connected
 
 ### Q32 · Plan 12 · Event bus
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q14
 - **Scope:** 12 building block 1, using the event topics in plan 38.
 - **Done when:** the scheduler and task completion publish typed events, with tests.

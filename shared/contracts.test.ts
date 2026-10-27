@@ -136,8 +136,9 @@ test('BusEvent checks the payload against its topic', () => {
   assert.equal(checkContract('BusEvent', { ...clone(find(s, 'BusEvent')), topic: 'made.up' }).ok, false)
 })
 
-test('BusEvent topics are the plan 38 list', () => {
-  assert.equal(TOPICS.length, 20)
+test('BusEvent topics are the plan 38 list plus the Q32 publishers', () => {
+  assert.equal(TOPICS.length, 23)
+  for (const t of ['workflow.started', 'workflow.finished', 'task.finished']) assert.ok(TOPICS.includes(t as never), t)
   assert.equal(new Set(TOPICS).size, TOPICS.length)
 })
 
@@ -164,4 +165,32 @@ test('errors never echo the rejected value, so they are safe to log', () => {
 test('types and runtime agree: a parsed value is usable as its type', () => {
   const utt: Utterance = parseContract('Utterance', find(load('voice-command-tool-call.json'), 'Utterance'))
   assert.equal(utt.identity.role, 'owner')
+})
+
+// Payloads of the bus's first publishers (plan 12 block 1, Q32).
+const RUN = {
+  runId: 'run-1', workflowId: 'wf-1', name: 'Morning build', trigger: 'schedule',
+  status: 'running', stepsTotal: 2, stepsCompleted: 0, startedAt: 1_766_000_000_000,
+}
+const OUTCOME = { taskId: 't1a2b3c4', title: 'Summarise the report', status: 'done', summary: 'Three points.', endedAt: 1_766_000_000_000 }
+const bus = (topic: string, payload: unknown) => ({ v: 1, id: 'ev-1', ts: 1_766_000_000_000, topic, payload })
+
+test('workflow.started and workflow.finished carry a WorkflowRun', () => {
+  assert.ok(checkContract('BusEvent', bus('workflow.started', RUN)).ok)
+  assert.ok(checkContract('BusEvent', bus('workflow.finished', { ...RUN, status: 'completed', stepsCompleted: 2, finishedAt: 1_766_000_001_000 })).ok)
+  assert.equal(checkContract('BusEvent', bus('workflow.started', { ...RUN, trigger: 'cron' })).ok, false)
+  assert.equal(checkContract('BusEvent', bus('workflow.finished', { ...RUN, status: 'failed' })).ok, false, 'ended without finishedAt')
+  assert.equal(checkContract('BusEvent', bus('workflow.started', { ...RUN, finishedAt: 1 })).ok, false, 'running with finishedAt')
+  assert.equal(checkContract('BusEvent', bus('workflow.started', { ...RUN, stepsCompleted: 3 })).ok, false)
+  assert.equal(checkContract('BusEvent', bus('workflow.started', { ...RUN, name: '' })).ok, false)
+})
+
+test('task.finished carries a TaskOutcome that is private by default', () => {
+  const r = checkContract('TaskOutcome', OUTCOME)
+  assert.ok(r.ok)
+  if (r.ok) assert.equal(r.value.sensitivity, 'private')
+  assert.ok(checkContract('BusEvent', bus('task.finished', { ...OUTCOME, status: 'interrupted', costUsd: 0.02, startedAt: 1 })).ok)
+  assert.equal(checkContract('BusEvent', bus('task.finished', { ...OUTCOME, status: 'running' })).ok, false, 'not ended')
+  assert.equal(checkContract('BusEvent', bus('task.finished', { ...OUTCOME, summary: 'x'.repeat(301) })).ok, false)
+  assert.equal(checkContract('BusEvent', bus('task.finished', { ...OUTCOME, costUsd: -1 })).ok, false)
 })
