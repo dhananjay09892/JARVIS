@@ -135,7 +135,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** a real mailbox syncs read-only.
 
 ### C11 · openjarvis/data-connectors/notion · Notion
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03
 - **Scope:** Paste-a-token pattern; read pages/databases shared with the integration; block-to-text mapping; rate-limit backoff (Notion's documented limit, *verify*).
 - **Done when:** fixture workspace sync, bad token, injection fixture and erase tests pass.
