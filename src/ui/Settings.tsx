@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { BACKEND } from '../config'
+import { BACKEND, BRIDGE_HTTP_URL } from '../config'
 import { Connectors } from './Connectors'
 import { OpenAISignIn } from './OpenAISignIn'
 import { SelfTest } from './SelfTest'
 import { setQuickStart } from '../lib/tts'
+import { createWizardTracker, postSetupEvent } from '../lib/setupMetrics'
 import { languageProfileFrom, setReflexesEnabled, setReflexLanguageProfile } from '../lib/reflex'
 import {
   getSettings,
@@ -74,6 +75,7 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_LANG_SECONDARY: { default: 'none', options: ['none', 'en', 'gu', 'hi'], help: '' },
   JARVIS_REPLY_LANGUAGE: { default: 'primary', options: ['primary', 'mirror', 'en', 'gu', 'hi'], help: '' },
   JARVIS_TEXT_SCRIPT: { default: 'native', options: ['native', 'roman'], help: '' },
+  JARVIS_SETUP_METRICS: { default: '0', help: '' },
   JARVIS_ALLOW_WRITES: {
     default: '0',
     help: 'Off by default: JARVIS can look at things but changes nothing.',
@@ -152,6 +154,21 @@ export function Settings() {
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // Opt-in setup drop-off metric (plan 29, Q77). Sends nothing unless
+  // JARVIS_SETUP_METRICS is on; the bridge checks the setting again.
+  const metricsOn = useRef(false)
+  useEffect(() => {
+    metricsOn.current = s?.JARVIS_SETUP_METRICS === '1'
+  }, [s])
+  const [tracker] = useState(() =>
+    createWizardTracker({ send: (e) => postSetupEvent(BRIDGE_HTTP_URL, e), enabled: () => metricsOn.current }),
+  )
+  /** Move the wizard to step `n`, and count it. */
+  const go = (n: number) => {
+    setStep(n)
+    tracker.step(n)
+  }
+
   const load = useCallback(async () => {
     try {
       const next = await getSettings()
@@ -168,11 +185,13 @@ export function Settings() {
     getSettingsSchema().then(setSchema, () => setSchema(null))
     void load().then((next) => {
       if (next && next.setupDone !== '1') {
+        metricsOn.current = next.JARVIS_SETUP_METRICS === '1'
+        tracker.open()
         setWizard(true)
         setOpen(true)
       }
     })
-  }, [load])
+  }, [load, tracker])
 
   const checkClaude = useCallback(async () => {
     setStatus(null)
@@ -270,14 +289,17 @@ export function Settings() {
       return 'JARVIS is taking a while to come back. Check that it is running.'
     })
 
-  const finish = async () => {
+  /** Leave the wizard: Finish on the last step, or "Skip setup" (and Escape) on any step. */
+  const finish = async (how: 'complete' | 'skip') => {
+    if (how === 'complete') tracker.complete()
+    else tracker.skip()
     await patch({ setupDone: '1' }, '')
     setWizard(false)
     setOpen(false)
   }
 
   const close = () => {
-    if (wizard) void finish()
+    if (wizard) void finish('skip')
     else setOpen(false)
   }
 
@@ -322,6 +344,26 @@ export function Settings() {
         : !status.claudeLoggedIn
           ? 'Not signed in yet. Press Sign in, finish in the browser window that opens, then press Check again.'
           : `Claude is ready (version ${status.claudeVersion.split(' ')[0]}).`
+
+  const setupMetrics = def(schema, 'JARVIS_SETUP_METRICS')
+  const metricsToggle = (
+    <>
+      <label title={setupMetrics.help || undefined}>
+        <input
+          type="checkbox"
+          checked={s?.JARVIS_SETUP_METRICS === '1'}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_SETUP_METRICS: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Count where setup stops (optional)
+      </label>
+      <p className="mem-note">
+        Kept on this computer only, never sent anywhere: which setup step was reached and finished, and the names of
+        problems the check found (like “muted”), never audio or device names. Diagnostics (press D) shows the
+        numbers. Turning it off deletes them.
+      </p>
+    </>
+  )
 
   const keyBlock = (
     <>
@@ -389,9 +431,10 @@ export function Settings() {
         {wizard && step === 0 && (
           <>
             <h3>1 · Microphone and speakers</h3>
-            <SelfTest />
+            <SelfTest onFinished={(ids) => tracker.selftest(ids)} />
+            {metricsToggle}
             <p>
-              <button onClick={() => setStep(1)}>Next</button>
+              <button onClick={() => go(1)}>Next</button>
             </p>
           </>
         )}
@@ -407,8 +450,8 @@ export function Settings() {
               Sign in
             </button>
             <button onClick={checkClaude}>Check again</button>
-            <button onClick={() => setStep(0)}>Back</button>
-            <button onClick={() => setStep(2)}>Next</button>
+            <button onClick={() => go(0)}>Back</button>
+            <button onClick={() => go(2)}>Next</button>
           </>
         )}
         {wizard && step === 2 && (
@@ -416,8 +459,8 @@ export function Settings() {
             <h3>3 · Better voice (optional)</h3>
             {keyBlock}
             <p>
-              <button onClick={() => setStep(1)}>Back</button>
-              <button onClick={() => setStep(3)}>{s?.ELEVENLABS_API_KEY_set ? 'Next' : 'Skip'}</button>
+              <button onClick={() => go(1)}>Back</button>
+              <button onClick={() => go(3)}>{s?.ELEVENLABS_API_KEY_set ? 'Next' : 'Skip'}</button>
             </p>
           </>
         )}
@@ -429,8 +472,8 @@ export function Settings() {
               change any of this later under SETTINGS.
             </p>
             {listeningNote}
-            <button onClick={() => setStep(2)}>Back</button>
-            <button disabled={busy} onClick={finish}>Finish</button>
+            <button onClick={() => go(2)}>Back</button>
+            <button disabled={busy} onClick={() => void finish('complete')}>Finish</button>
           </>
         )}
 
@@ -447,7 +490,7 @@ export function Settings() {
             <button onClick={checkClaude}>Check again</button>
 
             <h3>Microphone and speakers</h3>
-            <SelfTest />
+            <SelfTest onFinished={(ids) => tracker.selftest(ids)} />
 
             <h3>Voice</h3>
             {keyBlock}
@@ -778,10 +821,14 @@ export function Settings() {
             <h3>Connectors</h3>
             <Connectors />
 
+            <h3>Diagnostics</h3>
+            {metricsToggle}
+
             <p className="mem-note">Saved in {s.storage}</p>
             <button
               onClick={() => {
                 setStep(0)
+                tracker.open()
                 setWizard(true)
               }}
             >

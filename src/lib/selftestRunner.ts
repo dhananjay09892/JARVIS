@@ -1,29 +1,30 @@
-import { currentMic } from './audio'
-import { diagnoseOpenError, rmsDb, type Finding, type MicFacts } from './selftest'
+import { chosenMic, currentMic, openDeviceId } from './audio'
+import { holdCamera, releaseCamera } from './camera'
+import { openChosenMic } from './micChoice'
+import { diagnoseOpenError, frameLevels, rmsDb, type CameraFacts, type Finding, type MicFacts } from './selftest'
 
 /**
  * Hardware self-test (plan 29 phase 2, Q31): the measuring half, browser only.
  * The judgement lives in ./selftest.ts so it can be tested without a browser.
  *
- * Uses the same constraints as src/lib/audio.ts, so the levels are the levels
- * JARVIS actually listens to. If JARVIS has already opened the microphone the
- * test reuses that stream (opening a second one makes Chrome drop the first)
- * and leaves it open; otherwise it opens its own and closes it when done.
+ * Uses the same constraints as src/lib/audio.ts, and the microphone chosen in
+ * Settings (Q77), so the levels are the levels JARVIS actually listens to. If
+ * JARVIS has already opened that microphone the test reuses the stream
+ * (opening a second one makes Chrome drop the first) and leaves it open;
+ * otherwise it opens its own and closes it when done.
  *
  * No audio is kept: each block is reduced to one number and dropped.
  */
 
 export type MicSession = {
   facts: MicFacts
+  /** The microphone chosen in Settings was missing, so the default was tested. */
+  fellBack: boolean
   /** Level of each ~40 ms block over `ms` milliseconds, in dBFS. */
   measure: (ms: number) => Promise<number[]>
   /** Play the test sound for `ms` and measure the microphone while it plays. */
   playAndMeasure: (ms: number) => Promise<number[]>
   close: () => void
-}
-
-const CONSTRAINTS: MediaStreamConstraints = {
-  audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
 }
 
 export async function openMicSession(): Promise<MicSession | Finding> {
@@ -35,16 +36,22 @@ export async function openMicSession(): Promise<MicSession | Finding> {
       fix: 'Open JARVIS in Chrome or Edge at the address the launcher shows (http://localhost…), not inside another app.',
     }
   }
-  const shared = currentMic()
   let stream: MediaStream
+  let owned: boolean
+  let fellBack: boolean
   try {
-    stream = shared ?? (await navigator.mediaDevices.getUserMedia(CONSTRAINTS))
+    ;({ stream, owned, fellBack } = await openChosenMic({
+      chosen: chosenMic(),
+      shared: currentMic(),
+      sharedDeviceId: openDeviceId(),
+      getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
+    }))
   } catch (err) {
     return diagnoseOpenError(err instanceof DOMException ? err.name : '')
   }
   const track = stream.getAudioTracks()[0]
   if (!track) {
-    if (!shared) stream.getTracks().forEach((t) => t.stop())
+    if (owned) stream.getTracks().forEach((t) => t.stop())
     return diagnoseOpenError('NotFoundError')
   }
   // Labels are only filled in once permission is granted, which it now is.
@@ -99,16 +106,48 @@ export async function openMicSession(): Promise<MicSession | Finding> {
 
   return {
     facts: { label: track.label, trackMuted: track.muted || !track.enabled, inputs },
+    fellBack,
     measure,
     playAndMeasure,
     close: () => {
       src.disconnect()
       void ctx.close().catch(() => {})
-      if (!shared) stream.getTracks().forEach((t) => t.stop())
+      if (owned) stream.getTracks().forEach((t) => t.stop())
     },
   }
 }
 
 export function isFinding(x: MicSession | Finding): x is Finding {
   return 'severity' in x
+}
+
+/**
+ * The optional camera check (plan 29 flow step 2, Q77): open the camera
+ * through the shared handle in ./camera.ts (so hand tracking is not blinded),
+ * look at one small frame, and let go. Returns the facts for diagnoseCamera
+ * and a small still so the user can see what the camera sees. The still
+ * stays on this page; nothing is recorded or sent.
+ */
+export async function checkCamera(): Promise<{ facts: CameraFacts; still: string }> {
+  if (!navigator.mediaDevices?.getUserMedia) return { facts: { error: 'unsupported', brightness: 0, contrast: 0 }, still: '' }
+  let video: HTMLVideoElement
+  try {
+    video = await holdCamera()
+  } catch (err) {
+    return { facts: { error: err instanceof DOMException ? err.name : 'error', brightness: 0, contrast: 0 }, still: '' }
+  }
+  try {
+    // Webcams ramp their exposure for a moment after opening.
+    await new Promise((r) => setTimeout(r, 900))
+    const canvas = document.createElement('canvas')
+    canvas.width = 160
+    canvas.height = 90
+    const g = canvas.getContext('2d')
+    if (!g) return { facts: { error: 'error', brightness: 0, contrast: 0 }, still: '' }
+    g.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const levels = frameLevels(g.getImageData(0, 0, canvas.width, canvas.height).data)
+    return { facts: { error: '', ...levels }, still: canvas.toDataURL('image/jpeg', 0.7) }
+  } finally {
+    releaseCamera()
+  }
 }

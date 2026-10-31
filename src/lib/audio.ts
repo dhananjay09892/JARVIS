@@ -4,20 +4,65 @@
  * the earlier stream, so everything that needs audio goes through here.
  */
 
+import { openChosenMic, readChoice, writeChoice } from './micChoice'
+
 let stream: MediaStream | null = null
 let ctx: AudioContext | null = null
 let analyser: AnalyserNode | null = null
 let buf: Uint8Array | null = null
 
+const storage = () => {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage
+  } catch {
+    return null
+  }
+}
+
+/** The microphone chosen under Settings → Microphone and speakers ('' = Windows default). Q77. */
+let chosen = readChoice(storage())
+/** Whether the open stream fell back to the default because the chosen one is gone. */
+let fellBack = false
+
+export function chosenMic(): string {
+  return chosen
+}
+
+/**
+ * Choose the microphone (Q77). Kept in this browser only. If the microphone
+ * is already open on another device it keeps running until the page reloads:
+ * the wake word, voice detection and clap each hold the stream, so swapping it
+ * under them is not safe. Returns whether a reload is needed.
+ */
+export function setChosenMic(deviceId: string): boolean {
+  const before = chosen
+  chosen = deviceId
+  writeChoice(storage(), deviceId)
+  if (!stream || before === deviceId) return false
+  // Back to the Windows default: the open stream may already be on it, but
+  // there is no way to tell, so a reload is the honest answer.
+  return deviceId ? openDeviceId() !== deviceId : true
+}
+
+/** The device id of the open stream, if any. */
+export function openDeviceId(): string | undefined {
+  return stream?.getAudioTracks()[0]?.getSettings?.().deviceId
+}
+
+/** True when the chosen microphone was missing and getMic() used the default. */
+export function micFellBack(): boolean {
+  return fellBack
+}
+
 export async function getMic(): Promise<MediaStream> {
   if (stream) return stream
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
+  const opened = await openChosenMic({
+    chosen,
+    shared: null,
+    getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
   })
+  stream = opened.stream
+  fellBack = opened.fellBack
   return stream
 }
 

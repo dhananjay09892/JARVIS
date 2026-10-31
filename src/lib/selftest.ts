@@ -163,7 +163,7 @@ export function alternatives(facts: Pick<MicFacts, 'label' | 'inputs'>): string[
 }
 
 const SWITCH_FIX = (others: string[]) =>
-  `Choose ${others.length ? `“${others[0]}”` : 'your real microphone'} as the default input: Windows Settings → System → Sound → Input. Then reload this page and run the test again.`
+  `Choose ${others.length ? `“${others[0]}”` : 'your real microphone'} under “Microphone” above this check, or make it the default input in Windows: Settings → System → Sound → Input. Then run the test again. (The browser's own speech recognition always uses the Windows default, so set it there too if JARVIS uses that.)`
 
 /** Checks on the device itself, before any sound is measured. */
 export function diagnoseDevice(facts: MicFacts): Finding[] {
@@ -313,4 +313,129 @@ export function worst(findings: readonly Finding[]): Severity {
   if (findings.some((f) => f.severity === 'fail')) return 'fail'
   if (findings.some((f) => f.severity === 'warn')) return 'warn'
   return 'ok'
+}
+
+/**
+ * The microphone chosen in Settings (Q77) could not be opened, so the
+ * Windows default was used instead: usually a headset that is unplugged.
+ */
+export function diagnoseChoice(fellBack: boolean): Finding[] {
+  if (!fellBack) return []
+  return [
+    {
+      id: 'mic-choice-missing',
+      severity: 'warn',
+      title: 'The microphone chosen under “Microphone” is not plugged in, so the Windows default was tested instead.',
+      fix: 'Plug it back in, or choose another microphone (or “Windows default”) above, then run the test again.',
+    },
+  ]
+}
+
+/** What the optional camera check saw (plan 29 flow step 2). */
+export type CameraFacts = {
+  /** The DOMException name if the camera could not be opened, '' otherwise. */
+  error: string
+  /** Average brightness of one small frame, 0 (black) to 255 (white). */
+  brightness: number
+  /** How much the frame varies (standard deviation of brightness). A covered lens is flat as well as dark. */
+  contrast: number
+}
+
+/** Below this the picture is black: a lens cover, a privacy shutter, or a camera switched off. */
+export const CAMERA_DARK = 14
+/** A covered lens is also flat; a dim room still has some detail. */
+export const CAMERA_FLAT = 6
+
+/**
+ * The optional camera check. JARVIS works without a camera; it is only for
+ * hand gestures and "look at this". One frame is looked at on this page and
+ * dropped; nothing is recorded or sent.
+ */
+export function diagnoseCamera(facts: CameraFacts): Finding[] {
+  switch (facts.error) {
+    case '':
+      break
+    case 'unsupported':
+      return [
+        {
+          id: 'camera-unsupported',
+          severity: 'warn',
+          title: 'This browser cannot use a camera here.',
+          fix: 'Open JARVIS in Chrome or Edge at the address the launcher shows (http://localhost…). JARVIS works without a camera.',
+        },
+      ]
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return [
+        {
+          id: 'camera-blocked',
+          severity: 'warn',
+          title: 'The camera is blocked.',
+          fix: 'Windows: Settings → Privacy & security → Camera, turn on “Camera access” and “Let desktop apps access your camera”. In the browser, click the icon left of the address bar and allow the camera for this page. JARVIS works without it.',
+        },
+      ]
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return [
+        {
+          id: 'camera-none',
+          severity: 'warn',
+          title: 'No camera was found.',
+          fix: 'That is fine: the camera is only for hand gestures and “look at this”. Plug in a webcam if you want those.',
+        },
+      ]
+    case 'NotReadableError':
+    case 'AbortError':
+      return [
+        {
+          id: 'camera-busy',
+          severity: 'warn',
+          title: 'The camera is there but could not be opened.',
+          fix: 'Another app (a video call, the Camera app) may be using it. Close that app and test again.',
+        },
+      ]
+    default:
+      return [
+        {
+          id: 'camera-error',
+          severity: 'warn',
+          title: 'The camera could not be opened.',
+          fix: 'Restart the browser and test again. JARVIS works without a camera.',
+        },
+      ]
+  }
+  if (facts.brightness < CAMERA_DARK && facts.contrast < CAMERA_FLAT) {
+    return [
+      {
+        id: 'camera-dark',
+        severity: 'warn',
+        title: 'The camera opened, but the picture is black.',
+        fix: 'Check for a lens cover or a privacy slider on the webcam, or a camera key on the keyboard (often F8 or F10). Then test again.',
+      },
+    ]
+  }
+  return [{ id: 'camera-ok', severity: 'ok', title: 'The camera works.', fix: '' }]
+}
+
+/** Brightness and contrast of RGBA pixels (from a canvas), for diagnoseCamera. */
+export function frameLevels(rgba: ArrayLike<number>): { brightness: number; contrast: number } {
+  const n = Math.floor(rgba.length / 4)
+  if (!n) return { brightness: 0, contrast: 0 }
+  let sum = 0
+  let sq = 0
+  for (let i = 0; i < n; i++) {
+    const y = 0.2126 * rgba[i * 4] + 0.7152 * rgba[i * 4 + 1] + 0.0722 * rgba[i * 4 + 2]
+    sum += y
+    sq += y * y
+  }
+  const mean = sum / n
+  return { brightness: mean, contrast: Math.sqrt(Math.max(0, sq / n - mean * mean)) }
+}
+
+/**
+ * The ids worth counting in the opt-in setup metric (Q77): everything that is
+ * not "ok". Ids only: never titles, which can name a device.
+ */
+export function problemIds(findings: readonly Finding[]): string[] {
+  return findings.filter((f) => f.severity !== 'ok').map((f) => f.id)
 }

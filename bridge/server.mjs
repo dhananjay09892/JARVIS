@@ -35,6 +35,7 @@ import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
 import { openTraces } from './traces.mjs'
+import { createSetupMetrics, setupMetricsOn } from './setup-metrics.mjs'
 import { auditSink, auditedApprove, openAudit } from './audit.mjs'
 import { createSessionMemory } from './conversation.mjs'
 import { memoryServer, isMemoryTool } from './memory-tools.mjs'
@@ -128,6 +129,21 @@ function applyTraces() {
   }
 }
 applyTraces()
+
+/**
+ * Setup drop-off metric (plan 29, Q77; see bridge/setup-metrics.mjs). Opt-in:
+ * JARVIS_SETUP_METRICS is off by default, and while it is off nothing is
+ * stored. Turning it off deletes what was kept. Local file only.
+ */
+const setupMetrics = createSetupMetrics({ enabled: () => setupMetricsOn(setting('JARVIS_SETUP_METRICS')) })
+function applySetupMetrics() {
+  if (setupMetricsOn(setting('JARVIS_SETUP_METRICS'))) return
+  try {
+    setupMetrics.clear()
+  } catch (err) {
+    console.error('[jarvis] could not delete the setup metric file:', err.message)
+  }
+}
 
 /**
  * The audit log (plan 15 phase 5; see bridge/audit.mjs): every policy
@@ -1418,6 +1434,41 @@ const handleRequest = async (req, res) => {
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(JSON.stringify(body))
   }
+  // ---- Setup drop-off metric (plan 29, Q77) ---------------------------
+  // Opt-in and local. Step names and self-test problem ids only.
+  if (requestUrl.pathname === '/setup-metrics/stats' && req.method === 'GET') {
+    let body
+    try {
+      body = setupMetrics.stats()
+    } catch (err) {
+      body = { enabled: true, error: String(err?.message ?? err) }
+    }
+    res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+    return res.end(JSON.stringify(body))
+  }
+  if (requestUrl.pathname === '/setup-metrics' && req.method === 'POST') {
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    let body = ''
+    for await (const chunk of req) {
+      body += chunk
+      if (body.length > 4 * 1024) {
+        req.destroy()
+        res.writeHead(400, cors)
+        return res.end('body too large')
+      }
+    }
+    try {
+      const stored = setupMetrics.record(JSON.parse(body || '{}'))
+      res.writeHead(stored ? 200 : 204, { ...cors, 'content-type': 'application/json' })
+      return res.end(stored ? JSON.stringify({ ok: true }) : undefined)
+    } catch (err) {
+      res.writeHead(400, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ ok: false, reason: String(err?.message ?? err) }))
+    }
+  }
   if (requestUrl.pathname === '/traces' && req.method === 'POST') {
     if (!origin) {
       res.writeHead(403, cors)
@@ -1739,6 +1790,7 @@ server.listen(PORT)
 const restarter = createRestarter({ beforeExit: () => server.close() })
 onSettingsChange(({ changed, appliedLive, nextConversation, needsRestart }) => {
   if (changed.includes('JARVIS_TRACES')) applyTraces()
+  if (changed.includes('JARVIS_SETUP_METRICS')) applySetupMetrics()
   if (appliedLive.length) console.log(`[jarvis] settings applied: ${appliedLive.join(', ')}`)
   if (nextConversation.length) console.log(`[jarvis] settings apply from the next conversation: ${nextConversation.join(', ')}`)
   if (needsRestart.length) console.log(`[jarvis] settings waiting for a restart: ${needsRestart.join(', ')}`)
