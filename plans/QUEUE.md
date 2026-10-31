@@ -349,7 +349,7 @@ this file decides *in what order*.
 - **Done when:** the wizard catches a muted mic and a wrong default device.
 
 ### Q77 · Plan 29 · Setup drop-off metric and the rest of the hardware check
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q31
 - **Scope:** The rest of 29 phases 1–2 after Q31. Record, locally and only when the owner opts in, which wizard step people reach and finish (and the self-test's finding ids, never audio or device names), and show the completion rate and the most common self-test failures in Diagnostics (16). Add a "Choose microphone" control so a wrong default can be fixed in JARVIS as well as in Windows (set it in `getMic()` in `src/lib/audio.ts`, which feeds the wake word, VAD and clap; the browser's own speech recognition always uses the system default, so the control must say so), and the optional camera check from the plan.
 - **Done when:** a test shows a completed and an abandoned wizard counted correctly with metrics on, nothing stored with them off, and the self-test using the microphone chosen in Settings.

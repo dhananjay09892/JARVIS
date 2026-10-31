@@ -41,6 +41,8 @@ export type PublicSettings = {
   JARVIS_REPLY_LANGUAGE: string
   /** 'native' | 'roman' — how Gujarati and Hindi replies are written. '' means the default (native). */
   JARVIS_TEXT_SCRIPT: string
+  /** '1' | '0' — opt-in setup drop-off metric (plan 29, Q77). '' means the default (off). */
+  JARVIS_SETUP_METRICS: string
   setupDone: string
   storage: string
   /** Restart-only settings saved but not yet in force (plan 39 phase 4). Older bridges omit it. */

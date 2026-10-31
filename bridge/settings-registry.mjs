@@ -330,6 +330,17 @@ const DEFS = [
     visibleIn: 'advanced',
   },
   {
+    id: 'JARVIS_SETUP_METRICS',
+    section: 'diagnostics',
+    label: 'Count where setup stops',
+    help: 'Off unless you turn it on. Keeps, on this computer only, which setup step was reached and finished and what the microphone check found wrong (problem names like "muted", never audio or device names), so Diagnostics can show the completion rate. Turning it off deletes what was kept.',
+    type: 'boolean',
+    default: '0',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'simple',
+  },
+  {
     id: 'setupDone',
     section: 'system',
     label: 'Setup finished',

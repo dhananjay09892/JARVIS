@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { fetchTraceStats, traceDiag, type TraceStats } from '../lib/trace'
 import { listConnectors, type ConnectorHealth } from '../lib/connectors'
+import { fetchSetupStats, WIZARD_STEPS, type SetupStats } from '../lib/setupMetrics'
+import { BRIDGE_HTTP_URL } from '../config'
 
 /**
  * The "why can't he hear me / why can't I hear him" panel.
@@ -63,6 +65,15 @@ const secs = (ms: number | null | undefined) => (ms === null || ms === undefined
 const LATENCY_TARGET_MS = 1000
 /** Plan 06 phase 2: at least this share of routed turns on the fast path. */
 const FAST_SHARE_TARGET = 0.6
+/** Plan 29: setup completion of 85 % or more. */
+const SETUP_COMPLETION_TARGET = 0.85
+/** How the setup steps read in the panel (WIZARD_STEPS order). */
+const STEP_LABELS: Record<string, string> = {
+  hardware: 'microphone check',
+  claude: 'Claude sign-in',
+  voice: 'better voice',
+  finish: 'all set',
+}
 
 const ago = (t: number) => (t ? `${((Date.now() - t) / 1000).toFixed(1)}s ago` : '—')
 
@@ -127,6 +138,23 @@ export function Diagnostics() {
       listConnectors()
         .then((l) => alive && setHealth(l.health ?? null))
         .catch(() => alive && setHealth(null))
+    }
+    load()
+    const id = setInterval(load, 10_000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [open])
+
+  // Plan 29 (Q77): the opt-in setup drop-off metric. Only moves when someone
+  // runs the wizard or the self-test, so polled slowly.
+  const [setup, setSetup] = useState<SetupStats | null | undefined>(undefined)
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    const load = () => {
+      void fetchSetupStats(BRIDGE_HTTP_URL).then((st) => alive && setSetup(st))
     }
     load()
     const id = setInterval(load, 10_000)
@@ -262,6 +290,45 @@ export function Diagnostics() {
         </>
       ) : (
         <Row k="status" v={health === undefined ? '…' : 'bridge unreachable'} bad={health === null} />
+      )}
+
+      <div className="diag-sec">SETUP · plan 29</div>
+      {setup?.enabled && setup.runs !== undefined ? (
+        <>
+          <Row
+            k="setup finished"
+            v={
+              setup.runs
+                ? `${setup.completed} of ${setup.runs} (${Math.round((setup.completionRate ?? 0) * 100)}%) · ${setup.skipped} skipped · ${setup.abandoned} left open`
+                : 'no setup runs yet'
+            }
+            bad={setup.runs > 0 && (setup.completionRate ?? 0) < SETUP_COMPLETION_TARGET}
+          />
+          {setup.leftAt && (setup.runs ?? 0) > (setup.completed ?? 0) && (
+            <Row
+              k="where it stopped"
+              v={WIZARD_STEPS.filter((st) => setup.leftAt?.[st])
+                .map((st) => `${STEP_LABELS[st]} ${setup.leftAt?.[st]}`)
+                .join(' · ')}
+            />
+          )}
+          {setup.selftest && (
+            <Row
+              k="self-test problems"
+              v={
+                setup.selftest.failures.length
+                  ? `${setup.selftest.failures.map((f) => `${f.id} ×${f.count}`).join(', ')} · ${setup.selftest.clean} of ${setup.selftest.runs} checks clean`
+                  : `none · ${setup.selftest.runs} checks`
+              }
+              bad={setup.selftest.failures.length > 0}
+            />
+          )}
+        </>
+      ) : (
+        <Row
+          k="counting"
+          v={setup === undefined ? '…' : setup === null ? 'bridge unreachable' : 'off (opt in under Settings → Diagnostics)'}
+        />
       )}
 
       <div className="diag-sec">SPEAKING · press T to test</div>

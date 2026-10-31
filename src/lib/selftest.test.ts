@@ -4,7 +4,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  CAMERA_DARK,
   alternatives,
+  diagnoseCamera,
+  diagnoseChoice,
+  frameLevels,
+  problemIds,
   diagnoseDevice,
   diagnoseOpenError,
   diagnoseQuiet,
@@ -162,4 +167,65 @@ test('rmsDb and summarise', () => {
 test('worst', () => {
   assert.equal(worst([]), 'ok')
   assert.equal(worst([{ id: 'a', severity: 'ok', title: '', fix: '' }, { id: 'b', severity: 'warn', title: '', fix: '' }]), 'warn')
+})
+
+// ---- Q77: the microphone chosen in JARVIS, and the optional camera check
+
+test('a wrong default now points at the microphone choice inside JARVIS as well as Windows', () => {
+  const f = diagnoseQuiet(
+    { label: 'Microphone (HD Webcam)', trackMuted: false, inputs: ['Microphone (HD Webcam)', 'Headset (Jabra)'] },
+    { floor: -120, peak: -120 },
+  )
+  assert.equal(f[0].id, 'mic-wrong-device')
+  assert.match(f[0].fix, /under “Microphone”/)
+  assert.match(f[0].fix, /System → Sound → Input/)
+  assert.match(f[0].fix, /speech recognition always uses the Windows default/)
+})
+
+test('a chosen microphone that is unplugged is reported, not silently swapped', () => {
+  assert.deepEqual(diagnoseChoice(false), [])
+  const f = diagnoseChoice(true)
+  assert.equal(f[0].id, 'mic-choice-missing')
+  assert.equal(f[0].severity, 'warn')
+})
+
+test('camera: a black, flat picture is a covered lens; a dim room is fine', () => {
+  assert.equal(diagnoseCamera({ error: '', brightness: 3, contrast: 1 })[0].id, 'camera-dark')
+  assert.equal(diagnoseCamera({ error: '', brightness: CAMERA_DARK - 2, contrast: 20 })[0].id, 'camera-ok')
+  assert.equal(diagnoseCamera({ error: '', brightness: 110, contrast: 40 })[0].id, 'camera-ok')
+})
+
+test('camera problems are warnings with advice: JARVIS works without a camera', () => {
+  const cases: [string, string][] = [
+    ['NotAllowedError', 'camera-blocked'],
+    ['NotFoundError', 'camera-none'],
+    ['NotReadableError', 'camera-busy'],
+    ['unsupported', 'camera-unsupported'],
+    ['TypeError', 'camera-error'],
+  ]
+  for (const [error, id] of cases) {
+    const [f] = diagnoseCamera({ error, brightness: 0, contrast: 0 })
+    assert.equal(f.id, id, error)
+    assert.equal(f.severity, 'warn', error)
+    assert.ok(f.fix.length > 20, error)
+  }
+  assert.match(diagnoseCamera({ error: 'NotAllowedError', brightness: 0, contrast: 0 })[0].fix, /Privacy & security → Camera/)
+})
+
+test('frame levels: black, white and a half-and-half frame', () => {
+  const px = (n: number, v: number) => Array.from({ length: n * 4 }, (_, i) => (i % 4 === 3 ? 255 : v))
+  assert.deepEqual(frameLevels(px(10, 0)), { brightness: 0, contrast: 0 })
+  assert.ok(Math.abs(frameLevels(px(10, 255)).brightness - 255) < 0.01)
+  const half = frameLevels([...px(5, 0), ...px(5, 200)])
+  assert.ok(Math.abs(half.brightness - 100) < 0.01)
+  assert.ok(Math.abs(half.contrast - 100) < 0.01)
+  assert.deepEqual(frameLevels([]), { brightness: 0, contrast: 0 })
+})
+
+test('only problem ids go to the setup metric, never titles (which can name a device)', () => {
+  const findings = [
+    ...diagnoseDevice({ ...realtek, trackMuted: true }),
+    ...diagnoseQuiet(realtek, QUIET_ROOM),
+  ]
+  assert.deepEqual(problemIds(findings), ['mic-muted'])
 })
