@@ -363,7 +363,7 @@ this file decides *in what order*.
 - **Done when:** the scheduler and task completion publish typed events, with tests.
 
 ### Q33 · Plan 12 · Notification policy engine
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q32, Q04
 - **Scope:** 12 building block 2. Urgency, audience, place and privacy per alert; decision from quiet hours, presence and activity.
 - **Done when:** quiet hours are respected in tests.

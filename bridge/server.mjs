@@ -31,6 +31,7 @@ import { openWorkflows, createApprovalHub, createEngine } from './workflows.mjs'
 import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
 import { createBus } from './bus.mjs'
+import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.mjs'
 import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
@@ -171,6 +172,24 @@ const audit = auditStore ? auditSink(auditStore) : null
  * only at /bus/stats. JARVIS_EVENT_BUS=off leaves it out: nothing publishes.
  */
 const bus = process.env.JARVIS_EVENT_BUS === 'off' ? null : createBus()
+
+/**
+ * Notification policy engine (plan 12 block 2, Q33; see bridge/notify-policy.mjs).
+ * Listens for `notification.created` and decides deliver / hold / suppress
+ * from urgency, privacy, quiet hours, presence and activity. Both settings
+ * are live. Nothing reports presence (speaker ID, Q28) or activity (plan 14)
+ * yet, and no delivery channel is attached (block 3), so alerts are decided
+ * and kept, never spoken. Counts only at /notifications/stats.
+ */
+const notifier = bus
+  ? createNotifier({
+      bus,
+      enabled: () => alertsOn(setting('JARVIS_ALERTS')),
+      quietHours: () => setting('JARVIS_QUIET_HOURS') || DEFAULT_QUIET_HOURS,
+      context: () => ({ presence: undefined, activity: 'unknown' }),
+    })
+  : null
+if (notifier) setInterval(() => notifier.tick(), 60_000).unref()
 
 /**
  * Workflows (see bridge/workflows.mjs). Their approval cards go through a hub
@@ -1392,6 +1411,12 @@ const handleRequest = async (req, res) => {
   if (requestUrl.pathname === '/bus/stats' && req.method === 'GET') {
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
     return res.end(JSON.stringify(bus ? { enabled: true, ...bus.stats() } : { enabled: false }))
+  }
+  // Notification policy decisions since the bridge started (plan 12; Q33).
+  // Counts per verdict and rule only: never a title or body.
+  if (requestUrl.pathname === '/notifications/stats' && req.method === 'GET') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+    return res.end(JSON.stringify(notifier ? { enabled: alertsOn(setting('JARVIS_ALERTS')), ...notifier.stats() } : { enabled: false }))
   }
   // ---- Settings → Brains: OpenAI sign-in (plan 22, Q55) --------------
   // Sign in with ChatGPT and the model list. Writes need a real, allowed
