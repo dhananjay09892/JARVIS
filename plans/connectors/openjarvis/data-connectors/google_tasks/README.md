@@ -36,5 +36,13 @@ Option B: run OpenJarvis as a sidecar and call its connector (`jarvis connect go
 - Prompt-injection fixture in the content cannot trigger an action.
 - Nothing from this connector reaches a cloud model unless the user's privacy setting allows it for this source.
 
+## API facts (verified 2026-11-01)
+- Scope `https://www.googleapis.com/auth/tasks.readonly` is enough for both [tasklists.list](https://developers.google.com/workspace/tasks/reference/rest/v1/tasklists/list) (`GET /tasks/v1/users/@me/lists`, up to 1000 a page) and [tasks.list](https://developers.google.com/workspace/tasks/reference/rest/v1/tasks/list) (`GET /tasks/v1/lists/{tasklist}/tasks`, `maxResults` default 20, max 100).
+- No sync token: incremental sync uses `updatedMin` with `showDeleted=true`. `showHidden=true` is required to see tasks completed in Google's own apps.
+- `due` is a date only; the time of day is discarded ([Task resource](https://developers.google.com/workspace/tasks/reference/rest/v1/tasks)).
+
+## Build log
+- **2026-11-01 · C19** — Read-only adapter `bridge/connectors/google_tasks.mjs` on the shared Google OAuth module (scope `tasks.readonly`), registered in `bridge/server.mjs`. Full sync of every list (open tasks plus completions from the last 90 days), incremental by `updatedMin` watermark with a 2-minute overlap; deleted tasks become deletion markers (C96); page budget resumes from the cursor. Read tool `list_tasks` with views due_today / overdue / upcoming / open / recently_completed in the owner's time zone. Tests: shared pack + 14 own tests, all against a fake Google. Left: real sign-in is C05 (enable the Tasks API in the same Cloud project); tasks of a whole list deleted in Google stay stored until "erase synced data"; "add task" write capability is a separate, approval-gated task if wanted.
+
 ## Related plans
 [Connector index](../../../README.md) · [08](../../../../08-data-access-and-safety.md) · [15](../../../../15-policy-trust-and-privacy.md) · [39](../../../../39-settings-and-control-center.md) · [38](../../../../38-shared-data-contracts.md)

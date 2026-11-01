@@ -81,6 +81,7 @@ import { notionConnector } from './connectors/notion.mjs'
 import { slackConnector } from './connectors/slack.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
+import { googleTasksConnector } from './connectors/google_tasks.mjs'
 import { createConnectorWatcher } from './connectors/watch.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
@@ -531,6 +532,14 @@ connectors.registerAll([
     // typed on the card, read per call. Off until a location is set.
     id: 'weather',
     create: (ctx) => weatherConnector({ options: () => connectorOptions.get('weather') }).create(ctx),
+  },
+  {
+    // Google Tasks (task C19), read-only: task lists, due days, notes and
+    // recent completions from tasks.googleapis.com. Same pattern as Calendar.
+    id: 'google_tasks',
+    create: (ctx) => googleTasksConnector({
+      googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
+    }).create(ctx),
   },
 ])
 
