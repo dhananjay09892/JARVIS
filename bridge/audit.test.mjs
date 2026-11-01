@@ -155,6 +155,20 @@ test('entries keep tool names and rules, never arguments, results or secrets', (
   assert.equal(normaliseEntry({ ...decision(), request: { kind: 'tool', name: 'bad name!' } }).request.name, '[malformed]')
 })
 
+test('channel entries keep ids, lengths and the rule, never the message or a stranger\'s id (plan 20, Q36)', () => {
+  const known = normaliseEntry({
+    type: 'channel', actor: 'chat', state: 'received', channel: 'telegram', bindingId: 'b-1',
+    rule: 'chat-turn', length: 42, text: 'my bank PIN is 1234', senderId: '123456789',
+  })
+  assert.deepEqual(known, { type: 'channel', actor: 'chat', state: 'received', channel: 'telegram', bindingId: 'b-1', rule: 'chat-turn', length: 42 })
+  const stranger = normaliseEntry({ type: 'channel', actor: 'chat', state: 'rejected', channel: 'telegram', senderHash: '0123456789abcdef', rule: 'rejected-unknown', length: 5 })
+  assert.equal(stranger.senderHash, '0123456789abcdef')
+  assert.equal('bindingId' in stranger, false)
+  // A raw id offered as the hash is not kept.
+  assert.equal(normaliseEntry({ type: 'channel', state: 'rejected', channel: 'telegram', senderHash: '123456789' }).senderHash, 'unknown')
+  assert.throws(() => normaliseEntry({ type: 'channel', state: 'gossiped', channel: 'telegram' }), /channel state/)
+})
+
 test('entries that do not say what they are are refused', () => {
   assert.throws(() => normaliseEntry(null), /object/)
   assert.throws(() => normaliseEntry({ type: 'gossip' }), /entry type/)

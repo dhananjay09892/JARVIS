@@ -387,10 +387,23 @@ this file decides *in what order*.
 - **Done when:** the spec is merged.
 
 ### Q36 · Plan 20 · Telegram adapter
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q35
 - **Scope:** 20 phase 2, built and tested against mocks. Live testing needs a bot token from you, listed in the PR.
 - **Done when:** the adapter passes its tests with the sender allow-list enforced.
+
+### Q79 · Plan 20 · Wire Telegram into the bridge
+- **Status:** todo
+- **Depends on:** Q36
+- **Scope:** 20 phase 2, the rest. Connect `bridge/channels/` (built in Q36) to `server.mjs`: a real `runTurn` that runs a text turn through the brain with `via: 'chat'`, taint on, the policy engine and the role's tool scope; `isFrozen`/`freeze.on` from the bus; bus topics `channel.received/rejected/sent` (also in `shared/contracts.ts`); the settings in spec §10 (master switch off, token in the vault with a "test" button); Settings → Channels with Pair, Confirm/Cancel, bindings, revoke and last seen; `ChannelBinding` contract; the Telegram row of spec §8 in `DISCLAIMER.txt`, with provider facts re-checked and linked; metrics from spec §12.
+- **Done when:** with the master switch on and a token set, a paired owner can chat with JARVIS over Telegram against a mocked Telegram in an end-to-end test, everything is off by default, and the disclaimer says what leaves the computer.
+
+### Q80 · Plan 20 · Live check: Telegram bot
+- **Status:** needs-you
+- **Needs you:** create a bot with @BotFather, put its token in Settings → Channels, pair your account, and try: a question, a forwarded message, `/freeze`, and a message from a second account (it must get no reply). Report anything odd on the PR.
+- **Depends on:** Q79
+- **Scope:** live test of plan 20 phase 2 on a real bot.
+- **Done when:** you have confirmed the four checks above work.
 
 ### Q37 · Plan 07 · Vector store decision record
 - **Status:** todo
