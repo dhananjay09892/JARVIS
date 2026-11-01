@@ -8,6 +8,8 @@ import {
   createBriefing,
   listing,
   localDate,
+  localDay,
+  parseBriefingTime,
   readMail,
   readWeather,
   safeLocale,
@@ -275,4 +277,211 @@ test('stop() unsubscribes from the bus', async () => {
   bus.publish('workflow.finished', { runId: 'r1', workflowId: 'w1', name: 'Late', trigger: 'schedule', status: 'failed', stepsTotal: 1, stepsCompleted: 0, startedAt: NOW, finishedAt: NOW })
   await new Promise((r) => setImmediate(r))
   assert.equal(Object.fromEntries(briefing.morning().sections.map((s) => [s.id, s.say])).overnight, undefined)
+})
+
+// ---------------------------------------------------------------------------
+// Q78: Hindi and Gujarati, repeating events, and a set time
+// ---------------------------------------------------------------------------
+
+const FULL = {
+  now: NOW,
+  locale: 'en-GB',
+  weather: weatherDocs(),
+  calendar: CALENDAR,
+  mail: [{ author: 'Sam <s@x.io>', meta: { labels: 'INBOX,IMPORTANT' } }, { author: 'Ann <a@x.io>', meta: { labels: 'INBOX' } }],
+  overnight: [{ kind: 'workflow', name: 'Nightly backup', status: 'failed' }, { kind: 'task', title: 'Build site', status: 'failed', sensitivity: 'public' }],
+  held: [{ title: 'Parcel delivered', privacy: 'public' }, { title: 'Secret thing', privacy: 'private' }],
+}
+const sayOf = (b) => Object.fromEntries(b.sections.map((s) => [s.id, s.say]))
+
+test('a Hindi profile hears the briefing in Hindi (Devanagari)', () => {
+  const b = composeMorningBriefing({ ...FULL, lang: 'hi' })
+  assert.equal(b.lang, 'hi')
+  const say = sayOf(b)
+  assert.match(say.greeting, /^सुप्रभात। आज \S+वार, 1 नवंबर है।$/)
+  assert.equal(say.weather, 'London में अभी हल्के बादल, 9 डिग्री। आज हल्की बारिश, 5 से 11 डिग्री, बारिश की 80 प्रतिशत संभावना। छाता साथ रख लीजिए।')
+  assert.equal(say.calendar, 'आज कैलेंडर पर 4 चीज़ें हैं: Bank holiday, पूरे दिन, Conference, पूरे दिन, Stand-up सुबह 9:30 बजे और Lunch with Sam दोपहर 1:00 बजे।')
+  assert.equal(say.mail, '2 नए ईमेल, 1 ज़रूरी।')
+  assert.equal(say.overnight, 'रात में: Nightly backup वर्कफ़्लो फ़ेल हो गया। 1 बैकग्राउंड काम पूरा हुआ; 1 फ़ेल। फ़ेल: Build site।')
+  assert.equal(say.held, 'आपके पीछे से: Parcel delivered, और 1 और, जो मैं आपको अकेले में बताऊँगा।')
+  assert.ok(!say.held.includes('Secret'), 'private alerts are still only counted')
+})
+
+test('a Gujarati profile hears the briefing in Gujarati, in either script', () => {
+  const say = sayOf(composeMorningBriefing({ ...FULL, lang: 'gu' }))
+  assert.match(say.greeting, /^સુપ્રભાત\. આજે \S+વાર, 1 નવેમ્બર છે\.$/)
+  assert.equal(say.weather, 'Londonમાં અત્યારે થોડાં વાદળ, 9 ડિગ્રી. આજે હળવો વરસાદ, 5 થી 11 ડિગ્રી, વરસાદની 80 ટકા શક્યતા. છત્રી સાથે રાખજો.')
+  assert.equal(say.calendar, 'આજે કૅલેન્ડરમાં 4 વસ્તુઓ છે: Bank holiday, આખો દિવસ, Conference, આખો દિવસ, Stand-up સવારે 9:30 વાગ્યે અને Lunch with Sam બપોરે 1:00 વાગ્યે.')
+  assert.equal(say.mail, '2 નવા ઈમેલ, 1 મહત્ત્વના.')
+
+  const roman = sayOf(composeMorningBriefing({ ...FULL, lang: 'gu', script: 'roman' }))
+  assert.match(roman.greeting, /^Suprabhat\. Aaje \w+, 1 November che\.$/)
+  assert.match(roman.weather, /^London ma atyare thoda vadal, 9 degree\. Aaje halvo varsad, 5 thi 11 degree/)
+  assert.ok(!/[઀-૿ऀ-ॿ]/.test(Object.values(roman).join(' ')), 'roman script has no Gujarati or Devanagari letters')
+
+  const hiRoman = sayOf(composeMorningBriefing({ ...FULL, lang: 'hi', script: 'roman' }))
+  assert.equal(hiRoman.mail, '2 naye email, 1 zaroori.')
+  assert.ok(!/[઀-૿ऀ-ॿ]/.test(Object.values(hiRoman).join(' ')))
+})
+
+test('every section and the empty briefing exist in every language and script', () => {
+  for (const lang of ['en', 'hi', 'gu']) {
+    for (const script of ['native', 'roman']) {
+      const full = composeMorningBriefing({ ...FULL, lang, script, mailDetail: true, overnight: [...FULL.overnight, { kind: 'workflow', name: 'Tidy', status: 'completed' }, { kind: 'task', title: 'x', status: 'interrupted' }] })
+      assert.deepEqual(full.sections.map((s) => s.id), ['greeting', 'weather', 'calendar', 'mail', 'overnight', 'held'], `${lang}/${script}`)
+      for (const s of full.sections) assert.ok(s.say && !/undefined|NaN|\[object/.test(s.say), `${lang}/${script} ${s.id}: ${s.say}`)
+      const quick = composeMorningBriefing({ ...FULL, lang, script, short: true, held: [{ title: 'x', privacy: 'private' }] })
+      for (const s of quick.sections) assert.ok(s.say && !/undefined|NaN/.test(s.say), `${lang}/${script} quick ${s.id}`)
+      const none = composeMorningBriefing({ now: NOW, lang, script, calendar: [], mail: [] })
+      for (const s of none.sections) assert.ok(s.say && !/undefined|NaN/.test(s.say), `${lang}/${script} none ${s.id}`)
+      const empty = composeMorningBriefing({ now: NOW, lang, script })
+      assert.equal(empty.empty, true)
+      assert.match(empty.sections[1].say, /Settings/)
+    }
+  }
+  assert.equal(composeMorningBriefing({ now: NOW, lang: 'fr' }).lang, 'en', 'an unknown language is English')
+})
+
+/** A weekly series that started weeks ago, as the C07 connector stores it. */
+function weeklySeries({ weekday = new Date(NOW).getDay(), start = at(10, 0, 1 - 28), end = at(10, 30, 1 - 28), extra = [] } = {}) {
+  const day = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'][weekday]
+  return {
+    id: 'me@example.com/series1',
+    title: 'Team sync',
+    text: [`When: ${iso(start)} – ${iso(end)}`, `Repeats: ${[`RRULE:FREQ=WEEKLY;BYDAY=${day}`, ...extra].join('; ')}`, 'Calendar: Work'].join('\n'),
+    meta: { calendarId: 'me@example.com', status: 'confirmed', start: iso(start), end: iso(end), allDay: false },
+  }
+}
+
+test('a weekly repeating meeting shows up on its day, at its time', () => {
+  const got = todaysEvents([weeklySeries()], { now: NOW })
+  assert.deepEqual(got, [{ title: 'Team sync', allDay: false, start: at(10) }])
+  const say = sayOf(composeMorningBriefing({ now: NOW, calendar: [...CALENDAR, weeklySeries()] }))
+  assert.match(say.calendar, /You have 5 things.*Stand-up at 9:30, Team sync at 10:00 and Lunch with Sam at 13:00\./)
+  // Not on other days of the week, and not once it is over.
+  const otherDay = (new Date(NOW).getDay() + 1) % 7
+  assert.deepEqual(todaysEvents([weeklySeries({ weekday: otherDay })], { now: NOW }), [])
+  assert.deepEqual(todaysEvents([weeklySeries()], { now: at(10, 31) }), [])
+  assert.equal(todaysEvents([weeklySeries()], { now: at(10, 15) }).length, 1, 'under way still counts')
+})
+
+test('a moved or cancelled occurrence wins over the series', () => {
+  const series = weeklySeries()
+  // Today's occurrence was moved to 15:00.
+  const moved = {
+    id: 'me@example.com/series1_x', title: 'Team sync', text: '',
+    meta: { calendarId: 'me@example.com', status: 'confirmed', recurringEventId: 'series1', originalStart: iso(at(10)), start: iso(at(15)), end: iso(at(15, 30)), allDay: false },
+  }
+  assert.deepEqual(todaysEvents([series, moved], { now: NOW }).map((e) => e.start), [at(15)])
+  // Today's occurrence was cancelled.
+  const cancelled = {
+    id: 'me@example.com/series1_y', title: 'Cancelled: Team sync', text: '',
+    meta: { calendarId: 'me@example.com', status: 'cancelled', recurringEventId: 'series1', originalStart: iso(at(10)) },
+  }
+  assert.deepEqual(todaysEvents([series, cancelled], { now: NOW }), [])
+  // An EXDATE on today, and a declined series.
+  const d = new Date(NOW)
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}T100000`
+  assert.deepEqual(todaysEvents([weeklySeries({ extra: [`EXDATE;TZID=Europe/London:${stamp}`] })], { now: NOW }), [])
+  assert.deepEqual(todaysEvents([{ ...series, meta: { ...series.meta, myResponse: 'declined' } }], { now: NOW }), [])
+})
+
+test('a repeating all-day event and a birthday', () => {
+  const birthday = {
+    id: 'me@example.com/bday', title: "Asha's birthday",
+    text: 'When: 2020-11-01 – 2020-11-02 (all day)\nRepeats: RRULE:FREQ=YEARLY\nCalendar: Family',
+    meta: { calendarId: 'me@example.com', status: 'confirmed', start: '2020-11-01', end: '2020-11-02', allDay: true },
+  }
+  assert.deepEqual(todaysEvents([birthday], { now: NOW }), [{ title: "Asha's birthday", allDay: true, start: localDay(NOW).start }])
+  assert.deepEqual(todaysEvents([birthday], { now: at(8, 0, 2) }), [])
+})
+
+// -- A set time --------------------------------------------------------------
+
+test('parseBriefingTime', () => {
+  assert.equal(parseBriefingTime('07:30'), 450)
+  assert.equal(parseBriefingTime('off'), null)
+  assert.equal(parseBriefingTime('7:30'), null)
+  assert.equal(parseBriefingTime('24:00'), null)
+  assert.equal(parseBriefingTime(undefined), null)
+})
+
+function offerSetup({ time = '07:00', quiet = '22:00-07:00', enabled = true, notifier } = {}) {
+  const clock = { t: at(6, 30) }
+  const settings = { time, quiet, enabled }
+  const briefing = createBriefing({
+    now: () => clock.t,
+    time: () => settings.time,
+    quietHours: () => settings.quiet,
+    enabled: () => settings.enabled,
+    notifier,
+    log: { error() {} },
+  })
+  return { briefing, clock, settings }
+}
+
+test('a briefing set for a time is offered once, at the first wake after it', () => {
+  const { briefing, clock } = offerSetup({ quiet: 'off' })
+  assert.deepEqual(briefing.offer(), { offer: false, why: 'not-yet' })
+  clock.t = at(7, 5)
+  const first = briefing.offer({ lang: 'en' })
+  assert.equal(first.offer, true)
+  assert.equal(first.say, 'Good morning, sir. Your briefing is ready. Shall I go ahead?')
+  clock.t = at(7, 20)
+  assert.deepEqual(briefing.offer(), { offer: false, why: 'already' }, 'only once a day')
+  clock.t = at(7, 5, 2)
+  assert.equal(briefing.offer().offer, true, 'and again the next day')
+  assert.equal(briefing.stats().offers.offered, 2)
+})
+
+test('never during quiet hours: the offer waits for the first wake after they end', () => {
+  const { briefing, clock } = offerSetup({ time: '06:00', quiet: '22:00-07:00' })
+  clock.t = at(6, 30)
+  assert.deepEqual(briefing.offer(), { offer: false, why: 'held', rule: 'quiet-hours' })
+  clock.t = at(6, 59)
+  assert.equal(briefing.offer().offer, false)
+  clock.t = at(7, 1)
+  assert.equal(briefing.offer().offer, true)
+  assert.deepEqual(briefing.stats().offers, { offered: 1, held: 2 })
+})
+
+test('the notifier decides when there is one (alerts off, busy)', () => {
+  const calls = []
+  const notifier = { held: () => [], check: (n) => { calls.push(n); return { verdict: 'hold', rule: 'busy' } } }
+  const { briefing, clock } = offerSetup({ notifier })
+  clock.t = at(9)
+  assert.deepEqual(briefing.offer(), { offer: false, why: 'held', rule: 'busy' })
+  assert.equal(calls[0].source, 'briefing')
+  assert.equal(calls[0].urgency, 'normal')
+  assert.equal(calls[0].privacy, 'public')
+})
+
+test('the offer in Hindi and Gujarati; off by default; a briefing since counts', () => {
+  const { briefing, clock } = offerSetup({ quiet: 'off' })
+  clock.t = at(8)
+  assert.equal(briefing.offer({ lang: 'hi' }).say, 'सुप्रभात, सर। आपकी ब्रीफिंग तैयार है। सुनाऊँ?')
+  clock.t = at(8, 0, 2)
+  assert.equal(briefing.offer({ lang: 'gu', script: 'roman' }).say, 'Suprabhat, sir. Tamari briefing taiyar che. Sambhlavu?')
+
+  const unset = createBriefing({ now: () => at(9) })
+  assert.deepEqual(unset.offer(), { offer: false, why: 'no-time' }, 'no time set: never offered')
+
+  const off = offerSetup({ enabled: false })
+  off.clock.t = at(9)
+  assert.deepEqual(off.briefing.offer(), { offer: false, why: 'off' })
+
+  const asked = offerSetup({ quiet: 'off' })
+  asked.clock.t = at(7, 10)
+  asked.briefing.morning()
+  asked.clock.t = at(7, 30)
+  assert.deepEqual(asked.briefing.offer(), { offer: false, why: 'already' }, 'he already gave one today')
+})
+
+test('the service passes the language through and counts it', () => {
+  const { briefing } = setup()
+  const out = briefing.morning({ lang: 'gu' })
+  assert.equal(out.lang, 'gu')
+  assert.match(out.sections[0].say, /^સુપ્રભાત/)
+  assert.equal(briefing.morning({ lang: 'xx' }).lang, 'en')
+  assert.deepEqual(briefing.stats().languages, { en: 1, hi: 0, gu: 1 })
 })

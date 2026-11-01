@@ -51,7 +51,15 @@ import {
   type TimerView,
 } from './lib/reflex'
 import { makeReflexMemory } from './lib/reflexNote'
-import { fetchBriefing, nextSection, type BriefingRun } from './lib/briefing'
+import {
+  briefingOfferTimeSet,
+  fetchBriefing,
+  fetchBriefingOffer,
+  nextSection,
+  offerStillOpen,
+  setBriefingOfferTime,
+  type BriefingRun,
+} from './lib/briefing'
 import { browserTimers, type Timers } from './lib/timers'
 import { getVolume, setVolume } from './lib/volume'
 import { env } from './config'
@@ -136,6 +144,11 @@ export default function App() {
    * any other request drops it.
    */
   const briefingRun = useRef<BriefingRun | null>(null)
+  /**
+   * When he last offered the briefing at a wake (Q78), 0 for no open offer.
+   * Only the very next request can answer it ("yes", "not now").
+   */
+  const briefingOfferedAt = useRef(0)
 
   // -- helpers --------------------------------------------------------------
 
@@ -219,6 +232,9 @@ export default function App() {
     stale: () => boolean,
   ): Promise<void> => {
     const s = store.getState()
+    // The offer at a wake (Q78) is answered by this request or not at all.
+    const offered = offerStillOpen(briefingOfferedAt.current, Date.now())
+    briefingOfferedAt.current = 0
     trace.beginTurn('reflex', { stt: voiceDiag.engine, tts: ttsDiag.engine, reflex: familyOf(r) })
     let failure: string | null = null
     let then: 'listen' | 'dormant' = 'listen'
@@ -243,6 +259,7 @@ export default function App() {
         lang: replyLanguageFor(profile, heard),
         script: profile.script,
         briefing: briefingRun.current !== null,
+        offered,
       })
       then = a.then
       // A briefing's words came from connectors: the model is only told one was given.
@@ -272,7 +289,8 @@ export default function App() {
       if (a.briefing === 'start') {
         briefingRun.current = null
         s.setPhase('thinking')
-        const reply = await fetchBriefing({ short: a.briefingShort, locale: reflexLocale() })
+        // In the language the owner's profile asks for (plan 28, Q78).
+        const reply = await fetchBriefing({ short: a.briefingShort, locale: reflexLocale(), lang: replyLanguageFor(profile, heard), script: profile.script })
         if (stale()) return
         if (reply.ok) {
           briefingRun.current = { sections: reply.sections, next: 0 }
@@ -363,7 +381,10 @@ export default function App() {
 
     // Quick commands: stop, volume, timers, the time and date, "say that again".
     // Only whole-utterance matches; everything else goes on to the model.
-    const reflex = reflexesEnabled() ? matchReflexIn(said, { briefing: briefingRun.current !== null }) : null
+    const offered = offerStillOpen(briefingOfferedAt.current, Date.now())
+    const reflex = reflexesEnabled() ? matchReflexIn(said, { briefing: briefingRun.current !== null, offered }) : null
+    // Anything but a reflex closes the offer made at the wake (Q78); runReflex closes it too.
+    if (!reflex) briefingOfferedAt.current = 0
     // Anything but a briefing command means the conversation moved on.
     if (reflex?.reflex.kind.startsWith('briefing') !== true) briefingRun.current = null
     if (reflex) {
@@ -497,6 +518,8 @@ export default function App() {
     // Saying his name is attention enough for a ringing timer.
     quietAlarm()
     sfx.play('wake')
+    // A new wake: any earlier briefing offer (Q78) is no longer open.
+    briefingOfferedAt.current = 0
 
     // "Jarvis, what's happening in AI this week" in one breath. Waiting for a
     // greeting he didn't need is the most common way an assistant wastes time.
@@ -512,8 +535,23 @@ export default function App() {
     // straight over the greeting instead of waiting it out.
     const greeting = createSpeaker()
     speaker.current = greeting
-    greeting.say(attention())
-    void greeting.end()
+    if (!briefingOfferTimeSet()) {
+      greeting.say(attention())
+      void greeting.end()
+    } else {
+      // A briefing time is set (Q78): the bridge says whether this is the
+      // first wake after it, today, outside quiet hours. It is on this
+      // computer, so the answer is quick; if it is slow, the usual greeting.
+      // Said only if nobody has started talking meanwhile.
+      const profile = reflexLanguageProfile()
+      void fetchBriefingOffer({ lang: replyLanguageFor(profile), script: profile.script }).then((offer) => {
+        // Talking, a new turn or standby all replace or clear the speaker.
+        if (speaker.current !== greeting) return
+        if (offer) briefingOfferedAt.current = Date.now()
+        greeting.say(offer ? offer.say : attention())
+        void greeting.end()
+      })
+    }
 
     listen(AWAIT_SPEECH_MS)
   }
@@ -819,6 +857,8 @@ export default function App() {
     setReflexesEnabled(wakeSettings?.JARVIS_REFLEXES !== '0')
     // Which language quick commands answer in (plan 28, Q75). No bridge: English.
     setReflexLanguageProfile(languageProfileFrom(wakeSettings))
+    // A set briefing time (plan 12, Q78): only then does a wake ask the bridge.
+    setBriefingOfferTime(wakeSettings?.JARVIS_BRIEFING_TIME)
     // Timers from before a reload come back now that sound is allowed.
     timers.current ??= browserTimers(onTimerDone)
 

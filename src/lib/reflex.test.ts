@@ -314,6 +314,14 @@ test('answers: the briefing reflexes tell the page what to do', () => {
   assert.equal(familyOf({ kind: 'briefing-skip' }), 'briefing')
 })
 
+test('answers to the offer at a wake (Q78)', () => {
+  assert.deepEqual(answerReflex({ kind: 'briefing-end' }, ctx({ offered: true })), { say: 'Very good, sir. Say "brief me" whenever you like.', then: 'listen', briefing: 'end' })
+  assert.deepEqual(matchReflex('Yes please', { offered: true }), { kind: 'briefing', short: false })
+  assert.deepEqual(matchReflex('Not right now', { offered: true }), { kind: 'briefing-end' })
+  // During a briefing "skip it" is still the next section, not a "no".
+  assert.deepEqual(matchReflex('Skip it', { offered: true, briefing: true }), { kind: 'briefing-skip' })
+})
+
 test('reflex families match the ones bridge traces accept', async () => {
   // @ts-expect-error a plain-JS bridge module, imported only for this check
   const { REFLEXES } = await import('../../bridge/traces.mjs')

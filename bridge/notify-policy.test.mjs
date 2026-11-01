@@ -360,3 +360,17 @@ test('stop unsubscribes from the bus', async () => {
   await tick()
   assert.equal(n.held().length, 0)
 })
+
+test('check() decides without raising: nothing counted, kept or published (Q78)', async () => {
+  const { n, topics, set, settings } = setup()
+  set(at(23)) // quiet hours
+  assert.equal(n.check(alert()).rule, 'quiet-hours')
+  set(at(9))
+  assert.equal(n.check(alert()).verdict, 'deliver')
+  settings.enabled = false
+  assert.equal(n.check(alert()).rule, 'alerts-off')
+  await tick()
+  assert.deepEqual(topics, [])
+  assert.equal(n.held().length, 0)
+  assert.deepEqual(n.stats().decided, { deliver: 0, hold: 0, suppress: 0 })
+})

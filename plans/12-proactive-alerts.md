@@ -23,7 +23,7 @@ on.
 2. ✅ **Notification policy engine (3 d):** each candidate alert gets `urgency` (info/normal/important/urgent), `audience` (who), `place` (room), `privacy` (private/public). Decision = f(urgency, quiet hours, presence, current activity, speaker present, focus mode). *First slice done (Q33): `bridge/notify-policy.mjs`, quiet hours and the alerts switch in Settings. Presence and activity rules are built and tested but get real signals only when speaker ID (01) and context (14) report them; `place` waits for rooms (03).*
 3. **Delivery channels:** speak in room, HUD card, phone push, queue-for-next-wake ("while you were away…").
 4. **"announce" workflow step** and event-triggered workflows.
-5. 🟡 **Briefings (3 d):** morning/evening/weekly templates (calendar, travel time, weather, tasks, mail highlights, overnight jobs, home status); length adapts; skippable by voice. *Morning template done (Q34): `bridge/briefing.mjs`, "brief me" / "quick briefing" on the page, "skip" for the next section. Briefing at a set time, Hindi/Gujarati and repeating events are Q78; evening and weekly templates, travel time, tasks and home status wait for their sources.*
+5. 🟡 **Briefings (3 d):** morning/evening/weekly templates (calendar, travel time, weather, tasks, mail highlights, overnight jobs, home status); length adapts; skippable by voice. *Morning template done (Q34): `bridge/briefing.mjs`, "brief me" / "quick briefing" on the page, "skip" for the next section. Q78 added an offer at the first wake after a set time (through the notification policy, never in quiet hours), the briefing in Hindi and Gujarati, and repeating calendar events. Evening and weekly templates, travel time, tasks and home status wait for their sources.*
 6. **Anticipation (1–2 w):** travel-time alerts from calendar + location, "you usually call Mum on Sundays", package/arrival reminders, bill due — each from a rule or approved learned routine (07).
 7. **Do-not-disturb intelligence:** meetings (from calendar), calls, sleep schedule, focus sessions, guests present; urgent override list (smoke, leak, family).
 8. **Feedback loop:** "not now / don't tell me this again / more like this" adjusts a per-source score; weekly digest of what was suppressed.
@@ -115,3 +115,44 @@ Annoyance is the failure mode → conservative defaults, explicit opt-in per sou
   English for now), repeating calendar events (only found on the day of their first
   occurrence until the series is expanded). Calendar reads the 500 most recently changed
   entries. Evening/weekly templates, travel time, tasks and home status wait for their sources.
+- **2026-11-01 — Building block 5, the rest of the morning template (Q78).** *Set time:*
+  Settings → Alerts → **Offer it when I first wake him after** (`JARVIS_BRIEFING_TIME`,
+  `HH:MM` or `off`, off by default, per person, live). When a time is set, each wake (his name
+  with nothing after it) asks the bridge `POST /briefing/offer`; `briefing.offer()` says yes once
+  a local day, from the set time on, only when the notification policy would let a normal,
+  public alert out right now (the notifier's new side-effect-free `check()`, or `decide()` with
+  quiet hours when the bus is off), so during quiet hours it waits for the first wake after they
+  end; a briefing already given since the set time counts. He then says "Good morning, sir. Your
+  briefing is ready. Shall I go ahead?" instead of "Yes, sir?"; "yes" / "sure" / "हाँ" / "હા"
+  starts it and "not now" / "नहीं" / "ના" declines it, only as the very next request (within a
+  minute). Without a time set the page never asks, so waking costs nothing extra; a slow bridge
+  (over 0.7 s) gets the usual greeting. *Hindi and Gujarati:* `bridge/briefing-words.mjs` holds
+  the briefing's words in English (unchanged), Hindi and Gujarati, each in its own script or
+  Latin letters; the page sends the reply language from the language profile (plan 28) and the
+  bridge falls back to English for anything else. Names, titles and places are never
+  translated; the weather connector's WMO conditions are. Reflexes (`reflexIndic.ts`): "ब्रीफिंग
+  सुनाओ", "briefing sunao", "આજની બ્રીફિંગ સંભળાવો", "briefing sambhlavo", quick ones with
+  "छोटी" / "ટૂંકી" / "jaldi", "ब्रीफिंग बंद करो" / "બ્રીફિંગ બંધ કરો" to end, and "आगे" /
+  "આગળ" / "aage" for the next part only while one is running; the reflex replies about the
+  briefing are in the phrasebooks too. *Repeating events:* `bridge/recurrence.mjs` expands a
+  series on the day (DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL, COUNT, UNTIL, BYDAY with ordinals,
+  BYMONTHDAY, BYMONTH, WKST, EXDATE); anything else is left unexpanded rather than guessed. A
+  moved or cancelled occurrence (its own document, `recurringEventId` + `originalStart`) wins
+  over the series. The rule is read from `meta.recurrence` if the connector ever provides it,
+  otherwise from the "Repeats:" header line C07 writes before the description. Metric (16):
+  `/briefing/stats` adds `languages` (briefings per language) and `offers` (offered, held).
+  Tests: `briefing.test.mjs` (both languages and scripts for every section, a weekly meeting on
+  its day, moved/cancelled/EXDATE occurrences, the offer once a day, quiet hours, the notifier
+  deciding, off by default; four time zones), `recurrence.test.mjs`, `notify-policy.test.mjs`
+  (`check()`), `reflexIndic.test.ts`, `reflex.test.ts`, `briefingRun.test.ts`,
+  `settings-registry.test.mjs`. **Left:** "offered once a day" is kept in memory, so a bridge
+  restart after the offer can offer again that day; the offer is spoken only on a bare wake (a
+  wake with a command answers the command, and the next bare wake gets the offer); occurrence
+  times keep the series' wall-clock time on this computer, so a series in another time zone can
+  be an hour out across a DST change; the calendar still reads the 500 most recently changed
+  entries, so a long-unchanged series can be missed (worth a C07 follow-up: store
+  `meta.recurrence`, or sync single occurrences for the next days); the "Repeats:" header line
+  could in principle be imitated by a newline inside an event's location or an attachment name
+  (it would only make that event appear on extra days in the briefing; `meta.recurrence` from
+  the connector closes it). Evening/weekly templates, travel time, tasks and home status wait for
+  their sources.

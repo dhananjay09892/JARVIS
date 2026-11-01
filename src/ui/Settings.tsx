@@ -7,6 +7,7 @@ import { SelfTest } from './SelfTest'
 import { setQuickStart } from '../lib/tts'
 import { createWizardTracker, postSetupEvent } from '../lib/setupMetrics'
 import { languageProfileFrom, setReflexesEnabled, setReflexLanguageProfile } from '../lib/reflex'
+import { setBriefingOfferTime } from '../lib/briefing'
 import {
   getSettings,
   getSettingsSchema,
@@ -80,6 +81,7 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_QUIET_HOURS: { default: '22:00-07:00', help: '' },
   JARVIS_BRIEFING: { default: '1', help: '' },
   JARVIS_BRIEFING_MAIL: { default: '0', help: '' },
+  JARVIS_BRIEFING_TIME: { default: 'off', help: '' },
   JARVIS_ALLOW_WRITES: {
     default: '0',
     help: 'Off by default: JARVIS can look at things but changes nothing.',
@@ -244,6 +246,12 @@ export function Settings() {
     return patchSetting(change)
   }
 
+  /** The briefing time (Q78): saved, and the page starts or stops asking at a wake at once. */
+  const patchBriefingTime = (value: string) => {
+    setBriefingOfferTime(value)
+    return patchSetting({ JARVIS_BRIEFING_TIME: value })
+  }
+
   const model = def(schema, 'JARVIS_MODEL')
   const claudeAuth = def(schema, 'JARVIS_CLAUDE_AUTH')
   const brainChoice = def(schema, 'JARVIS_BRAIN')
@@ -353,7 +361,11 @@ export function Settings() {
   const quietHours = def(schema, 'JARVIS_QUIET_HOURS')
   const briefing = def(schema, 'JARVIS_BRIEFING')
   const briefingMail = def(schema, 'JARVIS_BRIEFING_MAIL')
+  const briefingTime = def(schema, 'JARVIS_BRIEFING_TIME')
   const briefingOn = (s?.JARVIS_BRIEFING || briefing.default) === '1'
+  // The set time is stored as 'HH:MM' or 'off' (plan 12, Q78).
+  const briefingAt = s?.JARVIS_BRIEFING_TIME || briefingTime.default
+  const briefingAtOn = briefingAt !== 'off'
   // Quiet hours are stored as 'HH:MM-HH:MM' or 'off' (plan 12, Q33).
   const quietValue = s?.JARVIS_QUIET_HOURS || quietHours.default
   const quietOn = quietValue !== 'off'
@@ -417,10 +429,29 @@ export function Settings() {
         />{' '}
         Say who new mail is from
       </label>
+      <div className="mem-add">
+        <label title={briefingTime.help || undefined}>
+          <input
+            type="checkbox"
+            checked={briefingAtOn}
+            disabled={busy || !s || !briefingOn}
+            onChange={(e) => patchBriefingTime(e.target.checked ? '07:30' : 'off')}
+          />{' '}
+          Offer it when I first wake him after{' '}
+          <input
+            type="time"
+            aria-label="Offer the briefing after"
+            value={briefingAtOn ? briefingAt : '07:30'}
+            disabled={busy || !s || !briefingOn || !briefingAtOn}
+            onChange={(e) => e.target.value && patchBriefingTime(e.target.value)}
+          />
+        </label>
+      </div>
       <p className="mem-note">
-        The weather, today’s calendar, new mail and what ran overnight, from the connectors you have set up. Say
-        “skip” for the next part and “stop” to end it. It is read aloud, so mail is only counted unless you turn on
-        senders.
+        The weather, today’s calendar, new mail and what ran overnight, from the connectors you have set up, in the
+        language you chose under Language. Say “skip” for the next part and “stop” to end it. It is read aloud, so
+        mail is only counted unless you turn on senders. With a time set, he offers it once a day, never during quiet
+        hours.
       </p>
     </>
   )

@@ -279,3 +279,78 @@ test('a finished timer is announced in the reply language', () => {
   assert.equal(timerDoneLine({ ms: 5 * MIN }, 'gu'), 'સર, 5 મિનિટવાળું ટાઈમર પૂરું થયું.')
   assert.equal(timerDoneLine({ ms: 5 * MIN }, 'gu', 'roman'), 'Sir, 5 minit valu timer puru thayu.')
 })
+
+// ---------------------------------------------------------------------------
+// The morning briefing in Hindi and Gujarati (Q78)
+// ---------------------------------------------------------------------------
+
+const BRIEF: Reflex = { kind: 'briefing', short: false }
+const QUICK_BRIEF: Reflex = { kind: 'briefing', short: true }
+const BRIEF_END: Reflex = { kind: 'briefing-end' }
+const BRIEF_SKIP: Reflex = { kind: 'briefing-skip' }
+
+const BRIEFING_HITS: [string, Reflex, Heard][] = [
+  ['ब्रीफ़िंग सुनाओ', BRIEF, 'hi'],
+  ['आज की ब्रीफिंग सुनाइए', BRIEF, 'hi'],
+  ['मेरी मॉर्निंग ब्रीफिंग दो', BRIEF, 'hi'],
+  ['छोटी ब्रीफिंग सुनाओ', QUICK_BRIEF, 'hi'],
+  ['ब्रीफिंग जल्दी से सुनाओ', QUICK_BRIEF, 'hi'],
+  ['ब्रीफिंग बंद करो', BRIEF_END, 'hi'],
+  ['आज ब्रीफिंग नहीं', BRIEF_END, 'hi'],
+  ['આજની બ્રીફિંગ સંભળાવો', BRIEF, 'gu'],
+  ['બ્રીફિંગ આપો', BRIEF, 'gu'],
+  ['ટૂંકી બ્રીફિંગ આપો', QUICK_BRIEF, 'gu'],
+  ['બ્રીફિંગ બંધ કરો', BRIEF_END, 'gu'],
+  ['aaj ki briefing sunao', BRIEF, 'hi'],
+  ['jaldi briefing sunao', QUICK_BRIEF, 'hi'],
+  ['briefing rehne do', BRIEF_END, 'hi'],
+  ['aaj ni briefing sambhlavo', BRIEF, 'gu'],
+  ['tunki briefing aapo', QUICK_BRIEF, 'gu'],
+  ['briefing bandh karo', BRIEF_END, 'gu'],
+  ['briefing band karo', BRIEF_END, 'mixed'],
+]
+
+for (const [said, want, heard] of BRIEFING_HITS) {
+  test(`briefing reflex (${heard}): "${said}"`, () => {
+    assert.deepEqual(matchReflexIn(said), { reflex: want, heard })
+    assert.deepEqual(matchReflexIn(said, { briefing: true })?.reflex, want, 'the same during a briefing')
+  })
+}
+
+test('"next" in Hindi and Gujarati only means the briefing while one is going', () => {
+  for (const said of ['आगे', 'आगे बढ़ो', 'अगला', 'આગળ', 'આગળ વધો', 'પછીનું', 'aage', 'agla', 'aagal vadho']) {
+    assert.deepEqual(matchReflex(said, { briefing: true }), BRIEF_SKIP, said)
+    assert.equal(matchReflex(said), null, `${said} goes to the model otherwise`)
+  }
+  assert.deepEqual(matchReflex('बाकी छोड़ो', { briefing: true }), BRIEF_END)
+  // Stop words still stop, during a briefing too.
+  assert.deepEqual(matchReflex('बस', { briefing: true }), STOP)
+  assert.deepEqual(matchReflex('બસ', { briefing: true }), STOP)
+})
+
+test('"yes" and "no" answer the offer, in every language, only right after it', () => {
+  for (const said of ['yes', 'Yes please', 'Sure, go ahead', 'हाँ', 'हां सुनाओ', 'ज़रूर', 'haan', 'હા', 'હા, સંભળાવો', 'bhale', 'ha']) {
+    assert.deepEqual(matchReflex(said, { offered: true }), BRIEF, said)
+    assert.equal(matchReflex(said), null, `${said} goes to the model without an offer`)
+  }
+  for (const said of ['no', 'No thanks', 'not now', 'नहीं', 'अभी नहीं', 'nahi', 'ના', 'હમણાં નહીં', 'na']) {
+    assert.deepEqual(matchReflex(said, { offered: true }), BRIEF_END, said)
+  }
+  assert.equal(matchReflex('Yes, and what is the weather in Paris?', { offered: true }), null, 'anything longer goes to the model')
+})
+
+test('briefing words in Hindi and Gujarati leave other requests to the model', () => {
+  for (const said of ['ब्रीफिंग का डॉक्यूमेंट भेजो', 'बोर्ड के लिए ब्रीफिंग लिखो', 'બ્રીફિંગમાં શું હતું', 'briefing ka summary likho']) {
+    assert.equal(matchReflex(said), null, said)
+    assert.equal(matchReflex(said, { briefing: true, offered: true }), null, said)
+  }
+})
+
+test('briefing lines in the reply language', () => {
+  assert.equal(answerReflex(BRIEF_END, ctx({ lang: 'hi', briefing: true })).say, 'ठीक है, ब्रीफिंग यहीं रोक देता हूँ।')
+  assert.equal(answerReflex(BRIEF_END, ctx({ lang: 'gu', offered: true })).say, 'ભલે, સર. જ્યારે ઇચ્છો ત્યારે "બ્રીફિંગ સંભળાવો" કહેજો.')
+  assert.equal(answerReflex(BRIEF_END, ctx({ lang: 'gu', offered: true })).briefing, 'end')
+  assert.equal(answerReflex(BRIEF_SKIP, ctx({ lang: 'hi', script: 'roman' })).say, 'Chhodne ke liye kuch nahi hai, sir.')
+  assert.equal(answerReflex(BRIEF_END, ctx({ lang: 'gu', script: 'roman' })).say, 'Atyare koi briefing chalu nathi, sir.')
+  assert.deepEqual(answerReflex(BRIEF, ctx({ lang: 'hi' })), { say: null, then: 'listen', briefing: 'start', briefingShort: false })
+})

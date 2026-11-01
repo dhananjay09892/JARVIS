@@ -51,6 +51,8 @@ export type PublicSettings = {
   JARVIS_BRIEFING: string
   /** '1' | '0' — the briefing names who new mail is from (plan 12, Q34). '' means the default (off). */
   JARVIS_BRIEFING_MAIL: string
+  /** 'HH:MM' local time, or 'off': offer the briefing at the first wake from then on (plan 12, Q78). '' means the default (off). */
+  JARVIS_BRIEFING_TIME: string
   setupDone: string
   storage: string
   /** Restart-only settings saved but not yet in force (plan 39 phase 4). Older bridges omit it. */

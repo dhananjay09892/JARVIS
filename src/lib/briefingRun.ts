@@ -17,8 +17,12 @@ export type BriefingReply =
 /** A briefing being read out: its sections and the next one to say. */
 export type BriefingRun = { sections: BriefingSection[]; next: number }
 
+/** The bridge's offer at a wake (Q78): what to say instead of the usual greeting. */
+export type BriefingOffer = { say: string }
+
 const MAX_SECTIONS = 10
 const MAX_SAY = 1200
+const MAX_OFFER = 200
 
 /** Only well-formed sections, clipped, so a confused bridge cannot make him read a novel. */
 export function sectionsFrom(raw: unknown): BriefingSection[] {
@@ -31,6 +35,22 @@ export function sectionsFrom(raw: unknown): BriefingSection[] {
     out.push({ id: id as BriefingSectionId, say: say.trim().slice(0, MAX_SAY) })
   }
   return out
+}
+
+/** The bridge's answer to "should he offer it?", or null for no offer (or anything malformed). */
+export function offerFrom(raw: unknown): BriefingOffer | null {
+  if (!raw || typeof raw !== 'object') return null
+  const { offer, say } = raw as { offer?: unknown; say?: unknown }
+  if (offer !== true || typeof say !== 'string' || !say.trim()) return null
+  return { say: say.trim().slice(0, MAX_OFFER) }
+}
+
+/** How long a "yes" still answers the offer after it was made. */
+export const OFFER_OPEN_MS = 60_000
+
+/** Whether an offer made at `offeredAt` (0 for none) can still be taken up at `now`. */
+export function offerStillOpen(offeredAt: number, now: number): boolean {
+  return offeredAt > 0 && now >= offeredAt && now - offeredAt <= OFFER_OPEN_MS
 }
 
 /** The next section to say, moving the run on; null when it is over. */

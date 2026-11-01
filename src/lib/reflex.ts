@@ -57,6 +57,8 @@ export const familyOf = (r: Reflex): ReflexFamily =>
 export type MatchContext = {
   /** A briefing is being read out (or was cut off and can carry on): "skip" means its next section. */
   briefing?: boolean
+  /** He just offered the briefing at a wake (Q78): "yes" starts it, "no" declines it. */
+  offered?: boolean
 }
 
 /** Longest timer accepted: a day. Anything longer is a reminder (plan 12), not a timer. */
@@ -226,6 +228,10 @@ const BRIEFING_START_SHORT = new RegExp(
 const BRIEFING_END = /^(?:skip|stop|cancel|end|forget|drop|no more of)\s+(?:the |this |my |today's )?(?:morning |daily )?(?:briefing|brief|rundown)(?: for (?:now|today))?$|^no briefing(?: today| for now)?$/
 const BRIEFING_SKIP = /^(?:skip|skip it|skip that|skip this|skip this one|skip that one|skip ahead|skip on|next|next one|next part|next section|next item|next thing|move on|go on to the next(?: one| part)?)$/
 const BRIEFING_SKIP_REST = /^(?:skip the rest|skip everything|skip all of it|that's enough of that)$/
+// Answers to the briefing offered at a wake (Q78); they only mean that right after it.
+// ("Not now" arrives as "not": the trailing "now" is trimmed like "please".)
+const OFFER_YES = /^(?:yes|yeah|yep|yup|sure|ok|okay|alright|all right|go ahead|go on|do it|please do|yes go ahead|sure go ahead|let's hear it|let's have it|why not|of course|absolutely|brief me|go for it)$/
+const OFFER_NO = /^(?:no|nope|nah|not|not now|not today|not yet|later|maybe later|no need|skip it|no briefing|i'm good|i'm fine)$/
 
 function briefingStart(s: string): Reflex | null {
   const m = BRIEFING_START.exec(s) ?? BRIEFING_START_SHORT.exec(s)
@@ -261,7 +267,7 @@ export function matchReflexIn(text: string, ctx: MatchContext = {}): { reflex: R
   if (!s || s.length > 120) return null
   const en = matchEnglish(s, ctx)
   if (en) return { reflex: en, heard: 'en' }
-  const indic = matchIndic(s)
+  const indic = matchIndic(s, ctx)
   if (!indic) return null
   // The same limits as English: a timer is a second to a day.
   const r = indic.reflex
@@ -272,6 +278,11 @@ export function matchReflexIn(text: string, ctx: MatchContext = {}): { reflex: R
 function matchEnglish(s: string, ctx: MatchContext): Reflex | null {
 
   if (STOP.test(s)) return { kind: 'stop' }
+  // Right after the offer at a wake, "yes" and "no" answer it (Q78).
+  if (ctx.offered && !ctx.briefing) {
+    if (OFFER_YES.test(s)) return { kind: 'briefing', short: false }
+    if (OFFER_NO.test(s)) return { kind: 'briefing-end' }
+  }
   // "Skip" only means the briefing while one is going; otherwise it goes to the model.
   if (ctx.briefing && BRIEFING_SKIP.test(s)) return { kind: 'briefing-skip' }
   if (BRIEFING_END.test(s) || (ctx.briefing && BRIEFING_SKIP_REST.test(s))) return { kind: 'briefing-end' }
@@ -421,6 +432,8 @@ export type ReflexContext = {
   script?: Script
   /** A briefing is being read out, or was cut off part way (Q34). */
   briefing?: boolean
+  /** He just offered the briefing at a wake (Q78). */
+  offered?: boolean
 }
 
 /** What App.respond carries out. Everything a reflex changes is named here. */
@@ -461,6 +474,10 @@ const englishBook = (locale: string): Phrasebook => ({
   several: (n, lines, more) =>
     `${n} timers. ${lines.join('; ')}${more ? `, and ${more} more` : ''}.`.replace(/^(\d+ timers\. )the/, '$1The'),
   timerDone: (name) => `Sir, ${name} is done.`,
+  briefingEnded: "Very good. I'll leave the briefing there.",
+  briefingNone: "There's no briefing running, sir.",
+  nothingToSkip: "There's nothing to skip, sir.",
+  briefingDeclined: 'Very good, sir. Say "brief me" whenever you like.',
 })
 
 /** The words for this reply: English, or Hindi or Gujarati in the chosen script. */
@@ -543,20 +560,20 @@ export function answerReflex(r: Reflex, ctx: ReflexContext): ReflexAnswer {
       }
     }
 
-    // The briefing is read in English for now: its sections are built on the
-    // bridge in English (Q34). These two lines follow it.
+    // The briefing itself is built on the bridge, in the reply language
+    // (Q78); App passes the language on when it fetches it.
     case 'briefing':
       return { say: null, then: 'listen', briefing: 'start', briefingShort: r.short }
 
     case 'briefing-skip':
       return ctx.briefing
         ? { say: null, then: 'listen', briefing: 'next' }
-        : { say: "There's nothing to skip, sir.", then: 'listen' }
+        : { say: say.nothingToSkip, then: 'listen' }
 
     case 'briefing-end':
-      return ctx.briefing
-        ? { say: "Very good. I'll leave the briefing there.", then: 'listen', briefing: 'end' }
-        : { say: "There's no briefing running, sir.", then: 'listen' }
+      if (ctx.briefing) return { say: say.briefingEnded, then: 'listen', briefing: 'end' }
+      if (ctx.offered) return { say: say.briefingDeclined, then: 'listen', briefing: 'end' }
+      return { say: say.briefingNone, then: 'listen' }
 
     case 'timer-query': {
       if (!soonest.length) return { say: say.noTimers, then: 'listen' }

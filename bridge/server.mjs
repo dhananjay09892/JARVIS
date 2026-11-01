@@ -434,6 +434,9 @@ const briefing = createBriefing({
   notifier,
   enabled: () => setting('JARVIS_BRIEFING') !== '0',
   mailDetail: () => setting('JARVIS_BRIEFING_MAIL') === '1',
+  // Q78: offered at the first wake after this time, through the notification policy.
+  time: () => setting('JARVIS_BRIEFING_TIME') || 'off',
+  quietHours: () => setting('JARVIS_QUIET_HOURS') || DEFAULT_QUIET_HOURS,
 })
 let documentPrefs = null
 try {
@@ -1456,7 +1459,12 @@ const handleRequest = async (req, res) => {
   // It holds the owner's calendar and mail, so only a page of ours may ask
   // for it (a real, allowed Origin), as with settings writes. The stats are
   // counts only.
-  if (requestUrl.pathname === '/briefing/morning' && req.method === 'POST') {
+  // Both take the reply language the page worked out from the owner's
+  // language profile (plan 28): { lang: 'en'|'hi'|'gu', script: 'native'|'roman' }.
+  // /briefing/offer is asked when he is woken (Q78) and answers whether to
+  // offer the briefing instead of the usual greeting; it remembers that it
+  // offered, so it also needs our Origin.
+  if ((requestUrl.pathname === '/briefing/morning' || requestUrl.pathname === '/briefing/offer') && req.method === 'POST') {
     if (!origin) {
       res.writeHead(403, cors)
       return res.end('forbidden')
@@ -1476,7 +1484,13 @@ const handleRequest = async (req, res) => {
     } catch {
       body = {}
     }
-    const out = briefing.morning({ short: body?.short === true, locale: typeof body?.locale === 'string' ? body.locale : undefined })
+    const lang = typeof body?.lang === 'string' ? body.lang : undefined
+    const script = typeof body?.script === 'string' ? body.script : undefined
+    if (requestUrl.pathname === '/briefing/offer') {
+      res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+      return res.end(JSON.stringify(briefing.offer({ lang, script })))
+    }
+    const out = briefing.morning({ short: body?.short === true, locale: typeof body?.locale === 'string' ? body.locale : undefined, lang, script })
     res.writeHead(out.ok || out.off ? 200 : 500, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
     return res.end(JSON.stringify(out))
   }
