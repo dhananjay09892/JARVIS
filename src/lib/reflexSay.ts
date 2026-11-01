@@ -30,6 +30,12 @@ export type Phrasebook = {
   left(duration: string, name: string): string
   several(n: number, lines: string[], more: number): string
   timerDone(name: string): string
+  /** The morning briefing (Q34, Q78). */
+  briefingEnded: string
+  briefingNone: string
+  nothingToSkip: string
+  /** "No" to the briefing offered at a wake (Q78). */
+  briefingDeclined: string
 }
 
 /** Splits a duration into whole hours, minutes and seconds; seconds drop once there are hours. */
@@ -96,6 +102,10 @@ const HINDI: Phrasebook = {
   left: (dur, name) => `${name.replace(/वाला टाइमर$/, 'वाले टाइमर')} में ${dur} बाकी हैं।`,
   several: (n, lines, more) => `${n} टाइमर। ${lines.join('; ')}${more ? `, और ${more} और` : ''}।`,
   timerDone: (name) => `सर, ${name} पूरा हो गया।`,
+  briefingEnded: 'ठीक है, ब्रीफिंग यहीं रोक देता हूँ।',
+  briefingNone: 'अभी कोई ब्रीफिंग नहीं चल रही, सर।',
+  nothingToSkip: 'छोड़ने के लिए कुछ नहीं है, सर।',
+  briefingDeclined: 'ठीक है, सर। जब चाहें "ब्रीफिंग सुनाओ" कहिए।',
 }
 
 const HI_DAYS_R = ['Ravivaar', 'Somvaar', 'Mangalvaar', 'Budhvaar', 'Guruvaar', 'Shukravaar', 'Shanivaar']
@@ -127,6 +137,10 @@ const HINDI_ROMAN: Phrasebook = {
   left: (dur, name) => `${name.replace(/wala timer$/, 'wale timer')} mein ${dur} baaki hain.`,
   several: (n, lines, more) => `${n} timer. ${lines.join('; ')}${more ? `, aur ${more} aur` : ''}.`,
   timerDone: (name) => `Sir, ${name} poora ho gaya.`,
+  briefingEnded: 'Theek hai, briefing yahin rok deta hoon.',
+  briefingNone: 'Abhi koi briefing nahi chal rahi, sir.',
+  nothingToSkip: 'Chhodne ke liye kuch nahi hai, sir.',
+  briefingDeclined: 'Theek hai, sir. Jab chahein "briefing sunao" kahiye.',
 }
 
 // -- Gujarati ---------------------------------------------------------------
@@ -160,6 +174,10 @@ const GUJARATI: Phrasebook = {
   left: (dur, name) => `${name}માં ${dur} બાકી છે.`,
   several: (n, lines, more) => `${n} ટાઈમર. ${lines.join('; ')}${more ? `, અને બીજા ${more}` : ''}.`,
   timerDone: (name) => `સર, ${name} પૂરું થયું.`,
+  briefingEnded: 'ભલે, બ્રીફિંગ અહીં જ અટકાવું છું.',
+  briefingNone: 'અત્યારે કોઈ બ્રીફિંગ ચાલુ નથી, સર.',
+  nothingToSkip: 'છોડવા માટે કંઈ નથી, સર.',
+  briefingDeclined: 'ભલે, સર. જ્યારે ઇચ્છો ત્યારે "બ્રીફિંગ સંભળાવો" કહેજો.',
 }
 
 const GU_DAYS_R = ['Ravivar', 'Somvar', 'Mangalvar', 'Budhvar', 'Guruvar', 'Shukravar', 'Shanivar']
@@ -190,6 +208,10 @@ const GUJARATI_ROMAN: Phrasebook = {
   left: (dur, name) => `${name} ma ${dur} baki che.`,
   several: (n, lines, more) => `${n} timer. ${lines.join('; ')}${more ? `, ane bija ${more}` : ''}.`,
   timerDone: (name) => `Sir, ${name} puru thayu.`,
+  briefingEnded: 'Bhale, briefing ahiya j atkavu chu.',
+  briefingNone: 'Atyare koi briefing chalu nathi, sir.',
+  nothingToSkip: 'Chhodva mate kai nathi, sir.',
+  briefingDeclined: 'Bhale, sir. Jyare icchho tyare "briefing sambhlavo" kahejo.',
 }
 
 /** The phrasebook for a Hindi or Gujarati reply in the given script. English lives in reflex.ts. */

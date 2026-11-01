@@ -281,6 +281,14 @@ export function createNotifier({
     submit(n) {
       return bus.publish('notification.created', n)
     },
+    /**
+     * What the policy would decide for this alert right now, without raising
+     * it: nothing is counted, kept or published. For things that are not
+     * alerts but should obey the same rules, like the briefing offer (Q78).
+     */
+    check(n) {
+      return decide(n, ctxNow())
+    },
     /** Attaches a delivery channel `(notification, decision) => void`. Returns a detach function. */
     addChannel(fn) {
       if (typeof fn !== 'function') throw new TypeError('A notification channel must be a function.')

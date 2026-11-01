@@ -17,7 +17,7 @@
  * no nukta, Indian digits as 0-9, and Gujarati postpositions split off
  * ("મિનિટનું" → "મિનિટ નું").
  */
-import type { Reflex } from './reflex.ts'
+import type { MatchContext, Reflex } from './reflex.ts'
 
 /** Which language an utterance was in. 'mixed': romanised words shared by Hindi and Gujarati. */
 export type Heard = 'en' | 'hi' | 'gu' | 'mixed'
@@ -239,17 +239,81 @@ const MIXED: Entry[] = [
   { heard: 'mixed', re: R(`(?:(sab|badha) )?timers? ${alt('cancel karo', 'cancel kar', 'cancel kar do', 'cancel kari do', 'off karo', 'off kar')}`), make: (m) => timerCancel(m[1], undefined) },
 ]
 
+// -- The morning briefing (plans 12 + 28, Q78) --------------------------------
+//
+// As in English, "briefing" has to be in the sentence to start one ("ब्रीफिंग
+// सुनाओ", "briefing sunao", "બ્રીફિંગ સંભળાવો"); a quick one is "छोटी" /
+// "ટૂંકી" / "jaldi". "आगे" / "આગળ" (next) only mean the briefing while one is
+// going, and "हां" / "હા" (yes) only right after he offered one at a wake.
+// "बस", "रुको" and the other stop words still stop it, as in English.
+
+const BRIEF_HI = alt('ब्रीफिंग', 'ब्रिफिंग')
+const BRIEF_GU = alt('બ્રીફિંગ', 'બ્રિફિંગ')
+const BRIEF_R = alt('briefing', 'brifing')
+const briefing = (short: boolean): Reflex => ({ kind: 'briefing', short })
+
+const BRIEFING_ALWAYS: Entry[] = [
+  // Hindi, Devanagari
+  fixed('hi', R(`(?:आज की |मेरी )?(?:${alt('मॉर्निंग', 'मोर्निंग', 'सुबह की')} )?${BRIEF_HI} ${alt('सुनाओ', 'सुनाइए', 'सुनाइये', 'सुना दो', 'सुना दीजिए', 'दो', 'दीजिए', 'दीजिये', 'बताओ', 'बताइए', 'शुरू करो', 'शुरू कीजिए', 'चालू करो')}`), briefing(false)),
+  fixed('hi', R(`(?:${alt('छोटी', 'जल्दी से', 'जल्दी', 'शॉर्ट')} )(?:${alt('सी', 'वाली')} )?${BRIEF_HI} ${alt('सुनाओ', 'सुनाइए', 'सुना दो', 'दो', 'दीजिए', 'बताओ')}|${BRIEF_HI} जल्दी (?:से )?${alt('सुनाओ', 'सुना दो', 'बताओ')}`), briefing(true)),
+  fixed('hi', R(`${BRIEF_HI} ${alt('बंद करो', 'बंद कर दो', 'बंद कीजिए', 'रहने दो', 'रहने दीजिए', 'छोडो', 'रोको', 'रोक दो', 'मत सुनाओ')}|आज ${BRIEF_HI} नहीं|${BRIEF_HI} नहीं चाहिए`), { kind: 'briefing-end' }),
+  // Gujarati, Gujarati script ("આજની" arrives as "આજ ની")
+  fixed('gu', R(`(?:આજ ની |મારી )?(?:${alt('મોર્નિંગ', 'સવાર ની')} )?${BRIEF_GU} ${alt('સંભળાવો', 'સંભળાવ', 'સંભળાવી દો', 'આપો', 'આપ', 'કહો', 'કહે', 'શરૂ કરો', 'શરૂ કર', 'ચાલુ કરો')}`), briefing(false)),
+  fixed('gu', R(`${alt('ટૂંકી', 'નાની', 'ઝડપથી', 'જલ્દી')} ${BRIEF_GU} ${alt('સંભળાવો', 'સંભળાવ', 'આપો', 'કહો')}|${BRIEF_GU} ${alt('ઝડપથી', 'જલ્દી')} ${alt('સંભળાવો', 'સંભળાવ', 'કહો')}`), briefing(true)),
+  fixed('gu', R(`${BRIEF_GU} ${alt('બંધ કરો', 'બંધ કર', 'બંધ કરી દો', 'રહેવા દો', 'રહેવા દે', 'રોકો', 'રોકી દો', 'ના સંભળાવો')}|આજે ${BRIEF_GU} નહીં|${BRIEF_GU} નથી જોઈતી`), { kind: 'briefing-end' }),
+  // Hindi, Latin letters
+  fixed('hi', R(`(?:aaj ki |meri )?(?:${alt('morning', 'subah ki')} )?${BRIEF_R} ${alt('sunao', 'sunaiye', 'suna do', 'suna dijiye', 'dijiye', 'batao', 'bataiye', 'shuru karo', 'chalu karo', 'start karo')}`), briefing(false)),
+  fixed('hi', R(`${alt('chhoti', 'choti', 'jaldi se', 'jaldi', 'short')} ${BRIEF_R} ${alt('sunao', 'suna do', 'dijiye', 'batao')}|${BRIEF_R} jaldi (?:se )?${alt('sunao', 'suna do', 'batao')}`), briefing(true)),
+  fixed('hi', R(`${BRIEF_R} ${alt('rehne do', 'rahne do', 'chhodo', 'chodo', 'roko', 'rok do', 'mat sunao')}|aaj ${BRIEF_R} nahi|${BRIEF_R} nahi chahiye`), { kind: 'briefing-end' }),
+  // Gujarati, Latin letters
+  fixed('gu', R(`(?:aaj ni |aajni |mari )?(?:${alt('morning', 'savar ni')} )?${BRIEF_R} ${alt('sambhlavo', 'sambhalavo', 'sambhdavo', 'sambhlav', 'aapo', 'aap', 'kaho', 'sharu karo', 'chalu kar')}`), briefing(false)),
+  fixed('gu', R(`${alt('tunki', 'tuki', 'nani', 'jaldi', 'jhadapthi')} ${BRIEF_R} ${alt('sambhlavo', 'sambhalavo', 'aapo', 'kaho')}`), briefing(true)),
+  fixed('gu', R(`${BRIEF_R} ${alt('bandh karo', 'bandh kar', 'rehva do', 'reva do', 'rehva de', 'roko')}|aaje ${BRIEF_R} nahi|${BRIEF_R} nathi joti`), { kind: 'briefing-end' }),
+  // Shared romanised words
+  fixed('mixed', R(`${BRIEF_R} ${alt('band karo', 'band kar', 'band kar do', 'off karo', 'cancel karo')}`), { kind: 'briefing-end' }),
+  fixed('mixed', R(`${BRIEF_R} ${alt('do', 'start', 'shuru')}`), briefing(false)),
+]
+
+/** "Next part" — only while a briefing is being read out. */
+const BRIEFING_SKIP: Entry[] = [
+  fixed('hi', R(`${alt('आगे', 'आगे बढो', 'आगे बढिए', 'आगे चलो', 'अगला', 'अगला वाला', 'अगला हिस्सा', 'अगली बात', 'इसे छोडो', 'ये छोडो', 'यह छोडो')}`), { kind: 'briefing-skip' }),
+  fixed('gu', R(`${alt('આગળ', 'આગળ વધો', 'આગળ વધ', 'આગળ ચાલો', 'પછી નું', 'હવે પછી નું', 'આ છોડો', 'આ છોડ')}`), { kind: 'briefing-skip' }),
+  fixed('hi', R(`${alt('aage', 'aage badho', 'aage chalo', 'agla', 'agla wala', 'agli baat', 'ise chhodo', 'ye chhodo')}`), { kind: 'briefing-skip' }),
+  fixed('gu', R(`${alt('aagal', 'agal', 'aagal vadho', 'agal vadho', 'pachhi nu', 'pachi nu', 'aa chhodo')}`), { kind: 'briefing-skip' }),
+  fixed('hi', R(`(?:बाकी|baaki|baki) ${alt('छोडो', 'रहने दो', 'chhodo', 'rehne do')}`), { kind: 'briefing-end' }),
+  fixed('gu', R(`(?:બાકી ${alt('છોડો', 'રહેવા દો')}|baki ${alt('chhodo', 'rehva do')})`), { kind: 'briefing-end' }),
+]
+
+/** "Yes" / "no" — only right after he offered the briefing at a wake. */
+const OFFER_ANSWERS: Entry[] = [
+  fixed('hi', R(`${alt('हां', 'हां हां', 'हां सुनाओ', 'हां बताओ', 'सुनाओ', 'जरूर', 'ठीक है', 'चलो', 'बिल्कुल', 'हां क्यों नहीं')}`), briefing(false)),
+  fixed('hi', R(`${alt('नहीं', 'ना', 'अभी नहीं', 'नहीं अभी नहीं', 'बाद में', 'नहीं चाहिए', 'नहीं धन्यवाद')}`), { kind: 'briefing-end' }),
+  fixed('gu', R(`${alt('હા', 'હા હા', 'હા સંભળાવો', 'સંભળાવો', 'જરૂર', 'ચાલો', 'બરાબર', 'ભલે', 'હા કેમ નહીં')}`), briefing(false)),
+  fixed('gu', R(`${alt('ના', 'ના ના', 'હમણાં નહીં', 'અત્યારે નહીં', 'પછી', 'પછી થી', 'નથી જોઈતું', 'ના આભાર')}`), { kind: 'briefing-end' }),
+  fixed('hi', R(`${alt('haan', 'haan haan', 'haan sunao', 'sunao', 'zaroor', 'jaroor', 'jarur', 'theek hai', 'thik hai', 'bilkul')}`), briefing(false)),
+  fixed('hi', R(`${alt('nahi', 'nahin', 'abhi nahi', 'baad mein', 'baad me', 'nahi chahiye')}`), { kind: 'briefing-end' }),
+  fixed('gu', R(`${alt('sambhlavo', 'barabar', 'bhale')}`), briefing(false)),
+  fixed('gu', R(`${alt('hamna nahi', 'atyare nahi', 'pachhi', 'pachi')}`), { kind: 'briefing-end' }),
+  fixed('mixed', R(`${alt('ha', 'haa', 'ha ha', 'chalo')}`), briefing(false)),
+  fixed('mixed', R(`${alt('na', 'na na')}`), { kind: 'briefing-end' }),
+]
+
 // Order matters only where two lists could both match; the shared romanised
 // words are tried last so a distinctively Hindi or Gujarati phrase keeps its
-// language.
-const ALL: Entry[] = [...HINDI, ...GUJARATI, ...HINDI_ROMAN, ...GUJARATI_ROMAN, ...MIXED]
+// language. The briefing comes first so "ब्रीफिंग बंद करो" is not read as a
+// plain stop.
+const ALL: Entry[] = [...BRIEFING_ALWAYS, ...HINDI, ...GUJARATI, ...HINDI_ROMAN, ...GUJARATI_ROMAN, ...MIXED]
 
 /**
  * The reflex a normalised Hindi or Gujarati utterance asks for, and which
- * language it was in; null to send it to the model.
+ * language it was in; null to send it to the model. `ctx` says what the page
+ * is in the middle of (a briefing, an offer), as for English.
  */
-export function matchIndic(s: string): { reflex: Reflex; heard: Heard } | null {
-  for (const e of ALL) {
+export function matchIndic(s: string, ctx: MatchContext = {}): { reflex: Reflex; heard: Heard } | null {
+  const lists: Entry[] = []
+  if (ctx.offered && !ctx.briefing) lists.push(...OFFER_ANSWERS)
+  if (ctx.briefing) lists.push(...BRIEFING_SKIP)
+  for (const e of [...lists, ...ALL]) {
     const m = e.re.exec(s)
     if (!m) continue
     const reflex = e.make(m)
