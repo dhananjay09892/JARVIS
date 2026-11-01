@@ -77,6 +77,7 @@ import { gmailImapConnector } from './connectors/gmail_imap.mjs'
 import { notionConnector } from './connectors/notion.mjs'
 import { slackConnector } from './connectors/slack.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
+import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { createConnectorWatcher } from './connectors/watch.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
@@ -403,9 +404,9 @@ try {
 } catch (err) {
   console.error('[jarvis] could not apply document preferences:', err?.message ?? err)
 }
-/** Each card's own settings (task C97): Google Drive's folders and shared-drive switch. */
+/** Each card's own settings (task C97): Google Drive's folders and shared-drive switch; Weather's location (C16). */
 const connectorOptions = createConnectorOptions({
-  definitions: { gdrive: GDRIVE_OPTIONS },
+  definitions: { gdrive: GDRIVE_OPTIONS, weather: WEATHER_OPTIONS },
   initial: connectorGrantsFile.loadOptions(),
   persist: connectorGrantsFile.saveOptions,
 })
@@ -480,6 +481,12 @@ connectors.registerAll([
     // locally, never follows links, never writes.
     id: 'obsidian',
     create: (ctx) => obsidianConnector().create(ctx),
+  },
+  {
+    // Weather (task C16): Open-Meteo, no account or key; only the location
+    // typed on the card, read per call. Off until a location is set.
+    id: 'weather',
+    create: (ctx) => weatherConnector({ options: () => connectorOptions.get('weather') }).create(ctx),
   },
 ])
 

@@ -167,7 +167,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** a real workspace syncs read-only.
 
 ### C16 · openjarvis/data-connectors/weather · Weather
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03
 - **Scope:** Compare a keyless provider (e.g. Open-Meteo, *verify* terms) with OpenWeatherMap as the README names; R0, location from Settings only. Current conditions and forecast as a read tool.
 - **Done when:** fixture forecast, bad key, offline and injection tests pass.

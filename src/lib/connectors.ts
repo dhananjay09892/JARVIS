@@ -25,16 +25,16 @@ export type ConnectorSetup = {
   clientLabel?: string
 }
 
-/** One of a connector's own settings on its card (task C97). */
+/** One of a connector's own settings on its card (task C97; one line of text since C16). */
 export type ConnectorOptionField = {
   key: string
-  type: 'list' | 'boolean'
+  type: 'list' | 'boolean' | 'text'
   label: string
   help?: string
   max?: number
 }
 
-export type ConnectorOptionValue = string[] | boolean
+export type ConnectorOptionValue = string[] | boolean | string
 
 export type ConnectorOptions = {
   fields: ConnectorOptionField[]
