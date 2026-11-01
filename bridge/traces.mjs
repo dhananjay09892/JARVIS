@@ -31,7 +31,7 @@ export const STAGES = ['speechEnd', 'transcribed', 'firstTool', 'firstToken', 'f
 /** 'reflex': answered on the page with no model call (plan 06 phase 1). */
 export const ROUTES = ['bridge', 'direct', 'reflex']
 /** Reflex families a reflex trace may name; kept in step with src/lib/reflex.ts. */
-export const REFLEXES = ['stop', 'time', 'date', 'repeat', 'volume', 'timer']
+export const REFLEXES = ['stop', 'time', 'date', 'repeat', 'volume', 'timer', 'briefing']
 export const OUTCOMES = ['ok', 'error', 'interrupted']
 
 const MAX_TOOLS = 32

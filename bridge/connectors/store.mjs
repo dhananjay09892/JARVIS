@@ -350,6 +350,38 @@ export function openDocumentStore({ file, dir = defaultMemoryDir(), now = Date.n
       return { ...rowOut(r, { text: truncated ? r.text.slice(0, MAX_READ) : r.text }), truncated }
     },
 
+    /**
+     * One connector's documents, newest change first, with their text
+     * (capped) and the adapter's `meta` (task Q34: the morning briefing reads
+     * today's calendar entries and the latest forecast this way, not by
+     * keyword). `since` keeps only documents changed at or after that time;
+     * `classes` limits to those sensitivity classes. At most 500.
+     *
+     * @param {string} connectorId
+     * @param {{ since?: number, limit?: number, classes?: string[] }} [opts]
+     */
+    recent(connectorId, { since, limit = 50, classes } = {}) {
+      checkId(connectorId)
+      checkClasses(classes, 'classes')
+      if (classes && !classes.length) return []
+      const n = Math.max(1, Math.min(500, Number.isInteger(limit) ? limit : 50))
+      const args = [connectorId, Number.isFinite(since) ? since : 0]
+      let where = 'connector_id = ? AND updated_at >= ?'
+      if (classes) {
+        where += ` AND sensitivity IN (${placeholders(classes.length)})`
+        args.push(...classes)
+      }
+      const rows = db.prepare(`SELECT * FROM connector_documents WHERE ${where} ORDER BY updated_at DESC, id DESC LIMIT ?`).all(...args, n)
+      return rows.map((r) => {
+        let meta = {}
+        try {
+          const m = JSON.parse(r.meta)
+          if (m && typeof m === 'object' && !Array.isArray(m)) meta = m
+        } catch { /* a damaged meta column reads as empty */ }
+        return { ...rowOut(r, { text: r.text.length > MAX_READ ? r.text.slice(0, MAX_READ) : r.text }), meta }
+      })
+    },
+
     /** Erase everything kept for one connector: documents, index, cursor. */
     erase(connectorId) {
       checkId(connectorId)

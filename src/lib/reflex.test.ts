@@ -15,6 +15,7 @@ import {
   speakTime,
   timerDoneLine,
   MAX_TIMERS,
+  REFLEX_FAMILIES,
   VOLUME_FLOOR,
   type Reflex,
   type ReflexContext,
@@ -245,4 +246,76 @@ test('timer done line and families for traces', () => {
   assert.equal(timerDoneLine({ ms: 5 * MIN, label: 'the pasta' }), 'Sir, the pasta timer is done.')
   assert.equal(familyOf({ kind: 'timer-query' }), 'timer')
   assert.equal(familyOf({ kind: 'volume', op: 'up' }), 'volume')
+})
+
+// ---------------------------------------------------------------------------
+// The morning briefing (plan 12, Q34)
+// ---------------------------------------------------------------------------
+
+const BRIEFING_HITS: [string, Reflex][] = [
+  ['Brief me', { kind: 'briefing', short: false }],
+  ['Jarvis, brief me please', { kind: 'briefing', short: false }],
+  ['Brief me on my day', { kind: 'briefing', short: false }],
+  ['Morning briefing', { kind: 'briefing', short: false }],
+  ['Give me my morning briefing.', { kind: 'briefing', short: false }],
+  ["Read me today's briefing", { kind: 'briefing', short: false }],
+  ['Can I have my briefing?', { kind: 'briefing', short: false }],
+  ['Daily brief', { kind: 'briefing', short: false }],
+  ['Start the briefing', { kind: 'briefing', short: false }],
+  ['Quick briefing', { kind: 'briefing', short: true }],
+  ['Give me a short morning briefing', { kind: 'briefing', short: true }],
+  ['Brief me quickly', { kind: 'briefing', short: true }],
+  ['Quick morning rundown', { kind: 'briefing', short: true }],
+  ['Skip the briefing', { kind: 'briefing-end' }],
+  ['Stop the morning briefing', { kind: 'briefing-end' }],
+  ['No briefing today', { kind: 'briefing-end' }],
+]
+
+for (const [said, want] of BRIEFING_HITS) {
+  test(`briefing reflex: "${said}"`, () => {
+    assert.deepEqual(matchReflex(said.replace(/^jarvis,?\s+/i, '')), want)
+  })
+}
+
+test('"skip" means the next section only while a briefing is going', () => {
+  for (const said of ['Skip', 'skip that', 'Next.', 'next section', 'Move on', 'skip it please']) {
+    assert.deepEqual(matchReflex(said, { briefing: true }), { kind: 'briefing-skip' }, said)
+    assert.equal(matchReflex(said), null, `${said} goes to the model when no briefing is running`)
+  }
+  assert.deepEqual(matchReflex('Skip the rest', { briefing: true }), { kind: 'briefing-end' })
+  assert.equal(matchReflex('Skip the rest'), null)
+  // Stop is still stop: it ends the briefing with everything else.
+  assert.deepEqual(matchReflex('Stop', { briefing: true }), { kind: 'stop' })
+})
+
+test('briefing reflexes leave other requests to the model', () => {
+  for (const said of [
+    'Read the brief',
+    'Brief Sam on the project',
+    'Write a briefing for the board',
+    'Summarise the briefing document',
+    'What was in the morning briefing?',
+    'Skip the intro of this video',
+    'Next week',
+    'Brief me about the new tax rules',
+  ]) {
+    assert.equal(matchReflex(said), null, said)
+    assert.equal(matchReflex(said, { briefing: true }), null, `${said} (during a briefing)`)
+  }
+})
+
+test('answers: the briefing reflexes tell the page what to do', () => {
+  assert.deepEqual(answerReflex({ kind: 'briefing', short: true }, ctx()), { say: null, then: 'listen', briefing: 'start', briefingShort: true })
+  assert.deepEqual(answerReflex({ kind: 'briefing-skip' }, ctx({ briefing: true })), { say: null, then: 'listen', briefing: 'next' })
+  assert.equal(answerReflex({ kind: 'briefing-skip' }, ctx()).briefing, undefined)
+  assert.equal(answerReflex({ kind: 'briefing-end' }, ctx({ briefing: true })).briefing, 'end')
+  assert.deepEqual(answerReflex({ kind: 'briefing-end' }, ctx()), { say: "There's no briefing running, sir.", then: 'listen' })
+  assert.equal(familyOf({ kind: 'briefing', short: false }), 'briefing')
+  assert.equal(familyOf({ kind: 'briefing-skip' }), 'briefing')
+})
+
+test('reflex families match the ones bridge traces accept', async () => {
+  // @ts-expect-error a plain-JS bridge module, imported only for this check
+  const { REFLEXES } = await import('../../bridge/traces.mjs')
+  assert.deepEqual([...REFLEX_FAMILIES], REFLEXES)
 })

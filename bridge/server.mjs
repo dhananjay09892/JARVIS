@@ -32,6 +32,7 @@ import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
 import { createBus } from './bus.mjs'
 import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.mjs'
+import { createBriefing } from './briefing.mjs'
 import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
@@ -417,6 +418,21 @@ function connectorDocuments() {
   }
 }
 const connectorStore = connectorDocuments()
+
+/**
+ * The morning briefing (plan 12 block 5, Q34; see bridge/briefing.mjs). Read
+ * from the connector store, overnight events on the bus and alerts the
+ * notifier is holding; built by plain rules, never by a model. The page asks
+ * for it when the owner says "brief me" and reads it out section by section.
+ * Both settings are live. Counts only at /briefing/stats.
+ */
+const briefing = createBriefing({
+  store: connectorStore,
+  bus,
+  notifier,
+  enabled: () => setting('JARVIS_BRIEFING') !== '0',
+  mailDetail: () => setting('JARVIS_BRIEFING_MAIL') === '1',
+})
 let documentPrefs = null
 try {
   documentPrefs = createDocumentPrefs({ store: connectorStore, initial: savedDocumentPrefs, persist: connectorGrantsFile.saveDocuments })
@@ -1417,6 +1433,38 @@ const handleRequest = async (req, res) => {
   if (requestUrl.pathname === '/notifications/stats' && req.method === 'GET') {
     res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
     return res.end(JSON.stringify(notifier ? { enabled: alertsOn(setting('JARVIS_ALERTS')), ...notifier.stats() } : { enabled: false }))
+  }
+  // ---- Morning briefing (plan 12 block 5, Q34) ------------------------
+  // It holds the owner's calendar and mail, so only a page of ours may ask
+  // for it (a real, allowed Origin), as with settings writes. The stats are
+  // counts only.
+  if (requestUrl.pathname === '/briefing/morning' && req.method === 'POST') {
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    let raw = ''
+    for await (const chunk of req) {
+      raw += chunk
+      if (raw.length > 2048) {
+        req.destroy()
+        res.writeHead(400, cors)
+        return res.end('body too large')
+      }
+    }
+    let body = {}
+    try {
+      body = raw ? JSON.parse(raw) : {}
+    } catch {
+      body = {}
+    }
+    const out = briefing.morning({ short: body?.short === true, locale: typeof body?.locale === 'string' ? body.locale : undefined })
+    res.writeHead(out.ok || out.off ? 200 : 500, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+    return res.end(JSON.stringify(out))
+  }
+  if (requestUrl.pathname === '/briefing/stats' && req.method === 'GET') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+    return res.end(JSON.stringify({ enabled: setting('JARVIS_BRIEFING') !== '0', ...briefing.stats() }))
   }
   // ---- Settings → Brains: OpenAI sign-in (plan 22, Q55) --------------
   // Sign in with ChatGPT and the model list. Writes need a real, allowed

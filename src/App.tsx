@@ -51,6 +51,7 @@ import {
   type TimerView,
 } from './lib/reflex'
 import { makeReflexMemory } from './lib/reflexNote'
+import { fetchBriefing, nextSection, type BriefingRun } from './lib/briefing'
 import { browserTimers, type Timers } from './lib/timers'
 import { getVolume, setVolume } from './lib/volume'
 import { env } from './config'
@@ -129,6 +130,12 @@ export default function App() {
   const lastRang = useRef(0)
   /** What reflexes did since the last model turn, told to the model with the next one (Q75). */
   const reflexMemory = useRef(makeReflexMemory())
+  /**
+   * The morning briefing being read out (plan 12, Q34), section by section.
+   * Kept when he is talked over, so "skip" carries on with the next section;
+   * any other request drops it.
+   */
+  const briefingRun = useRef<BriefingRun | null>(null)
 
   // -- helpers --------------------------------------------------------------
 
@@ -235,9 +242,11 @@ export default function App() {
         locale: reflexLocale(),
         lang: replyLanguageFor(profile, heard),
         script: profile.script,
+        briefing: briefingRun.current !== null,
       })
       then = a.then
-      reflexMemory.current.record(said, a.say, { volumeChanged: Boolean(a.volume) })
+      // A briefing's words came from connectors: the model is only told one was given.
+      reflexMemory.current.record(said, a.briefing === 'start' || a.briefing === 'next' ? 'Read out the morning briefing.' : a.say, { volumeChanged: Boolean(a.volume) })
       if (a.silence) {
         quietAlarm()
         lastRang.current = 0
@@ -255,6 +264,38 @@ export default function App() {
         await spk.end()
       }
       if (a.volume?.muted) setVolume(a.volume)
+
+      // The morning briefing (Q34): fetched from the bridge, then read one
+      // section at a time. Talking over him stops this turn (stale) with the
+      // run kept, so "skip" goes on to the section after the one cut off.
+      if (a.briefing === 'end') briefingRun.current = null
+      if (a.briefing === 'start') {
+        briefingRun.current = null
+        s.setPhase('thinking')
+        const reply = await fetchBriefing({ short: a.briefingShort, locale: reflexLocale() })
+        if (stale()) return
+        if (reply.ok) {
+          briefingRun.current = { sections: reply.sections, next: 0 }
+        } else {
+          s.pushTurn({ id: newId(), role: 'jarvis', text: reply.reason })
+          s.setPhase('speaking')
+          spk.say(reply.reason)
+          await spk.end()
+        }
+      }
+      if (a.briefing === 'start' || a.briefing === 'next') {
+        const run = briefingRun.current
+        // Stale is checked before taking a section, so one cut off is the last taken.
+        while (!stale()) {
+          const sec = nextSection(run)
+          if (!sec) break
+          s.pushTurn({ id: newId(), role: 'jarvis', text: sec.say })
+          s.setPhase('speaking')
+          spk.say(sec.say)
+          await spk.end()
+        }
+        if (!stale() && briefingRun.current === run) briefingRun.current = null
+      }
     } catch (err) {
       failure = err instanceof Error ? err.message : 'error'
       if (!stale()) {
@@ -322,7 +363,9 @@ export default function App() {
 
     // Quick commands: stop, volume, timers, the time and date, "say that again".
     // Only whole-utterance matches; everything else goes on to the model.
-    const reflex = reflexesEnabled() ? matchReflexIn(said) : null
+    const reflex = reflexesEnabled() ? matchReflexIn(said, { briefing: briefingRun.current !== null }) : null
+    // Anything but a briefing command means the conversation moved on.
+    if (reflex?.reflex.kind.startsWith('briefing') !== true) briefingRun.current = null
     if (reflex) {
       await runReflex(said, reflex.reflex, reflex.heard, spk, stale)
       return

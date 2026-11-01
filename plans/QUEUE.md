@@ -369,10 +369,16 @@ this file decides *in what order*.
 - **Done when:** quiet hours are respected in tests.
 
 ### Q34 · Plan 12 · Morning briefing
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q33
 - **Scope:** 12 building block 5, morning template only, using whatever connectors are set up.
 - **Done when:** a briefing can be triggered and skipped by voice.
+
+### Q78 · Plan 12 · Briefing at a set time, and in Hindi and Gujarati
+- **Status:** todo
+- **Depends on:** Q34
+- **Scope:** the rest of 12 building block 5 for the morning template: an optional time setting (off by default) that offers the briefing at the first wake after that time, through the notification policy (quiet hours respected); briefing lines in Hindi and Gujarati through the language profile (plan 28), and "skip"/"brief me" phrasings in both (reflexIndic.ts); repeating calendar events (expand the series on the day, or have the calendar connector sync single occurrences). Evening and weekly templates stay for later.
+- **Done when:** a briefing set for a time is offered once at the first wake after it and never during quiet hours, a Hindi or Gujarati profile hears the briefing in that language, and a weekly repeating meeting shows up on its day, all in tests.
 
 ### Q35 · Plan 20 · Messaging spec and threat model
 - **Status:** todo

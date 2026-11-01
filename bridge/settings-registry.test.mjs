@@ -48,7 +48,8 @@ test('every setting that existed before the registry is declared', () => {
     .concat(['JARVIS_ROUTING', 'JARVIS_FAST_MODEL'])
     .concat(['JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_TEXT_SCRIPT'])
     .concat(['JARVIS_SETUP_METRICS'])
-    .concat(['JARVIS_ALERTS', 'JARVIS_QUIET_HOURS']).sort())
+    .concat(['JARVIS_ALERTS', 'JARVIS_QUIET_HOURS'])
+    .concat(['JARVIS_BRIEFING', 'JARVIS_BRIEFING_MAIL']).sort())
 })
 
 test('quick start is on by default, live, and can be turned off (plan 05 phase 2, Q24)', () => {
@@ -228,7 +229,7 @@ test('the page keeps its own copy of the shapes it reads in step with the regist
 
 test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
   const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
-  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_ALERTS', 'JARVIS_FAST_MODEL', 'JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_QUICK_START', 'JARVIS_QUIET_HOURS', 'JARVIS_REFLEXES', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_ROUTING', 'JARVIS_SETUP_METRICS', 'JARVIS_TEXT_SCRIPT', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
+  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_ALERTS', 'JARVIS_BRIEFING', 'JARVIS_BRIEFING_MAIL', 'JARVIS_FAST_MODEL', 'JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_QUICK_START', 'JARVIS_QUIET_HOURS', 'JARVIS_REFLEXES', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_ROUTING', 'JARVIS_SETUP_METRICS', 'JARVIS_TEXT_SCRIPT', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
   assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_BRAIN', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
   // The writes switch stays restart-only until the Safety section (phase 5)
   // adds confirmation for dangerous changes; the audit log stays on until then too.
@@ -259,4 +260,17 @@ test('alerts and quiet hours: on, 22:00-07:00 by default, live, under Alerts (pl
   assert.equal(q.pattern.source, QUIET_HOURS_PATTERN.source)
   for (const ok of ['off', '22:00-07:00', '00:00-23:59']) assert.ok(isValid(q, ok), ok)
   for (const bad of ['22-7', '24:00-07:00', '22:00 - 07:00', 'never']) assert.ok(!isValid(q, bad), bad)
+})
+
+test('the morning briefing is on, mail senders off, both live, under Alerts (plan 12, Q34)', () => {
+  const b = settingDef('JARVIS_BRIEFING')
+  assert.equal(b.section, 'alerts')
+  assert.equal(b.type, 'boolean')
+  assert.equal(b.default, '1')
+  assert.equal(b.apply, 'live')
+  const m = settingDef('JARVIS_BRIEFING_MAIL')
+  assert.equal(m.section, 'alerts')
+  assert.equal(m.default, '0', 'senders are not read aloud unless the owner asks')
+  assert.equal(m.scope, 'person')
+  assert.equal(m.apply, 'live')
 })
