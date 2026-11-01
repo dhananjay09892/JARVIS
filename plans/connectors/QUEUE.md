@@ -192,7 +192,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** fixture sync, revoked token, injection fixture and erase tests pass.
 
 ### C20 · openjarvis/data-connectors/imap · Generic IMAP mail
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03, C09
 - **Scope:** Generic adapter on the shared IMAP reader: host/port/TLS settings, app-password guidance per provider.
 - **Done when:** fixture mailbox, bad host, wrong password, injection fixture and erase tests pass.

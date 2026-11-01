@@ -77,6 +77,7 @@ import { gcalendarConnector } from './connectors/gcalendar.mjs'
 import { gdriveConnector, GDRIVE_OPTIONS } from './connectors/gdrive.mjs'
 import { gcontactsConnector } from './connectors/gcontacts.mjs'
 import { gmailImapConnector } from './connectors/gmail_imap.mjs'
+import { imapConnector } from './connectors/imap.mjs'
 import { notionConnector } from './connectors/notion.mjs'
 import { slackConnector } from './connectors/slack.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
@@ -511,6 +512,12 @@ connectors.registerAll([
     // Cloud project. TLS to imap.gmail.com only, mailbox opened read-only.
     id: 'gmail_imap',
     create: (ctx) => gmailImapConnector().create(ctx),
+  },
+  {
+    // Any other IMAP mailbox (task C20): username, app password and server.
+    // TLS only; the inbox opened read-only; private and local hosts refused.
+    id: 'imap',
+    create: (ctx) => imapConnector().create(ctx),
   },
   {
     // Notion (task C11): paste an internal integration's secret; reads only
