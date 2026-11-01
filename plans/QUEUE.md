@@ -381,7 +381,7 @@ this file decides *in what order*.
 - **Done when:** a briefing set for a time is offered once at the first wake after it and never during quiet hours, a Hindi or Gujarati profile hears the briefing in that language, and a weekly repeating meeting shows up on its day, all in tests.
 
 ### Q35 · Plan 20 · Messaging spec and threat model
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q04
 - **Scope:** 20 phase 1. Channel interface, sender allow-list schema, threat model (spoofing, injection, flooding), data-flow disclosure. Documents only: plan 20 says no code before this is reviewed, and the PR review is that review.
 - **Done when:** the spec is merged.
