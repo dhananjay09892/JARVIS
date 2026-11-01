@@ -74,6 +74,7 @@ import { createConnectorRoutes, createGrantsFile, syncConnectorInto } from './co
 import { gmailConnector } from './connectors/gmail.mjs'
 import { gcalendarConnector } from './connectors/gcalendar.mjs'
 import { gdriveConnector, GDRIVE_OPTIONS } from './connectors/gdrive.mjs'
+import { gcontactsConnector } from './connectors/gcontacts.mjs'
 import { gmailImapConnector } from './connectors/gmail_imap.mjs'
 import { notionConnector } from './connectors/notion.mjs'
 import { slackConnector } from './connectors/slack.mjs'
@@ -475,6 +476,14 @@ connectors.registerAll([
     create: (ctx) => gdriveConnector({
       googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
       options: () => connectorOptions.get('gdrive'),
+    }).create(ctx),
+  },
+  {
+    // Google Contacts (task C18), read-only: names, emails, phones and work
+    // only, from people.googleapis.com. Same pattern as Calendar and Drive.
+    id: 'gcontacts',
+    create: (ctx) => gcontactsConnector({
+      googleClient: createGoogleClient(connectorCredentialStore.scoped(GOOGLE_CLIENT_ID)),
     }).create(ctx),
   },
   {

@@ -180,7 +180,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** a real forecast is answered.
 
 ### C18 · openjarvis/data-connectors/gcontacts · Google Contacts
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03, C04
 - **Scope:** README "How we implement it" and acceptance tests, read-only scope through the shared Google OAuth module. Writes (create task, edit contact) stay out of scope.
 - **Done when:** fixture sync, revoked token, injection fixture and erase tests pass.
