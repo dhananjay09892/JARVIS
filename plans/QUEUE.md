@@ -375,7 +375,7 @@ this file decides *in what order*.
 - **Done when:** a briefing can be triggered and skipped by voice.
 
 ### Q35 · Plan 20 · Messaging spec and threat model
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q04
 - **Scope:** 20 phase 1. Channel interface, sender allow-list schema, threat model (spoofing, injection, flooding), data-flow disclosure. Documents only: plan 20 says no code before this is reviewed, and the PR review is that review.
 - **Done when:** the spec is merged.

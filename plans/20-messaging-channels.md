@@ -44,7 +44,7 @@ The orchestrator treats a chat turn like a voice turn, tagged `modality: text` s
 short, scannable and not "spoken" style.
 
 ## Phases
-1. **Spec and security design (2 d):** channel interface, sender allow-list schema, threat model (spoofing, injection, flooding), data-flow disclosure. No code before this is reviewed.
+1. ✅ **Spec and security design (2 d):** channel interface, sender allow-list schema, threat model (spoofing, injection, flooding), data-flow disclosure. No code before this is reviewed. Written in [20-messaging-spec.md](20-messaging-spec.md) (Q35); merging that PR is the review.
 2. **Telegram adapter (3–4 d):**
    - Bot token in OS keychain/DPAPI, never in logs.
    - Pairing: bot gives a one-time code; you enter it in the HUD to bind your Telegram user id as `owner`. Unknown ids get no answer (or a fixed "not authorised").
@@ -97,3 +97,17 @@ short, scannable and not "spoken" style.
 - Account takeover of the owner chat account: PIN for R3 actions, approvals bound to device where possible, freeze phrase.
 - Cost spikes from loops or abuse: rate limits, budgets, per-sender caps.
 - Privacy of message content at providers: disclosure, sensitivity rules, "details in the app".
+
+## Autopilot log
+- **2026-11-01 — Phase 1 (Q35).** Wrote [20-messaging-spec.md](20-messaging-spec.md): what exists
+  in code today, the inbound/outbound data flow, the `ChannelAdapter` interface and adapter
+  obligations, the `ChannelBinding` allow-list schema, pairing (HUD-issued code plus HUD
+  confirmation, changed from this plan's bot-issued code so the bot never answers strangers),
+  how chat turns meet the policy engine (own text is the request, forwarded/quoted/attached
+  content is untrusted, taint on from the start, risk tiers per channel assurance, reply
+  sensitivity rules, approval nonces and expiry, freeze from chat with HUD-only unfreeze),
+  limits, a threat model (spoofing S1–S7, injection I1–I7, flooding F1–F6, disclosure D1–D6, each
+  with a test), the provider disclosure table, additive audit/bus/contract changes, settings, five
+  review questions with recommendations, and the test list for Q36. Documents only, no code.
+  **Left:** phases 2–10; Q36 builds the Telegram adapter against this spec. Provider facts in the
+  spec were not re-fetched this run; Q36 re-checks them before the disclaimer text is committed.
