@@ -37,7 +37,7 @@ Source files used for the counts: `connectors/__init__.py` auto-registers the da
 | [Granola meeting notes](data-connectors/granola/README.md) | api key | Any | Later |
 | [Slack (data source)](data-connectors/slack/README.md) | oauth (bot token) | Any | P1 |
 | [GitHub notifications](data-connectors/github_notifications/README.md) | personal access token | Any | P2 |
-| [Weather (OpenWeatherMap)](data-connectors/weather/README.md) | api key | Any | P1 |
+| [Weather (OpenWeatherMap; built on Open-Meteo, no key)](data-connectors/weather/README.md) | api key (none as built) | Any | P1 |
 | [Hacker News](data-connectors/hackernews/README.md) | none | Any | Later |
 | [News / RSS feeds](data-connectors/news_rss/README.md) | none (config list) | Any | P2 |
 | [Spotify (recently played)](data-connectors/spotify/README.md) | oauth | Any | Later |

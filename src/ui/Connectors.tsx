@@ -157,12 +157,22 @@ function DocumentsSection({ docs, busy, act }: { docs: DocumentPrefs; busy: bool
 
 /**
  * A connector's own settings (task C97), drawn from the fields the bridge
- * sends: a list (one entry per line) or a switch. Saving a change erases what
- * the connector kept and syncs it again from the start, so it asks first.
+ * sends: a list (one entry per line), one line of text (task C16) or a
+ * switch. Saving a change erases what the connector kept and syncs it again
+ * from the start, so it asks first.
  */
 function OptionsSection({ card, options, busy, act }: { card: ConnectorCard; options: ConnectorOptions; busy: boolean; act: Act }) {
   const fromValues = (v: Record<string, ConnectorOptionValue>) =>
-    Object.fromEntries(options.fields.map((f) => [f.key, f.type === 'list' ? (Array.isArray(v[f.key]) ? (v[f.key] as string[]).join('\n') : '') : v[f.key] === true]))
+    Object.fromEntries(
+      options.fields.map((f) => [
+        f.key,
+        f.type === 'list'
+          ? (Array.isArray(v[f.key]) ? (v[f.key] as string[]).join('\n') : '')
+          : f.type === 'text'
+            ? (typeof v[f.key] === 'string' ? (v[f.key] as string) : '')
+            : v[f.key] === true,
+      ]),
+    )
   // The parent keys this section by the saved values, so a save starts a fresh draft.
   const [draft, setDraft] = useState<Record<string, string | boolean>>(() => fromValues(options.values))
 
@@ -172,7 +182,9 @@ function OptionsSection({ card, options, busy, act }: { card: ConnectorCard; opt
       const v = draft[f.key]
       next[f.key] = f.type === 'list'
         ? String(v ?? '').split('\n').map((line) => line.trim()).filter(Boolean)
-        : v === true
+        : f.type === 'text'
+          ? String(v ?? '').trim()
+          : v === true
     }
     if (JSON.stringify(next) === JSON.stringify(options.values)) return
     if (!window.confirm(`Save these ${card.name} settings? What JARVIS kept from ${card.name} is erased and synced again from the start.`)) return
@@ -183,7 +195,21 @@ function OptionsSection({ card, options, busy, act }: { card: ConnectorCard; opt
     <fieldset className="conn-grants">
       <legend className="mem-note">Settings</legend>
       {options.fields.map((f) =>
-        f.type === 'list' ? (
+        f.type === 'text' ? (
+          <label key={f.key}>
+            {f.label}{' '}
+            <input
+              type="text"
+              autoComplete="off"
+              maxLength={f.max}
+              aria-label={`${card.name}: ${f.label}`}
+              disabled={busy}
+              value={String(draft[f.key] ?? '')}
+              onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+            />
+            {f.help && <span className="mem-note"> {f.help}</span>}
+          </label>
+        ) : f.type === 'list' ? (
           <label key={f.key}>
             {f.label}
             <textarea
