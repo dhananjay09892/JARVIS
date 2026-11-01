@@ -95,11 +95,43 @@ const TASK_OUTCOME = {
   rules: [],
 }
 
+const URGENCY = ['info', 'normal', 'important', 'urgent']
+const isAction = (a) => isRecord(a) && isId(a.id) && isText(Infinity, 1)(a.label)
+
+/**
+ * `Notification` in shared/contracts.ts (plan 12, Q33): a candidate alert.
+ * It carries its own envelope (`v`, `id`, `ts`) inside the bus envelope.
+ */
+const NOTIFICATION = {
+  fields: {
+    v: [(v) => v === VERSION, `must be ${VERSION}`],
+    id: [isId, 'invalid id'],
+    ts: [isTs, 'must be a timestamp'],
+    source: [isText(Infinity, 1), 'must be a non-empty string'],
+    urgency: [oneOf(...URGENCY), `must be one of ${URGENCY.join(', ')}`],
+    audience: [(v) => Array.isArray(v) && v.length >= 1 && v.every(isText(Infinity, 1)), 'must be a non-empty list of names'],
+    privacy: [oneOf('public', 'private'), 'must be public or private'],
+    title: [isText(Infinity, 1), 'must be a non-empty string'],
+    body: [isText(Infinity), 'must be a string'],
+  },
+  optional: {
+    traceId: [(v) => typeof v === 'string' && TRACE_ID.test(v), 'must be 16 hex characters'],
+    actions: [(v) => Array.isArray(v) && v.every(isAction), 'must be a list of { id, label }'],
+    expiresAt: [isTs, 'must be a timestamp'],
+  },
+  rules: [],
+  // Nested objects are stripped too, as zod does.
+  clean: { actions: (list) => list.map(({ id, label }) => ({ id, label })) },
+}
+
 /** Payload checks for the topics the bridge publishes today. */
 const PAYLOADS = {
   'workflow.started': WORKFLOW_RUN,
   'workflow.finished': WORKFLOW_RUN,
   'task.finished': TASK_OUTCOME,
+  'notification.created': NOTIFICATION,
+  'notification.delivered': NOTIFICATION,
+  'notification.suppressed': NOTIFICATION,
 }
 export const PUBLISHABLE = Object.freeze(Object.keys(PAYLOADS))
 
@@ -139,9 +171,20 @@ function strip(topic, payload) {
   const spec = PAYLOADS[topic]
   const out = {}
   for (const key of [...Object.keys(spec.fields), ...Object.keys(spec.optional)]) {
-    if (payload[key] !== undefined) out[key] = payload[key]
+    if (payload[key] !== undefined) out[key] = spec.clean?.[key] ? spec.clean[key](payload[key]) : payload[key]
   }
   return out
+}
+
+/**
+ * Checks a bare `Notification` (not wrapped in a bus event), with the same
+ * rules the bus applies. Returns `{ ok: true }` or `{ ok: false, error }`
+ * naming the field only.
+ */
+export function checkNotification(n) {
+  const r = checkBusEvent({ v: VERSION, id: 'check', ts: 0, topic: 'notification.created', payload: n })
+  if (r.ok) return r
+  return { ok: false, error: r.error.startsWith('payload.') ? r.error.slice('payload.'.length) : '(root): must be an object' }
 }
 
 /**

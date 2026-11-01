@@ -43,6 +43,10 @@ export type PublicSettings = {
   JARVIS_TEXT_SCRIPT: string
   /** '1' | '0' — opt-in setup drop-off metric (plan 29, Q77). '' means the default (off). */
   JARVIS_SETUP_METRICS: string
+  /** '1' | '0' — JARVIS may bring things up on his own (plan 12, Q33). '' means the default (on). */
+  JARVIS_ALERTS: string
+  /** 'HH:MM-HH:MM' local time, or 'off' (plan 12, Q33). '' means the default (22:00-07:00). */
+  JARVIS_QUIET_HOURS: string
   setupDone: string
   storage: string
   /** Restart-only settings saved but not yet in force (plan 39 phase 4). Older bridges omit it. */

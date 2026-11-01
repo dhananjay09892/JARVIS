@@ -16,6 +16,10 @@ const OUTCOME = {
   taskId: 't1a2b3c4', title: 'Summarise the report', status: 'done', summary: 'Three points.',
   endedAt: T0, sensitivity: 'private',
 }
+const ALERT = {
+  v: 1, id: 'n-1', ts: T0, source: 'task', urgency: 'important', audience: ['owner'],
+  privacy: 'private', title: 'Build finished', body: 'All tests passed.',
+}
 const ev = (topic, payload, extra = {}) => ({ v: 1, id: 'ev-1', ts: T0, topic, payload, ...extra })
 
 const VALID = [
@@ -28,6 +32,10 @@ const VALID = [
   ev('task.finished', { ...OUTCOME, status: 'interrupted', summary: '', costUsd: 0, startedAt: T0 - 5 }),
   ev('task.finished', { ...OUTCOME, status: 'cancelled', sensitivity: 'vault' }),
   ev('task.finished', { ...OUTCOME, extra: 'unknown fields are allowed' }),
+  ev('notification.created', ALERT),
+  ev('notification.delivered', { ...ALERT, urgency: 'urgent', audience: ['household'], privacy: 'public', body: '' }),
+  ev('notification.suppressed', { ...ALERT, traceId: '0123456789abcdef', expiresAt: T0 + 1, actions: [{ id: 'snooze', label: 'Later' }] }),
+  ev('notification.created', { ...ALERT, extra: 'unknown fields are allowed' }),
 ]
 
 const INVALID = [
@@ -57,6 +65,22 @@ const INVALID = [
   ev('workflow.started', { ...RUN, stepsTotal: -1 }),
   ev('workflow.started', { ...RUN, name: '' }),
   ev('workflow.finished', { ...ENDED, status: 'interrupted' }),
+  ev('notification.created', { ...ALERT, v: 2 }),
+  ev('notification.created', { ...ALERT, id: undefined }),
+  ev('notification.created', { ...ALERT, ts: -1 }),
+  ev('notification.created', { ...ALERT, source: '' }),
+  ev('notification.created', { ...ALERT, urgency: 'loud' }),
+  ev('notification.created', { ...ALERT, audience: [] }),
+  ev('notification.created', { ...ALERT, audience: 'owner' }),
+  ev('notification.created', { ...ALERT, audience: [''] }),
+  ev('notification.created', { ...ALERT, privacy: 'vault' }),
+  ev('notification.created', { ...ALERT, title: '' }),
+  ev('notification.created', { ...ALERT, body: undefined }),
+  ev('notification.created', { ...ALERT, traceId: 'xyz' }),
+  ev('notification.created', { ...ALERT, expiresAt: 1.5 }),
+  ev('notification.created', { ...ALERT, actions: [{ id: 'has space', label: 'x' }] }),
+  ev('notification.created', { ...ALERT, actions: [{ id: 'a', label: '' }] }),
+  ev('notification.created', { ...ALERT, actions: {} }),
 ]
 
 test('the bridge topic list is the contract topic list', () => {
@@ -145,6 +169,15 @@ test('unknown payload fields are dropped before listeners see them', async () =>
   await tick()
   assert.equal('internal' in got[0].payload, false)
   assert.equal(got[0].payload.summary, OUTCOME.summary)
+})
+
+test('nested unknown fields in notification actions are dropped too', async () => {
+  const bus = createBus({ log: silent })
+  const got = []
+  bus.subscribe('notification.created', (e) => got.push(e))
+  bus.publish('notification.created', { ...ALERT, actions: [{ id: 'snooze', label: 'Later', run: 'rm -rf' }] })
+  await tick()
+  assert.deepEqual(got[0].payload.actions, [{ id: 'snooze', label: 'Later' }])
 })
 
 test('patterns: exact topic, prefix and everything; typos throw', async () => {

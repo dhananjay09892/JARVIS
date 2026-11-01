@@ -76,6 +76,8 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_REPLY_LANGUAGE: { default: 'primary', options: ['primary', 'mirror', 'en', 'gu', 'hi'], help: '' },
   JARVIS_TEXT_SCRIPT: { default: 'native', options: ['native', 'roman'], help: '' },
   JARVIS_SETUP_METRICS: { default: '0', help: '' },
+  JARVIS_ALERTS: { default: '1', help: '' },
+  JARVIS_QUIET_HOURS: { default: '22:00-07:00', help: '' },
   JARVIS_ALLOW_WRITES: {
     default: '0',
     help: 'Off by default: JARVIS can look at things but changes nothing.',
@@ -344,6 +346,56 @@ export function Settings() {
         : !status.claudeLoggedIn
           ? 'Not signed in yet. Press Sign in, finish in the browser window that opens, then press Check again.'
           : `Claude is ready (version ${status.claudeVersion.split(' ')[0]}).`
+
+  const alerts = def(schema, 'JARVIS_ALERTS')
+  const quietHours = def(schema, 'JARVIS_QUIET_HOURS')
+  // Quiet hours are stored as 'HH:MM-HH:MM' or 'off' (plan 12, Q33).
+  const quietValue = s?.JARVIS_QUIET_HOURS || quietHours.default
+  const quietOn = quietValue !== 'off'
+  const [quietFrom, quietTo] = (quietOn ? quietValue : quietHours.default).split('-')
+  const alertsBlock = (
+    <>
+      <label title={alerts.help || undefined}>
+        <input
+          type="checkbox"
+          checked={(s?.JARVIS_ALERTS || alerts.default) === '1'}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_ALERTS: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Let JARVIS bring things up on his own
+      </label>
+      <div className="mem-add">
+        <label title={quietHours.help || undefined}>
+          <input
+            type="checkbox"
+            checked={quietOn}
+            disabled={busy || !s}
+            onChange={(e) => patchSetting({ JARVIS_QUIET_HOURS: e.target.checked ? quietHours.default : 'off' })}
+          />{' '}
+          Quiet hours from{' '}
+          <input
+            type="time"
+            aria-label="Quiet hours start"
+            value={quietFrom}
+            disabled={busy || !s || !quietOn}
+            onChange={(e) => e.target.value && patchSetting({ JARVIS_QUIET_HOURS: `${e.target.value}-${quietTo}` })}
+          />{' '}
+          to{' '}
+          <input
+            type="time"
+            aria-label="Quiet hours end"
+            value={quietTo}
+            disabled={busy || !s || !quietOn}
+            onChange={(e) => e.target.value && patchSetting({ JARVIS_QUIET_HOURS: `${quietFrom}-${e.target.value}` })}
+          />
+        </label>
+      </div>
+      <p className="mem-note">
+        During quiet hours only urgent alerts are given; the rest wait until they end. Private alerts wait while
+        someone else is in the room. Nothing speaks alerts aloud yet: for now they are only decided and kept.
+      </p>
+    </>
+  )
 
   const setupMetrics = def(schema, 'JARVIS_SETUP_METRICS')
   const metricsToggle = (
@@ -806,6 +858,9 @@ export function Settings() {
               </>
             )}
             <p className="mem-note">Brain changes apply from the next conversation.</p>
+
+            <h3>Alerts</h3>
+            {alertsBlock}
 
             <h3>Actions</h3>
             <label>

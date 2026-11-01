@@ -24,6 +24,8 @@ function sample(def) {
     assert.ok(v, `no sample for ${def.id}`)
     return v
   }
+  // Strings whose shape a suffix would break (a time window).
+  if (def.id === 'JARVIS_QUIET_HOURS') return '23:00-06:30'
   // A string: the default with a suffix still fits the shapes used today.
   const v = `${def.default}-x`.slice(-40)
   assert.ok(isValid(def, v), `no sample for ${def.id}`)
@@ -45,7 +47,8 @@ test('every setting that existed before the registry is declared', () => {
     .concat(['JARVIS_QUICK_START', 'JARVIS_REFLEXES'])
     .concat(['JARVIS_ROUTING', 'JARVIS_FAST_MODEL'])
     .concat(['JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_TEXT_SCRIPT'])
-    .concat(['JARVIS_SETUP_METRICS']).sort())
+    .concat(['JARVIS_SETUP_METRICS'])
+    .concat(['JARVIS_ALERTS', 'JARVIS_QUIET_HOURS']).sort())
 })
 
 test('quick start is on by default, live, and can be turned off (plan 05 phase 2, Q24)', () => {
@@ -225,7 +228,7 @@ test('the page keeps its own copy of the shapes it reads in step with the regist
 
 test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
   const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
-  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_FAST_MODEL', 'JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_QUICK_START', 'JARVIS_REFLEXES', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_ROUTING', 'JARVIS_SETUP_METRICS', 'JARVIS_TEXT_SCRIPT', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
+  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_ALERTS', 'JARVIS_FAST_MODEL', 'JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_QUICK_START', 'JARVIS_QUIET_HOURS', 'JARVIS_REFLEXES', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_ROUTING', 'JARVIS_SETUP_METRICS', 'JARVIS_TEXT_SCRIPT', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
   assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_BRAIN', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
   // The writes switch stays restart-only until the Safety section (phase 5)
   // adds confirmation for dangerous changes; the audit log stays on until then too.
@@ -239,4 +242,21 @@ test('the setup metric is opt-in: off by default, live, under Diagnostics (plan 
   assert.equal(m.default, '0')
   assert.equal(m.apply, 'live')
   assert.match(m.help, /never audio or device names/)
+})
+
+test('alerts and quiet hours: on, 22:00-07:00 by default, live, under Alerts (plan 12, Q33)', async () => {
+  const { QUIET_HOURS_PATTERN, DEFAULT_QUIET_HOURS } = await import('./notify-policy.mjs')
+  const a = settingDef('JARVIS_ALERTS')
+  assert.equal(a.section, 'alerts')
+  assert.equal(a.type, 'boolean')
+  assert.equal(a.default, '1')
+  assert.equal(a.apply, 'live')
+  const q = settingDef('JARVIS_QUIET_HOURS')
+  assert.equal(q.section, 'alerts')
+  assert.equal(q.default, DEFAULT_QUIET_HOURS)
+  assert.equal(q.scope, 'person')
+  assert.equal(q.apply, 'live')
+  assert.equal(q.pattern.source, QUIET_HOURS_PATTERN.source)
+  for (const ok of ['off', '22:00-07:00', '00:00-23:59']) assert.ok(isValid(q, ok), ok)
+  for (const bad of ['22-7', '24:00-07:00', '22:00 - 07:00', 'never']) assert.ok(!isValid(q, bad), bad)
 })
