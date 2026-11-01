@@ -44,6 +44,9 @@ export const PROXY_UA =
  */
 const BLOCKED_HOSTNAME = /(^|\.)(localhost|local|internal|intranet|home\.arpa)$/i
 
+/** Is this hostname one of the local-only names above? (Also used by the IMAP connector, task C20.) */
+export const blockedHostname = (name) => BLOCKED_HOSTNAME.test(String(name ?? '').replace(/\.$/, ''))
+
 /**
  * Is this *resolved address* one the bridge must not connect to?
  *

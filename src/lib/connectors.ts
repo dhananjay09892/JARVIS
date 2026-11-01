@@ -18,6 +18,8 @@ export type ConnectorSetup = {
   tokenLabel?: string
   /** Paste pattern: also ask for an account name (not a secret), e.g. "Gmail address" (task C09). */
   accountLabel?: string
+  /** Paste pattern with an account: also ask for a mail server, "host" or "host:port"; may be empty (task C20). */
+  serverLabel?: string
   helpUrl?: string
   localWhy?: string
   testQuestion?: string

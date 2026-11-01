@@ -191,6 +191,8 @@ export async function openImapConnection({ host, port, openSocket, timeoutMs = D
   try {
     sock = await openSocket({ host, port, timeoutMs })
   } catch (err) {
+    // An opener that refuses on policy (a private address, task C20) says so itself.
+    if (err instanceof ConnectorError) throw err
     // No network, DNS failure, refused, timed out, or a TLS certificate that does not check out.
     const why = isNetworkError(err) ? 'network' : 'tls'
     throw new ConnectorError('offline', { detail: `connect ${host}:${port} (${why}): ${err?.code ?? err?.message ?? err}` })
@@ -378,7 +380,8 @@ function fetchPairs(list) {
 
 /**
  * A fetched message for an adapter to turn into a Document:
- *   { uid, internalDate, size, raw (Buffer), truncated, gmail?: { msgid, thrid, labels } }
+ *   { uid, uidValidity, internalDate, size, raw (Buffer), truncated, gmail?: { msgid, thrid, labels } }
+ * (`uidValidity` is added by sync(); a UID is only unique together with it.)
  * `msgid`/`thrid` are Gmail's 64-bit ids as hex (the same ids the Gmail API
  * and web interface use).
  */
@@ -611,7 +614,7 @@ export function createImapReader({
           const got = await uidFetch(conn, chunk)
           for (const uid of chunk) {
             const message = got.get(uid)
-            if (message) yield { message } // missing: expunged since it was found
+            if (message) yield { message: { ...message, uidValidity } } // missing: expunged since it was found
           }
           yield { cursor: imapCursor(uidValidity, last, pending.slice(i + chunk.length)) }
         }

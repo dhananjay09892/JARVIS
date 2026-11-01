@@ -48,6 +48,7 @@ import { DEFAULT_RETENTION_DAYS } from './store.mjs'
 const MAX_TOKEN = 16_384
 const MAX_PATH = 1024
 const MAX_ACCOUNT = 254
+const MAX_SERVER = 260
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const ok = (body) => ({ status: 200, body: { ok: true, ...body } })
@@ -69,7 +70,14 @@ export const CONNECT_BODY = Object.freeze({
     const account = typeof body.account === 'string' ? body.account.trim() : ''
     if (!account) return { error: `Enter the ${accountLabel} first.` }
     if (account.length > MAX_ACCOUNT || /[\s\u0000-\u001f]/.test(account)) return { error: `That ${accountLabel} is not valid.` }
-    return { opts: { token, account }, secrets: [token] }
+    // A card with `setup.serverLabel` (generic IMAP, task C20) may also send a
+    // server ("host" or "host:port"). Optional: the adapter may know the host
+    // from the address. Checked for shape here; the adapter vets the host.
+    const serverLabel = card?.setup?.serverLabel
+    if (!serverLabel || body.server === undefined || body.server === '') return { opts: { token, account }, secrets: [token] }
+    const server = typeof body.server === 'string' ? body.server.trim() : null
+    if (server === null || server.length > MAX_SERVER || /[\s\u0000-\u001f/@]/.test(server)) return { error: `That ${serverLabel} is not valid.` }
+    return { opts: { token, account, ...(server ? { server } : {}) }, secrets: [token] }
   },
   local(body) {
     if (body.confirmed !== true) return { error: 'Confirm that JARVIS may read this first.' }

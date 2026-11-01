@@ -42,7 +42,7 @@ export const ERROR_MESSAGES = Object.freeze({
   'bad-response': 'The service sent something JARVIS did not understand.',
   'egress': 'The connector tried to reach a site it is not allowed to.',
   'consent-denied': 'The sign-in was cancelled, or the permission it needs was not given. Press Connect to try again.',
-  'setup-needed': 'Finish the setup steps on this card first (for example: paste the Google OAuth client ID, or type a location Weather can find).',
+  'setup-needed': 'Finish the setup steps on this card first (for example: paste the Google OAuth client ID, type a location Weather can find, or enter a mail server JARVIS can use over TLS).',
   'folder-missing': 'The folder could not be found or read. Check the folder path in Settings → Connectors.',
   'not-granted': 'That permission has not been granted for this connector.',
   'disabled': 'This connector is turned off.',

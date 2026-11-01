@@ -245,19 +245,32 @@ function OptionsSection({ card, options, busy, act }: { card: ConnectorCard; opt
 function TokenFlow({ card, busy, onConnect }: FlowProps) {
   const [draft, setDraft] = useState('')
   const [account, setAccount] = useState('')
+  const [server, setServer] = useState('')
   const label = card.setup?.tokenLabel ?? 'Token or key'
   const accountLabel = card.setup?.accountLabel
+  const serverLabel = accountLabel ? card.setup?.serverLabel : undefined
   const ready = Boolean(draft.trim()) && (!accountLabel || Boolean(account.trim()))
   return (
     <div className="mem-add">
       {accountLabel && (
         <input
-          type="email"
+          type={serverLabel ? 'text' : 'email'}
           autoComplete="off"
           placeholder={accountLabel}
           aria-label={accountLabel}
           value={account}
           onChange={(e) => setAccount(e.target.value)}
+        />
+      )}
+      {serverLabel && (
+        <input
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={serverLabel}
+          aria-label={serverLabel}
+          value={server}
+          onChange={(e) => setServer(e.target.value)}
         />
       )}
       <input
@@ -271,7 +284,8 @@ function TokenFlow({ card, busy, onConnect }: FlowProps) {
       <button
         disabled={busy || !ready}
         onClick={async () => {
-          const ok = await onConnect(accountLabel ? { token: draft, account } : { token: draft })
+          const body = accountLabel ? { token: draft, account, ...(serverLabel && server.trim() ? { server: server.trim() } : {}) } : { token: draft }
+          const ok = await onConnect(body)
           setDraft('')
           return ok
         }}

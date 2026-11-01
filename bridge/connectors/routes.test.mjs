@@ -311,3 +311,18 @@ test('Sync now keeps documents and the cursor, needs read, and needs a store', a
   const noStore = createConnectorRoutes({ registry, log: quiet })
   assert.equal((await noStore.handle({ method: 'POST', path: '/connectors/fake/sync', body: {} })).status, 409)
 })
+
+test('token pattern: a card with serverLabel may send a server, checked for shape (task C20)', async () => {
+  const { CONNECT_BODY } = await import('./routes.mjs')
+  const card = { setup: { accountLabel: 'Username', serverLabel: 'IMAP server' } }
+  assert.deepEqual(CONNECT_BODY.token({ token: 'pw-123456', account: 'me' }, card).opts, { token: 'pw-123456', account: 'me' })
+  assert.deepEqual(
+    CONNECT_BODY.token({ token: 'pw-123456', account: 'me', server: ' imap.example.org:993 ' }, card).opts,
+    { token: 'pw-123456', account: 'me', server: 'imap.example.org:993' },
+  )
+  for (const server of ['imap.example.org/evil', 'a b', 'me@imap.example.org', 42, 'x'.repeat(300)]) {
+    assert.match(CONNECT_BODY.token({ token: 'pw-123456', account: 'me', server }, card).error, /IMAP server/)
+  }
+  // Without serverLabel a server field is dropped, never passed on.
+  assert.deepEqual(CONNECT_BODY.token({ token: 't', account: 'me', server: 'x.org' }, { setup: { accountLabel: 'A' } }).opts, { token: 't', account: 'me' })
+})

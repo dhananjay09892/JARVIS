@@ -50,7 +50,7 @@ const MAX_MAIL_DOCS = 200
 const MAX_TITLE = 80
 
 const CALENDAR_CONNECTORS = ['gcalendar']
-const MAIL_CONNECTORS = ['gmail', 'gmail_imap']
+const MAIL_CONNECTORS = ['gmail', 'gmail_imap', 'imap']
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
