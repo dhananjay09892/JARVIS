@@ -32,7 +32,7 @@ anything marked *unaudited* was not read in depth.
 | 17 | [Deployment and resilience](17-deployment-and-resilience.md) | Partial | P1/P2 | Unsigned Windows installer → service, signing, backup, degraded modes |
 | 18 | [HUD and multi-surface UI](18-hud-and-presence-ui.md) | Partial | P2 | HUD exists → state language, phone app, accessibility |
 | 19 | [Skills ecosystem](19-skills-ecosystem.md) | Pending | Later | Workflows only → signed, sandboxed skill packs |
-| 20 | [Messaging channels (own number, WhatsApp, Telegram)](20-messaging-channels.md) | Pending | P1 | Voice/browser only → channel adapters, sender allow-list, approvals over chat |
+| 20 | [Messaging channels (own number, WhatsApp, Telegram)](20-messaging-channels.md) | Partial | P1 | Voice/browser only → channel adapters, sender allow-list, approvals over chat |
 | 21 | [Multi-brain framework](21-multi-brain-framework.md) | Pending | P1 | Claude-only (`brain.ts`, Agent SDK in `server.mjs`) → provider interface, conformance suite, fallback |
 | 22 | [Brain: OpenAI Codex / ChatGPT plan](22-brain-openai-codex.md) | Partial | P1 | Sign in with ChatGPT (ADR 001) auth, Responses wire (Q43) and Settings screen (Q55) done |
 | 23 | [Brain: GitHub Copilot](23-brain-github-copilot.md) | Pending | P1 | Official embeddable SDK; verify GA status and quota |

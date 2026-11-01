@@ -45,7 +45,7 @@ short, scannable and not "spoken" style.
 
 ## Phases
 1. ✅ **Spec and security design (2 d):** channel interface, sender allow-list schema, threat model (spoofing, injection, flooding), data-flow disclosure. No code before this is reviewed. Written in [20-messaging-spec.md](20-messaging-spec.md) (Q35); merging that PR is the review.
-2. **Telegram adapter (3–4 d):**
+2. ◐ **Telegram adapter (3–4 d):** first slice built (Q36): adapter, pipeline, allow-list, pairing and limits in `bridge/channels/`, tested against a fake Telegram. Wiring into the bridge, Settings → Channels and the disclaimer is Q79; live test with a real bot is Q80.
    - Bot token in OS keychain/DPAPI, never in logs.
    - Pairing: bot gives a one-time code; you enter it in the HUD to bind your Telegram user id as `owner`. Unknown ids get no answer (or a fixed "not authorised").
    - Text in/out, voice notes through `/stt`, images through vision (11), optional audio replies through `/tts`.
@@ -111,3 +111,22 @@ short, scannable and not "spoken" style.
   review questions with recommendations, and the test list for Q36. Documents only, no code.
   **Left:** phases 2–10; Q36 builds the Telegram adapter against this spec. Provider facts in the
   spec were not re-fetched this run; Q36 re-checks them before the disclaimer text is committed.
+- **2026-11-01 — Phase 2, first slice (Q36).** Built `bridge/channels/`: `telegram.mjs` (getUpdates
+  long-poll with offsets, sendMessage as plain text with previews off, split at 4 096 chars / 3
+  parts, answerCallbackQuery, getMe check; token read from the vault per call and redacted from
+  every error, log and `health()`; Telegram host only, no redirects; bots, groups and channel posts
+  dropped; forwarded/quoted/caption text kept apart; attachments described, never downloaded;
+  `stop()` aborts the poll in under 1 s), `allowlist.mjs` (`ChannelBinding` in SQLite keyed on
+  the numeric sender id, one owner per channel, instant revoke, 7-day guests, HUD-issued 8-char
+  pairing code with HUD confirmation, 10-minute expiry, single use, 5 misses burn it),
+  `limits.mjs` (20/min and 300/day per binding, 60/min per channel, unknown-sender notice) and
+  `index.mjs` (the spec §2 pipeline: freeze, pairing, allow-list, limits, identity, request/data
+  split with `wrapUntrusted`, taint-on chat turn with `via: 'chat'`, reply filter for vault and
+  private items, loop guard, freeze from the owner with HUD-only unfreeze, master switch that
+  constructs nothing). Audit log gained actor `chat` and entry type `channel` (ids, lengths and
+  rule only). 23 tests cover all ten §13 tests plus adapter details. The five §11 questions got no
+  review comments, so the recommendations were built. **Left:** Q79 wires it into `server.mjs`
+  (a real `runTurn` through the brain and policy engine, `isFrozen` and bus topics, settings from
+  spec §10, the pairing and bindings screen, `ChannelBinding` in `shared/contracts.ts`, the
+  disclaimer text with re-checked Telegram facts, metrics); voice notes, images and approval
+  cards are later phases; Q80 is the live test with your bot token.

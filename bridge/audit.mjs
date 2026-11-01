@@ -28,10 +28,15 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { redact } from './memory.mjs'
 
-/** The kinds of entry. A policy decision, an approval card, a tool result. */
-export const ENTRY_TYPES = ['decision', 'approval', 'result']
-/** Who asked: the voice session or a background worker. */
-export const ACTORS = ['voice', 'worker', 'system']
+/**
+ * The kinds of entry. A policy decision, an approval card, a tool result, and
+ * a message on a channel (plan 20: received, rejected, sent or failed).
+ */
+export const ENTRY_TYPES = ['decision', 'approval', 'result', 'channel']
+/** Who asked: the voice session, a background worker, or a chat channel (plan 20). */
+export const ACTORS = ['voice', 'worker', 'system', 'chat']
+/** What happened to a channel message. Content is never logged, only ids, lengths and the rule. */
+export const CHANNEL_STATES = ['received', 'rejected', 'sent', 'failed']
 /** Where in a tool call the decision was taken. */
 export const STAGES = ['pre-tool-use', 'can-use-tool', 'tool-bridge']
 export const VERDICTS = ['allow', 'ask', 'deny']
@@ -103,6 +108,16 @@ export function normaliseEntry(input) {
     entry.state = oneOf(['requested', 'resolved'], input.state, 'approval state')
     if (entry.state === 'requested') entry.title = text(input.title)
     else entry.approved = input.approved === true
+  } else if (type === 'channel') {
+    entry.state = oneOf(CHANNEL_STATES, input.state, 'channel state')
+    entry.channel = word(input.channel, /^[a-z][\w-]{0,31}$/) ?? 'unknown'
+    // Who: a binding id for a known sender, or a short hash for anyone else.
+    // Never the raw sender id of a stranger, never the message.
+    const bindingId = word(input.bindingId, /^[\w-]{1,64}$/)
+    if (bindingId) entry.bindingId = bindingId
+    else entry.senderHash = word(input.senderHash, /^[0-9a-f]{16}$/) ?? 'unknown'
+    entry.rule = word(input.rule, /^[\w-]{1,64}$/) ?? 'unknown'
+    entry.length = Number.isInteger(input.length) && input.length >= 0 ? input.length : 0
   } else {
     entry.request = toolRequest(input.request)
     entry.result = { error: input.result?.error === true }
