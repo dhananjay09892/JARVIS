@@ -269,3 +269,25 @@ test('erase keeps the owner’s per-connector retention but forgets the cursor (
   assert.deepEqual(s.state('gmail'), { cursor: null, lastSync: null, retentionDays: 14 })
   assert.equal(s.stats().gmail, undefined)
 })
+
+test('recent() lists one connector newest first, with meta, filtered by time and class (Q34)', () => {
+  const s = openDocumentStore({ file: ':memory:', now: () => NOW })
+  s.save('gcalendar', [
+    doc('gcalendar', { id: 'a', title: 'Old', text: 'old', updatedAt: NOW - 3 * DAY, meta: { start: '2026-10-20T09:00:00Z' } }),
+    doc('gcalendar', { id: 'b', title: 'New', text: 'new', updatedAt: NOW - DAY, meta: { start: '2026-10-23T09:00:00Z', allDay: false } }),
+    doc('gcalendar', { id: 'c', title: 'Work', text: 'work', updatedAt: NOW - 2 * DAY, sensitivity: 'work' }),
+  ])
+  s.save('notion', [doc('notion', { id: 'n', text: 'not calendar' })])
+  const all = s.recent('gcalendar')
+  assert.deepEqual(all.map((d) => d.id), ['b', 'c', 'a'])
+  assert.deepEqual(all[0].meta, { start: '2026-10-23T09:00:00Z', allDay: false })
+  assert.equal(all[0].text, 'new', 'the body, not the untrusted envelope')
+  assert.deepEqual(all[1].meta, {})
+  assert.deepEqual(s.recent('gcalendar', { since: NOW - 2 * DAY }).map((d) => d.id), ['b', 'c'])
+  assert.deepEqual(s.recent('gcalendar', { classes: ['personal'] }).map((d) => d.id), ['b', 'a'])
+  assert.deepEqual(s.recent('gcalendar', { classes: [] }), [])
+  assert.deepEqual(s.recent('gcalendar', { limit: 1 }).map((d) => d.id), ['b'])
+  assert.deepEqual(s.recent('weather'), [])
+  assert.throws(() => s.recent('Bad Id'), /connector/i)
+  assert.throws(() => s.recent('gcalendar', { classes: ['nonsense'] }))
+})

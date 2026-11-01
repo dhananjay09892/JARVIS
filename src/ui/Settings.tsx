@@ -78,6 +78,8 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_SETUP_METRICS: { default: '0', help: '' },
   JARVIS_ALERTS: { default: '1', help: '' },
   JARVIS_QUIET_HOURS: { default: '22:00-07:00', help: '' },
+  JARVIS_BRIEFING: { default: '1', help: '' },
+  JARVIS_BRIEFING_MAIL: { default: '0', help: '' },
   JARVIS_ALLOW_WRITES: {
     default: '0',
     help: 'Off by default: JARVIS can look at things but changes nothing.',
@@ -349,6 +351,9 @@ export function Settings() {
 
   const alerts = def(schema, 'JARVIS_ALERTS')
   const quietHours = def(schema, 'JARVIS_QUIET_HOURS')
+  const briefing = def(schema, 'JARVIS_BRIEFING')
+  const briefingMail = def(schema, 'JARVIS_BRIEFING_MAIL')
+  const briefingOn = (s?.JARVIS_BRIEFING || briefing.default) === '1'
   // Quiet hours are stored as 'HH:MM-HH:MM' or 'off' (plan 12, Q33).
   const quietValue = s?.JARVIS_QUIET_HOURS || quietHours.default
   const quietOn = quietValue !== 'off'
@@ -393,6 +398,29 @@ export function Settings() {
       <p className="mem-note">
         During quiet hours only urgent alerts are given; the rest wait until they end. Private alerts wait while
         someone else is in the room. Nothing speaks alerts aloud yet: for now they are only decided and kept.
+      </p>
+      <label title={briefing.help || undefined}>
+        <input
+          type="checkbox"
+          checked={briefingOn}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_BRIEFING: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Morning briefing when you say “brief me”
+      </label>
+      <label title={briefingMail.help || undefined}>
+        <input
+          type="checkbox"
+          checked={(s?.JARVIS_BRIEFING_MAIL || briefingMail.default) === '1'}
+          disabled={busy || !s || !briefingOn}
+          onChange={(e) => patchSetting({ JARVIS_BRIEFING_MAIL: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Say who new mail is from
+      </label>
+      <p className="mem-note">
+        The weather, today’s calendar, new mail and what ran overnight, from the connectors you have set up. Say
+        “skip” for the next part and “stop” to end it. It is read aloud, so mail is only counted unless you turn on
+        senders.
       </p>
     </>
   )

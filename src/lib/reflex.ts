@@ -15,6 +15,11 @@
  * things on this page (its own voice, its own timers), so they never pass
  * through the policy engine: there is nothing for it to decide.
  *
+ * The morning briefing (plan 12, Q34) is started here too ("brief me"), and
+ * while one is being read out, "skip" moves on to its next section. The
+ * briefing itself is built on the bridge from the connectors (briefing.ts);
+ * the reflex only decides that one was asked for.
+ *
  * English here; Hindi and Gujarati phrasings, in their own scripts and in
  * Latin letters, are in reflexIndic.ts and answer in the language the owner's
  * language profile asks for (plan 28, Q75; reflexSay.ts).
@@ -35,12 +40,24 @@ export type Reflex =
   | { kind: 'timer-set'; ms: number; label?: string }
   | { kind: 'timer-cancel'; all: boolean; label?: string }
   | { kind: 'timer-query' }
+  | { kind: 'briefing'; short: boolean }
+  | { kind: 'briefing-skip' }
+  | { kind: 'briefing-end' }
 
 /** What traces record: the family, never what was said. Kept in step with bridge/traces.mjs. */
-export type ReflexFamily = 'stop' | 'time' | 'date' | 'repeat' | 'volume' | 'timer'
+export type ReflexFamily = 'stop' | 'time' | 'date' | 'repeat' | 'volume' | 'timer' | 'briefing'
+
+/** Every family, in the order bridge/traces.mjs lists them (a test keeps the two in step). */
+export const REFLEX_FAMILIES: readonly ReflexFamily[] = ['stop', 'time', 'date', 'repeat', 'volume', 'timer', 'briefing']
 
 export const familyOf = (r: Reflex): ReflexFamily =>
-  r.kind.startsWith('timer') ? 'timer' : (r.kind as ReflexFamily)
+  r.kind.startsWith('timer') ? 'timer' : r.kind.startsWith('briefing') ? 'briefing' : (r.kind as ReflexFamily)
+
+/** What the page knows that changes what an utterance means. */
+export type MatchContext = {
+  /** A briefing is being read out (or was cut off and can carry on): "skip" means its next section. */
+  briefing?: boolean
+}
 
 /** Longest timer accepted: a day. Anything longer is a reminder (plan 12), not a timer. */
 export const MAX_TIMER_MS = 24 * 3600_000
@@ -195,6 +212,29 @@ const TIMER_ADJ = new RegExp(`^(?:set|start|put on|make|create|give me)\\s+(?:me
 const TIMER_CANCEL = new RegExp(`^(?:cancel|stop|delete|clear|remove|kill|end|turn off|switch off)\\s+(?:(all)\\s+)?(?:(?:the|my|all the|all my)\\s+)?(?:${LABEL}\\s+)?(${TIMER_NOUN}s?)$`)
 const TIMER_QUERY = new RegExp(`^(?:how (?:much|long) (?:time )?(?:is |has )?(?:left|remaining|to go) on (?:the |my )?(?:${LABEL}\\s+)?${TIMER_NOUN}s?|how (?:much|long) (?:is |has )?(?:the |my )?(?:${LABEL}\\s+)?${TIMER_NOUN} got(?: left)?|how(?:'s| is) (?:the |my )?${TIMER_NOUN}(?: doing)?|(?:check|status of) (?:the |my )?${TIMER_NOUN}s?|what(?:'s| is) left on (?:the |my )?${TIMER_NOUN}s?|what ${TIMER_NOUN}s (?:do i have|are (?:running|set|on))|(?:are there |do i have )?any ${TIMER_NOUN}s(?: (?:running|set|on))?|${TIMER_NOUN}s?(?: status)?|time left on (?:the |my )?${TIMER_NOUN}s?)$`)
 
+// The morning briefing (plan 12, Q34). "Brief" alone is too often a document
+// ("read the brief"), so it needs "me", "morning" or "daily".
+const BRIEF_ADJ = '(?:(quick|short|brief|full)\\s+)?'
+const BRIEFING_START = new RegExp(
+  '^(?:(?:give|read|play|start|do|run|begin|let\'s (?:do|have|hear)|can i (?:have|get|hear)|i\'d like|i want)\\s+(?:me\\s+)?)?' +
+  `(?:(?:my|the|a|today's|this morning's)\\s+)?${BRIEF_ADJ}(?:(?:morning|daily)\\s+)?briefing(?:\\s+for (?:today|this morning))?$`,
+)
+const BRIEFING_START_SHORT = new RegExp(
+  `^(?:(?:give|read|play|start|do)\\s+(?:me\\s+)?)?(?:(?:my|the|a)\\s+)?${BRIEF_ADJ}(?:morning|daily) (?:brief|rundown)$` +
+  `|^${BRIEF_ADJ}brief me(?: (?:quickly|briefly))?(?: on (?:my|the) day| on today| for today)?$`,
+)
+const BRIEFING_END = /^(?:skip|stop|cancel|end|forget|drop|no more of)\s+(?:the |this |my |today's )?(?:morning |daily )?(?:briefing|brief|rundown)(?: for (?:now|today))?$|^no briefing(?: today| for now)?$/
+const BRIEFING_SKIP = /^(?:skip|skip it|skip that|skip this|skip this one|skip that one|skip ahead|skip on|next|next one|next part|next section|next item|next thing|move on|go on to the next(?: one| part)?)$/
+const BRIEFING_SKIP_REST = /^(?:skip the rest|skip everything|skip all of it|that's enough of that)$/
+
+function briefingStart(s: string): Reflex | null {
+  const m = BRIEFING_START.exec(s) ?? BRIEFING_START_SHORT.exec(s)
+  if (!m) return null
+  const adj = m.slice(1).find((x) => x)
+  const quick = adj === 'quick' || adj === 'short' || adj === 'brief' || / (?:quickly|briefly)\b/.test(s)
+  return { kind: 'briefing', short: quick }
+}
+
 function timerSet(durationText: string, label: string | undefined): Reflex | null {
   const ms = parseDuration(durationText)
   if (ms === null || ms < 1000 || ms > MAX_TIMER_MS) return null
@@ -208,18 +248,18 @@ const notLabel = (l?: string) => !l || /^(?:the|my|all|a|an|this|that)$/.test(l.
  * The reflex this utterance asks for, or null to send it to the model.
  * Only whole-utterance matches count.
  */
-export function matchReflex(text: string): Reflex | null {
-  return matchReflexIn(text)?.reflex ?? null
+export function matchReflex(text: string, ctx: MatchContext = {}): Reflex | null {
+  return matchReflexIn(text, ctx)?.reflex ?? null
 }
 
 /**
  * The reflex and the language it was asked in ('mixed' for romanised words
  * Hindi and Gujarati share), or null to send the utterance to the model.
  */
-export function matchReflexIn(text: string): { reflex: Reflex; heard: Heard } | null {
+export function matchReflexIn(text: string, ctx: MatchContext = {}): { reflex: Reflex; heard: Heard } | null {
   const s = normalise(text)
   if (!s || s.length > 120) return null
-  const en = matchEnglish(s)
+  const en = matchEnglish(s, ctx)
   if (en) return { reflex: en, heard: 'en' }
   const indic = matchIndic(s)
   if (!indic) return null
@@ -229,9 +269,14 @@ export function matchReflexIn(text: string): { reflex: Reflex; heard: Heard } | 
   return indic
 }
 
-function matchEnglish(s: string): Reflex | null {
+function matchEnglish(s: string, ctx: MatchContext): Reflex | null {
 
   if (STOP.test(s)) return { kind: 'stop' }
+  // "Skip" only means the briefing while one is going; otherwise it goes to the model.
+  if (ctx.briefing && BRIEFING_SKIP.test(s)) return { kind: 'briefing-skip' }
+  if (BRIEFING_END.test(s) || (ctx.briefing && BRIEFING_SKIP_REST.test(s))) return { kind: 'briefing-end' }
+  const brief = briefingStart(s)
+  if (brief) return brief
   if (TIME.test(s)) return { kind: 'time' }
   if (DATE.test(s)) return { kind: 'date' }
   if (REPEAT.test(s)) return { kind: 'repeat' }
@@ -374,6 +419,8 @@ export type ReflexContext = {
   /** The language to answer in (replyLanguageFor). English when absent. */
   lang?: ReplyLang
   script?: Script
+  /** A briefing is being read out, or was cut off part way (Q34). */
+  briefing?: boolean
 }
 
 /** What App.respond carries out. Everything a reflex changes is named here. */
@@ -387,6 +434,10 @@ export type ReflexAnswer = {
   cancelTimers?: string[]
   /** Silence a ringing timer. */
   silence?: boolean
+  /** The morning briefing (Q34): fetch and read one, go on to its next section, or drop it. */
+  briefing?: 'start' | 'next' | 'end'
+  /** With 'start': the quick version. */
+  briefingShort?: boolean
 }
 
 const englishBook = (locale: string): Phrasebook => ({
@@ -491,6 +542,21 @@ export function answerReflex(r: Reflex, ctx: ReflexContext): ReflexAnswer {
         silence: ctx.ringing,
       }
     }
+
+    // The briefing is read in English for now: its sections are built on the
+    // bridge in English (Q34). These two lines follow it.
+    case 'briefing':
+      return { say: null, then: 'listen', briefing: 'start', briefingShort: r.short }
+
+    case 'briefing-skip':
+      return ctx.briefing
+        ? { say: null, then: 'listen', briefing: 'next' }
+        : { say: "There's nothing to skip, sir.", then: 'listen' }
+
+    case 'briefing-end':
+      return ctx.briefing
+        ? { say: "Very good. I'll leave the briefing there.", then: 'listen', briefing: 'end' }
+        : { say: "There's no briefing running, sir.", then: 'listen' }
 
     case 'timer-query': {
       if (!soonest.length) return { say: say.noTimers, then: 'listen' }

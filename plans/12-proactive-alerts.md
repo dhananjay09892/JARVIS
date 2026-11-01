@@ -13,14 +13,17 @@ Daily scheduled workflows (`workflows.mjs`, checked every 30 s while the bridge 
 in-process event bus (`bridge/bus.mjs`, Q32) that the scheduler and background tasks publish
 to. A notification policy engine (`bridge/notify-policy.mjs`, Q33) listens for
 `notification.created` and decides deliver / hold / suppress, with quiet hours in Settings; no
-source raises alerts yet and no channel speaks or shows them.
+source raises alerts yet and no channel speaks or shows them. A morning briefing
+(`bridge/briefing.mjs`, Q34) answers "brief me" with the weather, today's calendar, new mail
+and overnight jobs from the connectors that are set up, read section by section; "skip" moves
+on.
 
 ## Building blocks
 1. ✅ **Event bus (3 d):** sources (scheduler, task completion, builds, calendar, mail, sensors, camera) publish typed events. *First slice done (Q32): `bridge/bus.mjs`; the scheduler and task completion publish. Builds, calendar, mail, sensors and camera join as their plans add them.*
 2. ✅ **Notification policy engine (3 d):** each candidate alert gets `urgency` (info/normal/important/urgent), `audience` (who), `place` (room), `privacy` (private/public). Decision = f(urgency, quiet hours, presence, current activity, speaker present, focus mode). *First slice done (Q33): `bridge/notify-policy.mjs`, quiet hours and the alerts switch in Settings. Presence and activity rules are built and tested but get real signals only when speaker ID (01) and context (14) report them; `place` waits for rooms (03).*
 3. **Delivery channels:** speak in room, HUD card, phone push, queue-for-next-wake ("while you were away…").
 4. **"announce" workflow step** and event-triggered workflows.
-5. **Briefings (3 d):** morning/evening/weekly templates (calendar, travel time, weather, tasks, mail highlights, overnight jobs, home status); length adapts; skippable by voice.
+5. 🟡 **Briefings (3 d):** morning/evening/weekly templates (calendar, travel time, weather, tasks, mail highlights, overnight jobs, home status); length adapts; skippable by voice. *Morning template done (Q34): `bridge/briefing.mjs`, "brief me" / "quick briefing" on the page, "skip" for the next section. Briefing at a set time, Hindi/Gujarati and repeating events are Q78; evening and weekly templates, travel time, tasks and home status wait for their sources.*
 6. **Anticipation (1–2 w):** travel-time alerts from calendar + location, "you usually call Mum on Sundays", package/arrival reminders, bill due — each from a rule or approved learned routine (07).
 7. **Do-not-disturb intelligence:** meetings (from calendar), calls, sleep schedule, focus sessions, guests present; urgent override list (smoke, leak, family).
 8. **Feedback loop:** "not now / don't tell me this again / more like this" adjusts a per-source score; weekly digest of what was suppressed.
@@ -79,3 +82,36 @@ Annoyance is the failure mode → conservative defaults, explicit opt-in per sou
   Diagnostics does not show `/notifications/stats` or the held list yet ("what did you hold
   back?" needs `held()` behind a who-may-hear check); the urgent-override list and DND from the
   calendar are block 7.
+- **2026-11-01 — Building block 5, morning template (Q34).** `bridge/briefing.mjs`: a pure
+  `composeMorningBriefing()` and a `createBriefing()` service. Sections, each said only when it
+  has something: greeting with the date; weather (the C16 `current` and `forecast` documents:
+  now, today's range and rain chance, "worth taking an umbrella" at 50 % or more); calendar
+  (C07 entries whose start is today in local time and that are still to come or under way,
+  all-day first; cancelled and declined ones left out; at most 5, 2 in a quick briefing, then
+  "and N more"); mail (Gmail/Gmail-IMAP documents that arrived in the window, sent/drafts/spam
+  left out: a count and how many are important; senders only with the new **Say who mail is
+  from** setting, off, since the briefing is read aloud); overnight (`workflow.finished` and
+  `task.finished` from the bus, kept in memory: failed workflows by name, tasks counted, a
+  task title only when the task is `public`); held alerts raised in the window (public ones by
+  title, private ones only counted). "The window" is since the last briefing or the last 18 h.
+  With nothing set up it says to add the weather or a calendar under Settings → Connectors.
+  Connector text is clipped and stripped of control/markup characters; nothing goes to a model.
+  The store got `recent(connectorId, { since, limit, classes })` (newest first, with `meta`).
+  Bridge: `POST /briefing/morning` (needs a real, allowed Origin, like settings writes, because
+  it carries calendar and mail) and `GET /briefing/stats` (metric, 16: briefings given, quick,
+  empty, off, errors and sections given — never content). Page: reflexes (`src/lib/reflex.ts`)
+  "brief me", "morning briefing", "give me my briefing", "quick briefing", "brief me quickly"
+  start it; while one runs, "skip"/"next"/"move on" go to the next section (only then, so a
+  bare "next" still reaches the model otherwise), "skip the briefing" / "skip the rest" end it,
+  and "stop" stops as always. `App.tsx` reads sections one at a time; talking over him keeps
+  the run, so "skip" lands on the section after the one cut off; any other request drops it.
+  Trace family `briefing` (bridge traces accept it; a test keeps the page and bridge lists in
+  step). Settings → Alerts: **Morning briefing** (`JARVIS_BRIEFING`, on) and **Say who mail is
+  from** (`JARVIS_BRIEFING_MAIL`, off, per person), both live. Tests: `briefing.test.mjs`
+  (template, windows, privacy, off switch, failing source; run in four time zones),
+  `store.test.mjs` (`recent`), `reflex.test.ts` (hits, misses, skip only during a briefing),
+  `briefingRun.test.ts`. **Left (Q78):** a set time for the briefing (needs a delivery channel,
+  block 3, or an offer at the next wake), Hindi/Gujarati lines and phrasings (the briefing is
+  English for now), repeating calendar events (only found on the day of their first
+  occurrence until the series is expanded). Calendar reads the 500 most recently changed
+  entries. Evening/weekly templates, travel time, tasks and home status wait for their sources.
