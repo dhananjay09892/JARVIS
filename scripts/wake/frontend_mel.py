@@ -1,7 +1,7 @@
 """Rebuild the wake-word mel-spectrogram front end from permissively licensed parts.
 
 openWakeWord ships `melspectrogram.onnx` alongside its CC BY-NC-SA 4.0 models
-without a separate licence (plans/LICENCES.md, B4). Reading the file shows it is
+without a separate licence (LICENCES.md, B4). Reading the file shows it is
 an export of torchlibrosa's `Spectrogram` + `LogmelFilterBank` (MIT), using
 librosa's Slaney mel filters (ISC), PyTorch 1.11 as the exporter:
 

@@ -2,8 +2,8 @@
 
 A reproducible way to train our own openWakeWord-style wake models, using **only inputs whose
 licences allow commercial use**, so the assistant can ship without the non-commercial
-`hey_jarvis` model (licence risk **B4** in [`plans/LICENCES.md`](../../plans/LICENCES.md)).
-Written by the plan autopilot (task Q47, plan [02](../../plans/02-offline-wake-word.md));
+`hey_jarvis` model (licence risk **B4** in [`LICENCES.md`](../../LICENCES.md)).
+Written by the plan autopilot (task Q47, plan 02);
 running it is task Q48, on a machine with a GPU.
 
 Each phrase is its own small classifier on a shared front end (mel spectrogram → 96-number
@@ -81,7 +81,7 @@ Run from `scripts/wake/`. Everything large goes to `scripts/wake/work/` (git-ign
 the folder in `WAKE_WORK`.
 
 0. **Tools.** `git clone https://github.com/rhasspy/piper-sample-generator work/tools/piper-sample-generator`
-   and check out tag `v3.1.0`; read its `LICENSE.md` and note it in `plans/LICENCES.md`. Install
+   and check out tag `v3.1.0`; read its `LICENSE.md` and note it in `LICENCES.md`. Install
    the Python requirements.
 1. **Download.** `python download.py` (add `kathbath` with `HF_TOKEN` set after accepting the
    dataset's conditions). It refuses anything not cleared in `sources.json` and makes flat
@@ -106,7 +106,7 @@ the folder in `WAKE_WORK`.
    "tame lo" and everyday "buddy"/"friend", and record the numbers in plan 02.
 
 Changing phrases or negatives: edit `phrases.json`, run `node scripts/wake/make-configs.mjs`,
-commit both. Adding an input: add it to `sources.json` **and** a row to `plans/LICENCES.md`
+commit both. Adding an input: add it to `sources.json` **and** a row to `LICENCES.md`
 (the test checks both).
 
 ## Closing B4
@@ -119,12 +119,12 @@ B4 is closed for the wake word when all of these are true:
 3. **Embedding front end cleared** (Q53): either re-export Google's `speech_embedding`
    (Apache-2.0) and show the parity check passes, or get written confirmation that
    openWakeWord's `embedding_model.onnx` is Apache-2.0 (its README says the backbone is
-   Google's Apache-2.0 TFHub model), and record which in `plans/LICENCES.md`.
+   Google's Apache-2.0 TFHub model), and record which in `LICENCES.md`.
    ✅ code (`export_embedding.py`, `embedding_parity.py`, `test_embedding.py`); the run on
    Google's module is pending. `embedding_parity.py` (also run by `prepare_frontend.py`)
    compares the two files on mel windows from noise, a tone, a chirp, near-silence and random
    values, and counts the published conv kernels found unchanged in the re-export:
-   - **match**: the published file is Google's model. Record that in `plans/LICENCES.md`;
+   - **match**: the published file is Google's model. Record that in `LICENCES.md`;
      either file may then be used.
    - **differ**: train and ship on the re-export. If Google's graph normalises the mel
      differently from openWakeWord's `x / 10 + 2` before its first convolution, check that

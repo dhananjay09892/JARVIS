@@ -2,7 +2,7 @@
 
 JARVIS is MIT-licensed (see [LICENSE](LICENSE)). It stands on other people's work. This page
 holds the attributions that must travel with JARVIS; the full inventory, with licences and open
-issues, is the licence register in [plans/LICENCES.md](plans/LICENCES.md).
+issues, is the licence register in [LICENCES.md](LICENCES.md).
 
 ## Music (attribution required)
 
