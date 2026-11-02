@@ -84,6 +84,7 @@ import { slackConnector } from './connectors/slack.mjs'
 import { githubNotificationsConnector } from './connectors/github_notifications.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
+import { newsRssConnector, NEWS_RSS_OPTIONS } from './connectors/news_rss.mjs'
 import { googleTasksConnector } from './connectors/google_tasks.mjs'
 import { createConnectorWatcher } from './connectors/watch.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
@@ -483,9 +484,9 @@ try {
 } catch (err) {
   console.error('[jarvis] could not apply document preferences:', err?.message ?? err)
 }
-/** Each card's own settings (task C97): Google Drive's folders and shared-drive switch; Weather's location (C16). */
+/** Each card's own settings (task C97): Google Drive's folders and shared-drive switch; Weather's location (C16); News's feed list (C25). */
 const connectorOptions = createConnectorOptions({
-  definitions: { gdrive: GDRIVE_OPTIONS, weather: WEATHER_OPTIONS },
+  definitions: { gdrive: GDRIVE_OPTIONS, weather: WEATHER_OPTIONS, news_rss: NEWS_RSS_OPTIONS },
   initial: connectorGrantsFile.loadOptions(),
   persist: connectorGrantsFile.saveOptions,
 })
@@ -595,6 +596,12 @@ connectors.registerAll([
     // typed on the card, read per call. Off until a location is set.
     id: 'weather',
     create: (ctx) => weatherConnector({ options: () => connectorOptions.get('weather') }).create(ctx),
+  },
+  {
+    // News / RSS (task C25): the feed list on the card is the egress allow-list;
+    // https only, never a private address, and no account or key.
+    id: 'news_rss',
+    create: (ctx) => newsRssConnector({ options: () => connectorOptions.get('news_rss') }).create(ctx),
   },
   {
     // Google Tasks (task C19), read-only: task lists, due days, notes and
