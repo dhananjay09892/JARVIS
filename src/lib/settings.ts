@@ -47,6 +47,14 @@ export type PublicSettings = {
   JARVIS_ALERTS: string
   /** 'HH:MM-HH:MM' local time, or 'off' (plan 12, Q33). '' means the default (22:00-07:00). */
   JARVIS_QUIET_HOURS: string
+  /** '1' | '0' — the context broker's master switch (plan 14, Q39). '' means the default (off). */
+  JARVIS_CONTEXT: string
+  /** '1' | '0' — add the local date and time (plan 14, Q39). '' means the default (on, once context is on). */
+  JARVIS_CONTEXT_TIME: string
+  /** '1' | '0' — add the computer's state when asked about it (plan 14, Q39). '' means the default (off). */
+  JARVIS_CONTEXT_SYSTEM: string
+  /** Most context tokens per turn, as digits (plan 14, Q39). '' means the default (200). */
+  JARVIS_CONTEXT_TOKENS: string
   /** '1' | '0' — the morning briefing answers "brief me" (plan 12, Q34). '' means the default (on). */
   JARVIS_BRIEFING: string
   /** '1' | '0' — the briefing names who new mail is from (plan 12, Q34). '' means the default (off). */
