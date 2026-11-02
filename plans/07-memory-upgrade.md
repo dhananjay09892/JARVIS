@@ -22,7 +22,7 @@ recall, view/edit/forget, retention option, memory cannot grant permission (test
 | Vault | secrets/sensitive items | never auto-recalled; explicit unlock |
 
 ## Phases
-1. **Semantic recall (3–4 d):** local embedding model in bridge, hybrid keyword+vector, relevance threshold, recall shown in diagnostics ("used memories: …").
+1. **Semantic recall (3–4 d):** local embedding model in bridge, hybrid keyword+vector, relevance threshold, recall shown in diagnostics ("used memories: …"). *Store compared in [ADR 004](adr/004-vector-store.md) (Q37); waiting for the owner's decision before Q38.*
 2. **Proposed memories (2–3 d):** after-turn extractor suggests facts as cards; user taps keep/skip; auto-decline lists.
 3. **Entity graph (1 w):** people/places/projects with relations ("Sam = spouse"), resolves "my wife's birthday".
 4. **Provenance and explain:** every memory stores source turn/date and confidence; "why do you think that?" works.
@@ -42,3 +42,11 @@ Wrong or creepy memories → approval + provenance; prompt injection through rem
 
 ## Related plans
 [01 per-speaker](01-speaker-identification.md) · [14](14-ambient-context.md) · [32 vault](32-health-and-wellbeing.md) · [33 knowledge base](33-knowledge-work-and-meetings.md) · [38 MemoryItem](38-shared-data-contracts.md)
+
+## Autopilot log
+- **2026-11-02 · Q37 · Vector store decision record.** Wrote [ADR 004](adr/004-vector-store.md):
+  plain SQLite with exact search, sqlite-vec, LanceDB, vector servers and ANN libraries, with exact
+  search timed up to 100,000 vectors (sqlite-vec and LanceDB could not be installed for testing).
+  Recommends plain SQLite behind a `VectorIndex` interface, with triggers for moving to sqlite-vec;
+  `Decision:` left empty. Also found that keyword search breaks on Hindi and Gujarati; the ADR asks
+  Q38 to fix it. Next: the owner decides, then Q38 builds semantic recall.

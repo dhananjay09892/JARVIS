@@ -406,7 +406,7 @@ this file decides *in what order*.
 - **Done when:** you have confirmed the four checks above work.
 
 ### Q37 · Plan 07 · Vector store decision record
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** Write `plans/adr/004-vector-store.md` with local options for semantic memory. Leave `Decision:` empty with a recommendation.
 - **Done when:** the ADR is ready for the owner to decide.
