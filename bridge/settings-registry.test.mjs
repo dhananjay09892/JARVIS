@@ -28,6 +28,7 @@ function sample(def) {
   if (def.id === 'JARVIS_QUIET_HOURS') return '23:00-06:30'
   if (def.id === 'JARVIS_BRIEFING_TIME') return '07:30'
   if (def.id === 'JARVIS_CHANNEL_LIMITS') return '10/min,100/day'
+  if (def.id === 'JARVIS_CONTEXT_TOKENS') return '350'
   // A string: the default with a suffix still fits the shapes used today.
   const v = `${def.default}-x`.slice(-40)
   assert.ok(isValid(def, v), `no sample for ${def.id}`)
@@ -53,7 +54,8 @@ test('every setting that existed before the registry is declared', () => {
     .concat(['JARVIS_ALERTS', 'JARVIS_QUIET_HOURS'])
     .concat(['JARVIS_BRIEFING', 'JARVIS_BRIEFING_MAIL'])
     .concat(['JARVIS_BRIEFING_TIME'])
-    .concat(['JARVIS_CHANNELS', 'JARVIS_TELEGRAM', 'TELEGRAM_BOT_TOKEN', 'JARVIS_CHANNEL_PRIVATE_TELEGRAM', 'JARVIS_CHANNEL_LIMITS']).sort())
+    .concat(['JARVIS_CHANNELS', 'JARVIS_TELEGRAM', 'TELEGRAM_BOT_TOKEN', 'JARVIS_CHANNEL_PRIVATE_TELEGRAM', 'JARVIS_CHANNEL_LIMITS'])
+    .concat(['JARVIS_CONTEXT', 'JARVIS_CONTEXT_TIME', 'JARVIS_CONTEXT_SYSTEM', 'JARVIS_CONTEXT_TOKENS']).sort())
 })
 
 test('quick start is on by default, live, and can be turned off (plan 05 phase 2, Q24)', () => {
@@ -233,7 +235,7 @@ test('the page keeps its own copy of the shapes it reads in step with the regist
 
 test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
   const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
-  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_ALERTS', 'JARVIS_BRIEFING', 'JARVIS_BRIEFING_MAIL', 'JARVIS_BRIEFING_TIME', 'JARVIS_CHANNELS', 'JARVIS_CHANNEL_LIMITS', 'JARVIS_CHANNEL_PRIVATE_TELEGRAM', 'JARVIS_FAST_MODEL', 'JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_QUICK_START', 'JARVIS_QUIET_HOURS', 'JARVIS_REFLEXES', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_ROUTING', 'JARVIS_SETUP_METRICS', 'JARVIS_TELEGRAM', 'JARVIS_TEXT_SCRIPT', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'TELEGRAM_BOT_TOKEN', 'setupDone'])
+  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_ALERTS', 'JARVIS_BRIEFING', 'JARVIS_BRIEFING_MAIL', 'JARVIS_BRIEFING_TIME', 'JARVIS_CHANNELS', 'JARVIS_CHANNEL_LIMITS', 'JARVIS_CHANNEL_PRIVATE_TELEGRAM', 'JARVIS_CONTEXT', 'JARVIS_CONTEXT_SYSTEM', 'JARVIS_CONTEXT_TIME', 'JARVIS_CONTEXT_TOKENS', 'JARVIS_FAST_MODEL', 'JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_QUICK_START', 'JARVIS_QUIET_HOURS', 'JARVIS_REFLEXES', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_ROUTING', 'JARVIS_SETUP_METRICS', 'JARVIS_TELEGRAM', 'JARVIS_TEXT_SCRIPT', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'TELEGRAM_BOT_TOKEN', 'setupDone'])
   assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_BRAIN', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
   // The writes switch stays restart-only until the Safety section (phase 5)
   // adds confirmation for dangerous changes; the audit log stays on until then too.

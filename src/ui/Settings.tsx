@@ -80,6 +80,10 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_SETUP_METRICS: { default: '0', help: '' },
   JARVIS_ALERTS: { default: '1', help: '' },
   JARVIS_QUIET_HOURS: { default: '22:00-07:00', help: '' },
+  JARVIS_CONTEXT: { default: '0', help: '' },
+  JARVIS_CONTEXT_TIME: { default: '1', help: '' },
+  JARVIS_CONTEXT_SYSTEM: { default: '0', help: '' },
+  JARVIS_CONTEXT_TOKENS: { default: '200', help: '' },
   JARVIS_BRIEFING: { default: '1', help: '' },
   JARVIS_BRIEFING_MAIL: { default: '0', help: '' },
   JARVIS_BRIEFING_TIME: { default: 'off', help: '' },
@@ -371,6 +375,58 @@ export function Settings() {
   const quietValue = s?.JARVIS_QUIET_HOURS || quietHours.default
   const quietOn = quietValue !== 'off'
   const [quietFrom, quietTo] = (quietOn ? quietValue : quietHours.default).split('-')
+  const context = def(schema, 'JARVIS_CONTEXT')
+  const contextTime = def(schema, 'JARVIS_CONTEXT_TIME')
+  const contextSystem = def(schema, 'JARVIS_CONTEXT_SYSTEM')
+  const contextTokens = def(schema, 'JARVIS_CONTEXT_TOKENS')
+  const contextOn = (s?.JARVIS_CONTEXT || context.default) === '1'
+  const contextBudget = s?.JARVIS_CONTEXT_TOKENS || contextTokens.default
+  const contextBlock = (
+    <>
+      <label title={context.help || undefined}>
+        <input
+          type="checkbox"
+          checked={contextOn}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_CONTEXT: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Add background to each turn
+      </label>
+      <label title={contextTime.help || undefined}>
+        <input
+          type="checkbox"
+          checked={(s?.JARVIS_CONTEXT_TIME || contextTime.default) === '1'}
+          disabled={busy || !s || !contextOn}
+          onChange={(e) => patchSetting({ JARVIS_CONTEXT_TIME: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Date and time
+      </label>
+      <label title={contextSystem.help || undefined}>
+        <input
+          type="checkbox"
+          checked={(s?.JARVIS_CONTEXT_SYSTEM || contextSystem.default) === '1'}
+          disabled={busy || !s || !contextOn}
+          onChange={(e) => patchSetting({ JARVIS_CONTEXT_SYSTEM: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Computer state, when you ask about it
+      </label>
+      <label title={contextTokens.help || undefined}>
+        Most context per turn{' '}
+        <select
+          value={contextBudget}
+          disabled={busy || !s || !contextOn}
+          onChange={(e) => patchSetting({ JARVIS_CONTEXT_TOKENS: e.target.value })}
+        >
+          {[...new Set(['100', '200', '400', '800', contextBudget])].map((v) => (
+            <option key={v} value={v}>
+              {v} tokens
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="mem-note">Only what you tick here is added, and it goes to the brain you use.</p>
+    </>
+  )
   const alertsBlock = (
     <>
       <label title={alerts.help || undefined}>
@@ -921,6 +977,9 @@ export function Settings() {
 
             <h3>Alerts</h3>
             {alertsBlock}
+
+            <h3>Context</h3>
+            {contextBlock}
 
             <h3>Actions</h3>
             <label>

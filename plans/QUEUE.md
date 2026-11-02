@@ -419,7 +419,7 @@ this file decides *in what order*.
 - **Done when:** recall meets the plan 07 metric on a test set.
 
 ### Q39 · Plan 14 · Context broker
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q14, Q04
 - **Scope:** 14 phase 1. Named context slices with TTL, per-source permission, redaction and a token budget.
 - **Done when:** the orchestrator can request slices, with tests.

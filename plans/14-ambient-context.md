@@ -1,6 +1,6 @@
 # 14 · Ambient context: knowing what's going on
 
-**Status:** Pending · **Priority:** P2 · **Effort:** 2–4 weeks · **Depends on:** 15 (consent), 07
+**Status:** Partial · **Priority:** P2 · **Effort:** 2–4 weeks · **Depends on:** 15 (consent), 07
 
 ## End state
 JARVIS answers "this", "that", "here", "why is it doing that?" correctly because he knows
@@ -20,7 +20,7 @@ with consent and a strict token budget.
 | System state | battery, network, now-playing | Local |
 
 ## Phases
-1. **Context broker (1 w):** a module that gathers named context "slices" on demand with TTL, per-source permission, redaction, and a token budget; the orchestrator (06) requests slices per intent.
+1. ✅ **Context broker (1 w):** a module that gathers named context "slices" on demand with TTL, per-source permission, redaction, and a token budget; the orchestrator (06) requests slices per intent.
 2. **Screen understanding (1 w):** active-window title/URL + accessibility text first, screenshot+vision second; "pin this context" for a session.
 3. **Deixis resolution:** map "this/that/it" to the last relevant slice/object (selected text, last file, last mentioned person).
 4. **Calendar-aware behaviour:** meeting prep summaries, run-late detection, focus mode during meetings.
@@ -33,6 +33,9 @@ Deixis accuracy on a test script ≥ 90 %; avg context tokens per turn ≤ budge
 
 ## Risks
 Surveillance feel → opt-in, indicator, on-demand-first design; token bloat → relevance ranking and summarisation; stale context → TTLs.
+
+## Autopilot log
+- 2026-11-02 · Q39: phase 1 built. `bridge/context-broker.mjs` gathers `ContextSlice`s per turn: TTL cache, master switch plus per-source switches (Settings → Context, off by default), audience by role (vault to nobody, private to the owner only), secret redaction, a token budget and a 250 ms source timeout. First two sources, both local: `time` (every turn) and `system` (when the owner's words are about the computer). The block rides ahead of the turn and is never stored with the conversation. Counts at `GET /context/stats` (plan 16 metric: average tokens per turn, skips by reason). Left: only the page's voice and text turns use it so far, as the owner; Telegram turns get no context until a task wires them with their sender's role. Calendar, screen, presence and the other sources arrive with phases 2–7.
 
 ## Related plans
 [07](07-memory-upgrade.md) · [15](15-policy-trust-and-privacy.md) · [33](33-knowledge-work-and-meetings.md) · [34 location](34-wearables-and-mobility.md) · [29 permissions UX](29-onboarding-and-first-run.md)

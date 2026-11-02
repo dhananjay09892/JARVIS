@@ -32,6 +32,7 @@ import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
 import { createBus } from './bus.mjs'
 import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.mjs'
+import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSource, timeSource } from './context-broker.mjs'
 import { createBriefing } from './briefing.mjs'
 import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
@@ -46,7 +47,7 @@ import { approvalQueue } from './approvals.mjs'
 import { createPolicy, writesEnabled, isVetoed } from './policy.mjs'
 import { createSeenUrls, createTaintTracker, guardOutbound, proxiedMediaIn } from './taint.mjs'
 import { UNTRUSTED_PROMPT, createPostToolUse } from './untrusted.mjs'
-import { homedir, tmpdir } from 'node:os'
+import { freemem, homedir, tmpdir, totalmem, uptime } from 'node:os'
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
@@ -216,6 +217,28 @@ if (notifier) setInterval(() => notifier.tick(), 60_000).unref()
  * pre-approved, and a workflow only ever runs the structured steps it stores.
  */
 let workflows = null
+/**
+ * Context broker (plan 14 phase 1, Q39; see bridge/context-broker.mjs). Off
+ * until the owner turns it on. Counts only at /context/stats.
+ */
+const contextBroker = createContextBroker({
+  sources: [
+    timeSource(),
+    systemSource({
+      read: () => ({
+        platform: process.platform === 'win32' ? 'Windows' : process.platform,
+        totalMemBytes: totalmem(),
+        freeMemBytes: freemem(),
+        uptimeSeconds: uptime(),
+      }),
+    }),
+  ],
+  enabled: () => setting('JARVIS_CONTEXT') === '1',
+  sourceOn: (source) => setting(source.setting) === '1',
+  maxTokens: () => budgetFrom(setting('JARVIS_CONTEXT_TOKENS')),
+  log: (line) => console.warn(line),
+})
+
 const approvalHub = createApprovalHub()
 let engine = null
 if (process.env.JARVIS_WORKFLOWS !== 'off') {
@@ -1522,6 +1545,10 @@ const handleRequest = async (req, res) => {
   }
   // Notification policy decisions since the bridge started (plan 12; Q33).
   // Counts per verdict and rule only: never a title or body.
+  if (requestUrl.pathname === '/context/stats' && req.method === 'GET') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+    return res.end(JSON.stringify(contextBroker.stats()))
+  }
   if (requestUrl.pathname === '/notifications/stats' && req.method === 'GET') {
     res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
     return res.end(JSON.stringify(notifier ? { enabled: alertsOn(setting('JARVIS_ALERTS')), ...notifier.stats() } : { enabled: false }))
@@ -2443,6 +2470,7 @@ wss.on('connection', (socket, req) => {
    * Route a turn, switch model if needed, tell the page (for the turn's
    * trace), then hand the text to the brain.
    */
+  let contextQueue = Promise.resolve()
   const handOver = (id, said, text) => {
     handing = handing
       .then(async () => {
@@ -2603,14 +2631,23 @@ wss.on('connection', (socket, req) => {
       // id this conversation has already seen is a retry and is dropped.
       const stored = sm && id ? sm.receive({ id, text: msg.text, preface }) : null
       if (sm && id && !stored) return
-      void settling.then(() => {
+      // Gathered now and kept in arrival order, but never stored with the
+      // conversation: context goes stale, and a retry should get fresh slices.
+      // The page's socket is the owner's; other actors pass their own role.
+      const context = contextQueue.then(() => contextBroker.forTurn(msg.text, { role: 'owner' }))
+      contextQueue = context.catch(() => {})
+      void settling.then(() => context).catch(() => null).then((gathered) => {
         answering = id
         const plain = preface ? `${preface}\n\n${msg.text}` : msg.text
-        const text = stored ? stored.start() : plain
+        const turn = stored ? stored.start() : plain
         // Only the owner's own words name destinations. Memory context riding
         // along with the turn is private content, so it taints the session.
         taint.noteOwnerText(msg.text)
-        if (text !== plain && text !== msg.text) taint.markPrivate('saved memories and earlier conversation')
+        if (turn !== plain && turn !== msg.text) taint.markPrivate('saved memories and earlier conversation')
+        const slices = gathered?.slices ?? []
+        if (hasPrivate(slices)) taint.markPrivate(`context: ${slices.map((s) => s.source).join(', ')}`)
+        const block = renderContext(slices)
+        const text = block ? `${block}\n\n${turn}` : turn
         // Routed on the owner's own words, never the memory context.
         handOver(id, msg.text, text)
       })

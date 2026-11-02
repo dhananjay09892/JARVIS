@@ -26,7 +26,7 @@ anything marked *unaudited* was not read in depth.
 | 11 | [Vision and presence](11-vision.md) | Partial (*unaudited*) | Later | Camera + hands → audit, local detection, events |
 | 12 | [Proactive alerts](12-proactive-alerts.md) | Partial | P1 | Daily workflows + event bus → notification policy, briefings |
 | 13 | [Autonomy and background agents](13-autonomy-and-background-agents.md) | Partial | P1 | Mission board exists → planner/verifier, budgets, parallel agents |
-| 14 | [Ambient context](14-ambient-context.md) | Pending | P2 | Nothing → context broker, screen/calendar awareness |
+| 14 | [Ambient context](14-ambient-context.md) | Partial | P2 | Context broker with time and system slices (off by default) → screen, calendar, deixis, modes |
 | 15 | [Policy, trust, privacy](15-policy-trust-and-privacy.md) | Partial | **P0** | Approvals + `decideTool` → policy engine, roles, audit, kill switch |
 | 16 | [Evals and observability](16-evals-and-observability.md) | Partial | **P0/P1** | Turn traces + latency number → corpus, evals, CI metrics |
 | 17 | [Deployment and resilience](17-deployment-and-resilience.md) | Partial | P1/P2 | Unsigned Windows installer → service, signing, backup, degraded modes |
