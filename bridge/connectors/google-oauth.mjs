@@ -36,8 +36,8 @@
  *     sent, and closes after one result or after `timeoutMs`.
  */
 import { createHash, randomBytes as nodeRandomBytes } from 'node:crypto'
-import { createServer } from 'node:http'
 import { createHttp, ConnectorError } from './http.mjs'
+import { listenOnce } from './oauth-loopback.mjs'
 
 export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -132,66 +132,6 @@ export function createGoogleClient(store) {
 export function missingScopes(requested, grantedText) {
   const granted = new Set(String(grantedText ?? '').split(/\s+/).filter(Boolean))
   return requested.filter((s) => !granted.has(s))
-}
-
-const PAGE = (title, line) =>
-  `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
-  `<body style="font-family:system-ui,sans-serif;background:#05080d;color:#cfe8ff;padding:3rem">` +
-  `<h1 style="font-weight:400">${title}</h1><p>${line}</p></body>`
-
-/**
- * Listen once on 127.0.0.1 for Google's redirect.
- * @returns {Promise<{ redirectUri: string, result: Promise<{ code?: string, error?: string }>, close(): void }>}
- */
-function listenOnce({ state, timeoutMs, host = '127.0.0.1' }) {
-  return new Promise((resolveListen, rejectListen) => {
-    let settle
-    const result = new Promise((r) => { settle = r })
-    let done = false
-    let port = 0
-    const finish = (value) => {
-      if (done) return
-      done = true
-      clearTimeout(timer)
-      settle(value)
-      // Let the browser get its page before the socket goes away.
-      setImmediate(() => server.close())
-    }
-    const server = createServer((req, res) => {
-      const reply = (status, title, line) => {
-        res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' })
-        res.end(PAGE(title, line))
-      }
-      if (done) return reply(410, 'Already finished', 'This sign-in is over. Start again from Settings → Connectors in JARVIS.')
-      if (req.method !== 'GET' || req.headers.host !== `${host}:${port}`) return reply(400, 'Not here', 'This address only answers the JARVIS sign-in.')
-      let u
-      try {
-        u = new URL(req.url, `http://${host}:${port}`)
-      } catch {
-        return reply(400, 'Not here', 'This address only answers the JARVIS sign-in.')
-      }
-      if (u.pathname !== '/') return reply(404, 'Not here', 'This address only answers the JARVIS sign-in.')
-      const q = u.searchParams
-      // A reply without the right state is not Google's answer to this sign-in: ignore it.
-      if (q.get('state') !== state) return reply(400, 'Sign-in not recognised', 'Start again from Settings → Connectors in JARVIS.')
-      if (q.get('error')) {
-        reply(200, 'Sign-in cancelled', 'Nothing was connected. You can close this tab.')
-        return finish({ error: q.get('error') === 'access_denied' ? 'access_denied' : 'other' })
-      }
-      const code = q.get('code')
-      if (!code || code.length > 2048) return reply(400, 'Sign-in not recognised', 'Start again from Settings → Connectors in JARVIS.')
-      reply(200, 'Signed in', 'JARVIS has what it needs. You can close this tab.')
-      finish({ code })
-    })
-    const timer = setTimeout(() => finish({ error: 'timeout' }), timeoutMs)
-    server.on('error', (err) => {
-      if (!server.listening) rejectListen(err)
-    })
-    server.listen(0, host, () => {
-      port = server.address().port
-      resolveListen({ redirectUri: `http://${host}:${port}`, result, close: () => finish({ error: 'cancelled' }) })
-    })
-  })
 }
 
 /**
