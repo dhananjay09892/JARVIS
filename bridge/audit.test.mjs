@@ -257,7 +257,7 @@ test('server.mjs writes decisions, approvals and results to the audit log', () =
   assert.match(src, /createPolicy\(\{[^}]*\baudit,[^}]*\}\)/)
   // Every approval function handed to a tool server or guard is the audited one.
   assert.doesNotMatch(src, /Server\(approvals\.request\)|approve: approvals\.request|taintGuard\(taint, approvals\.request\)/)
-  assert.equal(count(/auditedApprove\(/g), 3, 'voice session, worker and workflow engine')
+  assert.equal(count(/auditedApprove\(/g), 4, 'voice session, worker, workflow engine and chat turns')
   // Each agent's hooks say who is asking, and results are logged.
   const agents = count(/\bquery\(\{/g)
   assert.equal(count(/policy\.preToolUse\(\{ guard: taintGuard\(taint, approve\), actor: '(voice|worker)' \}\)/g), agents)

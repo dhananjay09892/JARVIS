@@ -393,7 +393,7 @@ this file decides *in what order*.
 - **Done when:** the adapter passes its tests with the sender allow-list enforced.
 
 ### Q79 · Plan 20 · Wire Telegram into the bridge
-- **Status:** todo
+- **Status:** done
 - **Depends on:** Q36
 - **Scope:** 20 phase 2, the rest. Connect `bridge/channels/` (built in Q36) to `server.mjs`: a real `runTurn` that runs a text turn through the brain with `via: 'chat'`, taint on, the policy engine and the role's tool scope; `isFrozen`/`freeze.on` from the bus; bus topics `channel.received/rejected/sent` (also in `shared/contracts.ts`); the settings in spec §10 (master switch off, token in the vault with a "test" button); Settings → Channels with Pair, Confirm/Cancel, bindings, revoke and last seen; `ChannelBinding` contract; the Telegram row of spec §8 in `DISCLAIMER.txt`, with provider facts re-checked and linked; metrics from spec §12.
 - **Done when:** with the master switch on and a token set, a paired owner can chat with JARVIS over Telegram against a mocked Telegram in an end-to-end test, everything is off by default, and the disclaimer says what leaves the computer.

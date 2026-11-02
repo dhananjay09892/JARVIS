@@ -392,10 +392,11 @@ test('server.mjs routes every tool path through policy.mjs', () => {
   // plan 21) with the policy engine and the taint guard (plan 08); no agent
   // is started by calling the SDK directly.
   assert.equal(count(/\bquery\(/g), 0, 'agents start through the brain, not the SDK')
-  const agents = count(/\b(brain|voiceBrain)\.converse\(\{/g)
-  assert.ok(agents >= 2, 'expected the voice session and the task worker')
+  const agents = count(/\b(brain|voiceBrain|chatBrain)\.converse\(\{/g)
+  assert.ok(agents >= 3, 'expected the voice session, the task worker and chat turns')
   assert.equal(count(/^\s+policy,$/gm), agents, 'every session is given the policy engine')
-  assert.equal(count(/guard: taintGuard\(/g), agents, 'every session runs the taint guard')
+  // Chat turns narrow the tools by role first, then run the same taint guard.
+  assert.equal(count(/guard: (scopeGuard\(turn\.toolScope, )?taintGuard\(/g), agents, 'every session runs the taint guard')
 
   // The brain builds every session's options in one place, all from policy.
   const brain = readFileSync(new URL('./brains/claude.mjs', import.meta.url), 'utf8')

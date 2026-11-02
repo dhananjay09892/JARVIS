@@ -34,7 +34,7 @@ export function createBrainMetrics({ now = () => Date.now() } = {}) {
      */
     observe(brainId, actor, run) {
       const id = String(brainId)
-      const who = actor === 'worker' ? 'worker' : 'voice'
+      const who = actor === 'worker' || actor === 'chat' ? actor : 'voice'
       async function* events() {
         let failure = null
         for await (const e of run.events) {

@@ -16,9 +16,9 @@
  *   stranger's raw id (a salted hash instead), never a token.
  * - With the master switch off nothing is constructed and nothing connects.
  *
- * Not in this slice (follow-up tasks in plans/QUEUE.md): wiring into
- * server.mjs and the bus, the Settings → Channels screen, voice notes, and
- * approval cards over chat (plan 20 phase 4).
+ * service.mjs wires this into the bridge (Q79): settings, bus, audit,
+ * Settings → Channels. Not built yet: voice notes (plan 20 phase 3) and
+ * approval cards over chat (phase 4).
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { stripHiddenText, wrapUntrusted } from '../untrusted.mjs'

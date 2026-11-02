@@ -20,6 +20,9 @@ const ALERT = {
   v: 1, id: 'n-1', ts: T0, source: 'task', urgency: 'important', audience: ['owner'],
   privacy: 'private', title: 'Build finished', body: 'All tests passed.',
 }
+const SEEN = { channel: 'telegram', rule: 'chat-turn', length: 12, bindingId: 'bind-1' }
+const STRANGER = { channel: 'telegram', rule: 'rejected-unknown', length: 5, senderHash: '0123456789abcdef' }
+const FROZE = { source: 'chat', at: T0 }
 const ev = (topic, payload, extra = {}) => ({ v: 1, id: 'ev-1', ts: T0, topic, payload, ...extra })
 
 const VALID = [
@@ -36,6 +39,11 @@ const VALID = [
   ev('notification.delivered', { ...ALERT, urgency: 'urgent', audience: ['household'], privacy: 'public', body: '' }),
   ev('notification.suppressed', { ...ALERT, traceId: '0123456789abcdef', expiresAt: T0 + 1, actions: [{ id: 'snooze', label: 'Later' }] }),
   ev('notification.created', { ...ALERT, extra: 'unknown fields are allowed' }),
+  ev('channel.received', SEEN),
+  ev('channel.rejected', STRANGER),
+  ev('channel.sent', { ...SEEN, rule: 'reply-private', length: 0 }),
+  ev('freeze.on', FROZE),
+  ev('freeze.off', { source: 'hud', at: T0 + 1 }),
 ]
 
 const INVALID = [
@@ -81,6 +89,14 @@ const INVALID = [
   ev('notification.created', { ...ALERT, actions: [{ id: 'has space', label: 'x' }] }),
   ev('notification.created', { ...ALERT, actions: [{ id: 'a', label: '' }] }),
   ev('notification.created', { ...ALERT, actions: {} }),
+  ev('channel.received', { ...SEEN, channel: 'irc' }),
+  ev('channel.received', { ...SEEN, rule: 'Has Spaces' }),
+  ev('channel.received', { ...SEEN, length: -1 }),
+  ev('channel.rejected', { ...STRANGER, senderHash: '12345' }),
+  ev('channel.rejected', { ...STRANGER, bindingId: 'bind-1' }),
+  ev('channel.sent', { channel: 'telegram', rule: 'reply-public', length: 1 }),
+  ev('freeze.on', { ...FROZE, source: 'telegram' }),
+  ev('freeze.off', { source: 'hud' }),
 ]
 
 test('the bridge topic list is the contract topic list', () => {

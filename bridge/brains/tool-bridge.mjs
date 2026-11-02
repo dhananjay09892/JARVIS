@@ -67,7 +67,7 @@ export function createToolBridge({ policy, actor, tools = {}, guard = null, tain
   if (typeof policy?.authorize !== 'function' || typeof policy?.decideTool !== 'function') {
     throw new Error('The tool bridge needs the policy engine.')
   }
-  if (actor !== 'voice' && actor !== 'worker') throw new Error(`Unknown actor: ${actor}`)
+  if (actor !== 'voice' && actor !== 'worker' && actor !== 'chat') throw new Error(`Unknown actor: ${actor}`)
   if (!isRecord(tools)) throw new Error('Tools must be an object of name → handler.')
   const handlers = new Map()
   for (const [name, handler] of Object.entries(tools)) {

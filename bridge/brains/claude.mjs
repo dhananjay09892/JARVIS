@@ -33,7 +33,9 @@ import { claudeStatus, startClaudeLogin } from '../claude-cli.mjs'
 import { detailOf, summarise } from './events.mjs'
 
 /** Turn limits per kind of session, unchanged from server.mjs. */
-export const MAX_TURNS = Object.freeze({ voice: 24, worker: 40 })
+// A chat turn (plan 20) is one message from a phone: shorter than a voice
+// conversation's budget, since nobody can interrupt it.
+export const MAX_TURNS = Object.freeze({ voice: 24, worker: 40, chat: 12 })
 
 /**
  * The Agent SDK options for one session.
@@ -43,7 +45,7 @@ export const MAX_TURNS = Object.freeze({ voice: 24, worker: 40 })
  *
  * @param {object} p
  * @param {object} p.policy        the policy engine (policy.mjs createPolicy)
- * @param {'voice'|'worker'} p.actor  who is asking, for the audit trail and limits
+ * @param {'voice'|'worker'|'chat'} p.actor  who is asking, for the audit trail and limits
  * @param {object} p.mcpServers    every MCP server this session may use
  * @param {string} p.systemPrompt  the persona
  * @param {string} p.model
@@ -60,7 +62,7 @@ export function claudeOptions({
   abortController, maxTurns = MAX_TURNS[actor], cwd = homedir(),
 }) {
   if (!policy) throw new Error('claudeOptions needs the policy engine.')
-  if (actor !== 'voice' && actor !== 'worker') throw new Error(`Unknown actor: ${actor}`)
+  if (!Object.hasOwn(MAX_TURNS, actor)) throw new Error(`Unknown actor: ${actor}`)
   return {
     ...(abortController && { abortController }),
     mcpServers,

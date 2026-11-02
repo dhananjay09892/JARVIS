@@ -45,6 +45,8 @@ export const TOPICS = Object.freeze([
   'freeze.on', 'freeze.off',
   'workflow.started', 'workflow.finished',
   'task.finished',
+  // Plan 20 (Q79): what the messaging channels did, ids and lengths only.
+  'channel.received', 'channel.rejected', 'channel.sent',
 ])
 
 const VERSION = 1
@@ -124,6 +126,38 @@ const NOTIFICATION = {
   clean: { actions: (list) => list.map(({ id, label }) => ({ id, label })) },
 }
 
+const CHANNEL_IDS = ['telegram', 'sms', 'whatsapp', 'signal', 'email']
+
+/**
+ * `ChannelEvent` in shared/contracts.ts (plan 20, Q79): one message a channel
+ * received, rejected or sent. Ids, the rule and a length, never the text; a
+ * stranger appears only as a salted hash, never their raw id.
+ */
+const CHANNEL_EVENT = {
+  fields: {
+    channel: [oneOf(...CHANNEL_IDS), `must be one of ${CHANNEL_IDS.join(', ')}`],
+    rule: [(v) => typeof v === 'string' && /^[a-z0-9-]{1,40}$/.test(v), 'must be a short rule name'],
+    length: [isCount, 'must be a whole number ≥ 0'],
+  },
+  optional: {
+    bindingId: [isId, 'invalid id'],
+    senderHash: [(v) => typeof v === 'string' && /^[0-9a-f]{16}$/.test(v), 'must be 16 hex characters'],
+  },
+  rules: [
+    [(p) => (p.bindingId === undefined) !== (p.senderHash === undefined), 'bindingId', 'exactly one of bindingId and senderHash'],
+  ],
+}
+
+/** `FreezeChange` in shared/contracts.ts: the kill switch set or cleared, and from where. */
+const FREEZE_CHANGE = {
+  fields: {
+    source: [oneOf('chat', 'hud'), 'must be chat or hud'],
+    at: [isTs, 'must be a timestamp'],
+  },
+  optional: {},
+  rules: [],
+}
+
 /** Payload checks for the topics the bridge publishes today. */
 const PAYLOADS = {
   'workflow.started': WORKFLOW_RUN,
@@ -132,6 +166,11 @@ const PAYLOADS = {
   'notification.created': NOTIFICATION,
   'notification.delivered': NOTIFICATION,
   'notification.suppressed': NOTIFICATION,
+  'channel.received': CHANNEL_EVENT,
+  'channel.rejected': CHANNEL_EVENT,
+  'channel.sent': CHANNEL_EVENT,
+  'freeze.on': FREEZE_CHANGE,
+  'freeze.off': FREEZE_CHANGE,
 }
 export const PUBLISHABLE = Object.freeze(Object.keys(PAYLOADS))
 
