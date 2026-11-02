@@ -212,15 +212,15 @@ mismatch, expired approval, reused approval, limit reached, media URL unreachabl
 
 ## Commercial checklist (before charging anyone)
 From [LICENCES](LICENCES.md) and ADR 001. Not legal advice; Q13 (legal review) still applies.
-| Item | Why it matters for paid work | Action |
-|---|---|---|
-| Claude usage for clients | Subscription carve-out covers the owner's own ordinary use (ADR 001, B2) | Agency mode = API key (enforced in Q70) |
-| ElevenLabs audio (B5) | Free-plan output may not be used commercially and must credit ElevenLabs | Paid ElevenLabs plan for client audio, or browser/Kokoro voice |
-| Higgsfield images and video | Not in the licence register yet | Add a row with its commercial-use terms (Q71) |
-| openWakeWord models (B4) | Non-commercial licence | Fine for using JARVIS yourself; selling or distributing JARVIS commercially needs the own-trained wake models (Q48, Q49) |
-| Inno Setup (B6) | Asks commercial users above USD 5,000 revenue to buy a licence | Revisit if the owner sells the installer |
-| Name "JARVIS" (B9) | Marvel trademark risk | Market any service under Tamelo or another name (plan 40) |
-| Platform terms | Automated posting for other people's accounts needs their permission and the platform's app review | Client connects their own account; record consent |
+| Item | Why it matters for paid work | Action | Register |
+|---|---|---|---|
+| Claude usage for clients | Subscription carve-out covers the owner's own ordinary use (ADR 001, B2) | Agency mode = API key (enforced in Q70) | [B2](LICENCES.md#blockers-and-risks) |
+| ElevenLabs audio (B5) | Free-plan output may not be used commercially and must credit ElevenLabs | Paid ElevenLabs plan for client audio, or browser/Kokoro voice | [B5](LICENCES.md#blockers-and-risks) |
+| Higgsfield images and video | Commercial use allowed and output rights can pass to clients; paid plan for watermark-free files; uploads may train its models (B13) | Client material only with written consent or an Enterprise agreement; never resell access | [Higgsfield row](LICENCES.md#content-studio-services-plan-41-the-users-or-clients-own-account), [B13](LICENCES.md#blockers-and-risks) |
+| openWakeWord models (B4) | Non-commercial licence | Fine for using JARVIS yourself; selling or distributing JARVIS commercially needs the own-trained wake models (Q48, Q49) | [B4](LICENCES.md#blockers-and-risks) |
+| Inno Setup (B6) | Asks commercial users above USD 5,000 revenue to buy a licence | Revisit if the owner sells the installer | [B6](LICENCES.md#blockers-and-risks) |
+| Name "JARVIS" (B9) | Marvel trademark risk | Market any service under Tamelo or another name (plan 40) | [B9](LICENCES.md#blockers-and-risks) |
+| Platform terms | Automated posting for other people's accounts needs their permission and the platform's app review. LinkedIn bars automated posting (B10), X's self-serve plans bar managed services (B11), YouTube needs specific consent (B12) | Client connects their own account; record consent; Q81 before LinkedIn or X client work | [Platform rows](LICENCES.md#content-studio-services-plan-41-the-users-or-clients-own-account), [B10–B12](LICENCES.md#blockers-and-risks) |
 
 ## Ways to earn (for the owner, not product features)
 1. **Own brand first** (Personal mode): grow an audience and collect real before/after numbers.
@@ -317,3 +317,11 @@ AI-label default · freeze switch.
 - X API pricing summary (third party): https://www.postproxy.dev/blog/x-api-pricing-2026/
 
 ## Autopilot log
+- **2026-11-02 — Q71, commercial-use rows.** Added a "Content Studio services" section to
+  [LICENCES](LICENCES.md) (Higgsfield, Instagram, Facebook Pages, Threads, YouTube, LinkedIn, X) with
+  the date checked, added risks B10–B13, and gave every commercial-checklist row a "Register" link.
+  Plan 36 now links the checklist. Findings that change later tasks: LinkedIn's terms bar automating
+  posting (B10, hits Q68), X's self-serve plans bar managed services (B11, hits Agency mode), YouTube
+  needs specific consent (B12, input to Q57), Higgsfield trains on uploads (B13, hits Q70). Q81 is
+  new and holds the questions for the owner. Left: re-check each row in its connector's PR. Q56 was
+  skipped this run because this session could not read the AttentionOS repository.

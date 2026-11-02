@@ -35,6 +35,7 @@ Focus areas:
 - **Voices and likeness:** only original or properly licensed voices; no cloning of the film actor or any person without documented consent; no trademark use implying endorsement (see disclaimer / branding items in `IMPROVEMENT_PLAN.md` #5).
 - **Vendor SDKs and CLIs:** redistribution of Claude/Codex/Copilot binaries in the installer needs licence confirmation.
 - **Assets:** music/SFX credited in `public/audio/CREDITS.md`.
+- **Selling content work:** the [plan 41 commercial checklist](41-content-studio.md#commercial-checklist-before-charging-anyone) lists what to clear before charging anyone; every row links to its register entry (Q71).
 - **JARVIS name/Iron Man IP:** assess trademark/IP risk of the name and visual style for any public or commercial distribution; consider a distinct product name or clear non-affiliation language (existing DISCLAIMER covers part of this; get legal review before monetising).
 
 ## 4. Sustainability options for the project (decide later, record in ADRs)

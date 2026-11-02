@@ -524,10 +524,17 @@ no blocking dependencies.
 - **Done when:** a client workspace with a subscription profile is refused, and the cost report sums a test month, with tests.
 
 ### Q71 · Plan 41 · Commercial-use rows in the licence register
-- **Status:** todo
+- **Status:** done
 - **Depends on:** none
 - **Scope:** 41 "Commercial checklist". Add Higgsfield and each planned platform API to `plans/LICENCES.md` with their commercial-use terms and the date checked; link the checklist from plan 36.
 - **Done when:** every row of the plan 41 checklist points to a licence-register entry.
+
+### Q81 · Plan 41 · Clear the LinkedIn, X and YouTube questions
+- **Status:** needs-you
+- **Needs you:** Q71 found three platform rules a person has to settle (risks B10, B11 and B12 in `plans/LICENCES.md`). Add them to the Q13 legal review, or ask the platforms in writing: (1) Does LinkedIn's API Terms §3.1(26), "automate posting", cover a post the owner approved one by one but sent later? (2) Does running clients' X accounts for a fee count as "managed services" under X's Pay-Per-Use agreement, so that it needs Enterprise? (3) Does one approval naming the item, channel and time meet YouTube's "prior specific and express consent" for an upload that happens later? Write the answers in the three risk rows, then set this to `done`.
+- **Depends on:** Q71
+- **Scope:** Outside answers only. Build Q68's LinkedIn half only for what the answer allows.
+- **Done when:** each risk row records the answer and what it means for Q57, Q68 and Q70.
 
 ### Q72 · Plan 41 · Learning loop
 - **Status:** todo
