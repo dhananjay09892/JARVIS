@@ -1,5 +1,5 @@
 // Checks for the wake-model recipe (Q47) that run without a GPU or Python packages:
-// every training input has a commercial-use licence and a row in plans/LICENCES.md,
+// every training input has a commercial-use licence and a row in LICENCES.md,
 // nothing excluded is used, the generated configs are current, and the negatives
 // cover the near-misses plan 02 asks for.
 
@@ -14,7 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..', '..')
 const { phrases, sources } = loadRecipe()
 const inputs = new Map(sources.inputs.map((s) => [s.id, s]))
-const licences = readFileSync(join(repo, 'plans', 'LICENCES.md'), 'utf8')
+const licences = readFileSync(join(repo, 'LICENCES.md'), 'utf8')
 const used = new Set(Object.values(USES).flat())
 
 test('every input has a licence, a decision and a check date', () => {
@@ -30,12 +30,12 @@ test('every input has a licence, a decision and a check date', () => {
   }
 })
 
-test('every input, used or excluded, has a row in plans/LICENCES.md', () => {
+test('every input, used or excluded, has a row in LICENCES.md', () => {
   for (const s of sources.inputs) {
-    assert.ok(licences.includes('`' + s.id + '`'), `plans/LICENCES.md has no row for \`${s.id}\``)
+    assert.ok(licences.includes('`' + s.id + '`'), `LICENCES.md has no row for \`${s.id}\``)
   }
   for (const t of sources.tools) {
-    assert.ok(licences.includes('`' + t.id + '`'), `plans/LICENCES.md has no row for tool \`${t.id}\``)
+    assert.ok(licences.includes('`' + t.id + '`'), `LICENCES.md has no row for tool \`${t.id}\``)
   }
 })
 

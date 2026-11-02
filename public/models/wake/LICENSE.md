@@ -21,4 +21,4 @@ Licence text: https://creativecommons.org/licenses/by-nc-sa/4.0/
 
 **Non-commercial.** These models may not be used in a commercial product. Before any
 commercial release of JARVIS, train our own wake model on data with known licences
-(ADR 002, plan 36, `plans/LICENCES.md`).
+(ADR 002, plan 36, `LICENCES.md`).

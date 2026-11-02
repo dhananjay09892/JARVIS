@@ -4,8 +4,7 @@ JARVIS listens, remembers, speaks for you and, if you allow it, acts on your com
 That is a lot of trust, so these limits do not depend on what any AI model happens to
 decide on the day. They are rules for the software itself.
 
-This page is the short version of the never-list in
-[plan 35](plans/35-ethics-limits-and-governance.md). Each rule is written into the
+This page is the never-list (plan 35). Each rule is written into the
 policy engine (`bridge/policy.mjs`) with its own test, so a rule can only be changed by a
 reviewed code change, and no setting turns one off, not even the switch that allows real
 actions. The **Today** line under each rule says honestly how far that goes.

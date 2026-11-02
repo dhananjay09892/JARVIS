@@ -689,6 +689,6 @@ MIT.
 
 Third-party credits (music, models, fonts, software) are in [CREDITS.md](CREDITS.md);
 the full licence register, including open licence issues, is
-[plans/LICENCES.md](plans/LICENCES.md). The music in `public/audio/` is CC BY 4.0 and
+[LICENCES.md](LICENCES.md). The music in `public/audio/` is CC BY 4.0 and
 needs the attribution in [public/audio/CREDITS.md](public/audio/CREDITS.md) wherever
 it is used.

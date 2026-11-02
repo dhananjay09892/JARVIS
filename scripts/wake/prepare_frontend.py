@@ -8,7 +8,7 @@ onnxruntime that our mel model gives the same output as openWakeWord's published
 one, and as the numpy reference, on speech-like noise and a tone.
 
 --embedding is where licence risk B4 is closed for the embedding model
-(plans/LICENCES.md). Pass either:
+(LICENCES.md). Pass either:
   - a model re-exported from Google's speech_embedding (Apache-2.0) with
     export_embedding.py — task Q53. It is then compared with openWakeWord's
     published file (embedding_parity.py): "match" means the published file is
@@ -86,7 +86,7 @@ def main() -> None:
         if result.verdict == "unusable":
             sys.exit("the embedding model does not fit the front end; do not train on it")
         if result.verdict == "match":
-            print("  the published embedding_model.onnx is Google's model: record this in plans/LICENCES.md (B4 step 3)")
+            print("  the published embedding_model.onnx is Google's model: record this in LICENCES.md (B4 step 3)")
         else:
             print("  the files differ: train and ship on this re-export, not the published file")
     print("OK")

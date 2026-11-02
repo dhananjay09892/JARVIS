@@ -1,5 +1,5 @@
 {
-  "$comment": "Every input the wake-model recipe may use (Q47). download.py and make-configs.mjs read this file; recipe.test.mjs checks that every entry has a row in plans/LICENCES.md and that nothing with commercialUse false is used. Licences checked 2026-10-23; re-check at download time and update 'checked' when you do.",
+  "$comment": "Every input the wake-model recipe may use (Q47). download.py and make-configs.mjs read this file; recipe.test.mjs checks that every entry has a row in LICENCES.md and that nothing with commercialUse false is used. Licences checked 2026-10-23; re-check at download time and update 'checked' when you do.",
   "inputs": [
     {
       "id": "kokoro-82m",

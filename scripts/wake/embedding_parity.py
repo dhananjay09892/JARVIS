@@ -12,7 +12,7 @@ src/lib/wake/ feeds the embedding model: [batch, 76, 32, 1] → [batch, 1, 1, 96
 
 Verdicts:
   match      outputs agree within tolerance: the published file computes Google's
-             model, so it can be recorded as Apache-2.0 in plans/LICENCES.md.
+             model, so it can be recorded as Apache-2.0 in LICENCES.md.
   differ     both files run but disagree: the recipe trains on the re-export.
   unusable   the candidate has the wrong shape or gives non-finite output: fix the
              export before training on it.
@@ -162,7 +162,7 @@ def main(argv: list[str]) -> int:
     print("\n".join(result.lines()))
     if result.verdict == "match":
         print("The published embedding_model.onnx computes Google's speech_embedding: record it as Apache-2.0 "
-              "in plans/LICENCES.md (B4 step 3) and either file may be used.")
+              "in LICENCES.md (B4 step 3) and either file may be used.")
     elif result.verdict == "differ":
         print("The files disagree: train and ship on the re-export, not the published file.")
     return 0 if result.verdict != "unusable" else 1

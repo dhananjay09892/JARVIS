@@ -1,6 +1,7 @@
 // Plan 35 phase 1: the one-page "What JARVIS will never do" (NEVER.md) must
-// cover every never-list rule in plan 35, say honestly how far each one is
-// enforced today, and be reachable from the README.
+// cover every never-list subject, say honestly how far each rule is enforced
+// today, and be reachable from the README. The plans now live in a private
+// repository, so NEVER.md is the public source of truth for the list.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -9,13 +10,6 @@ import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p) => readFileSync(join(root, p), 'utf8')
-
-/** The bullets under "## Never-list" in plan 35. */
-function planRules() {
-  const plan = read('plans/35-ethics-limits-and-governance.md')
-  const section = plan.split(/^## Never-list.*$/m)[1]?.split(/^## /m)[0] ?? ''
-  return section.split('\n').filter((l) => l.startsWith('- '))
-}
 
 /** The numbered rules on the page, each with its body text. */
 function pageRules() {
@@ -28,12 +22,10 @@ function pageRules() {
   return rules
 }
 
-test('the page has one rule for each never-list item in plan 35', () => {
-  const plan = planRules()
-  assert.ok(plan.length >= 7, `expected the plan 35 never-list, found ${plan.length} items`)
+test('the page numbers its rules 1..n, at least the seven from plan 35', () => {
   const rules = pageRules()
-  assert.equal(rules.length, plan.length)
-  assert.deepEqual(rules.map((r) => r.n), plan.map((_, i) => i + 1))
+  assert.ok(rules.length >= 7, `expected at least 7 rules, found ${rules.length}`)
+  assert.deepEqual(rules.map((r) => r.n), rules.map((_, i) => i + 1))
 })
 
 test('each rule says how it is enforced today', () => {
