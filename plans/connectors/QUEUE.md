@@ -211,7 +211,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** both real mailboxes sync read-only.
 
 ### C23 · openjarvis/data-connectors/github_notifications · GitHub notifications
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03
 - **Scope:** Fine-grained personal access token with notifications read only; polling with the `X-Poll-Interval` and `Last-Modified` headers; mark-as-read stays out of scope.
 - **Done when:** fixture notifications, bad token, rate limit, injection fixture and erase tests pass.

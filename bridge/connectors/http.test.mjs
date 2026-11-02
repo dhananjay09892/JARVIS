@@ -102,3 +102,37 @@ test('text() returns a plain body, shortened, with the same host rules and retri
   const empty = createHttp({ fetch: async () => new Response(null, { status: 204 }), allowedHosts: [host] })
   assert.equal(await empty.text(`https://${host}/x`), '')
 })
+
+test('a 403 that says it is a rate limit is not a refused token (GitHub, task C23)', () => {
+  const at = Date.parse('2026-11-02T00:00:00Z')
+  const primary = errorForResponse(403, '{"message":"API rate limit exceeded"}', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(at / 1000 + 120) }, at)
+  assert.equal(primary.code, 'rate-limit')
+  assert.equal(primary.retryAfterMs, 120_000)
+  const retry = errorForResponse(403, '{}', { 'retry-after': '30' }, at)
+  assert.equal(retry.code, 'rate-limit')
+  assert.equal(retry.retryAfterMs, 30_000)
+  const secondary = errorForResponse(403, '{"message":"You have exceeded a secondary rate limit."}', {}, at)
+  assert.equal(secondary.code, 'rate-limit')
+  assert.equal(secondary.retryAfterMs, 60_000)
+  assert.equal(errorForResponse(429, '{}', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(at / 1000 + 5) }, at).retryAfterMs, 5000)
+  assert.equal(errorForResponse(403, '{"message":"Forbidden"}', { 'x-ratelimit-remaining': '4999' }, at).code, 'auth')
+})
+
+test('response() gives status and headers, and a 304 is an answer', async () => {
+  const replies = [
+    { status: 200, headers: { 'last-modified': 'then' }, body: [1] },
+    { status: 304 },
+  ]
+  const { fetch } = createFakeFetch(() => replies.shift())
+  const http = createHttp({ fetch, allowedHosts: [host] })
+  const ok = await http.response(`https://${host}/x`)
+  assert.equal(ok.status, 200)
+  assert.equal(ok.headers.get('last-modified'), 'then')
+  assert.deepEqual(ok.body, [1])
+  const same = await http.response(`https://${host}/x`)
+  assert.equal(same.status, 304)
+  assert.equal(same.body, null)
+  // Everywhere else a 304 is still not something an adapter expects.
+  const { fetch: f2 } = createFakeFetch(() => ({ status: 304 }))
+  await assert.rejects(createHttp({ fetch: f2, allowedHosts: [host] }).json(`https://${host}/x`), (e) => e.code === 'bad-response')
+})

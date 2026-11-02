@@ -80,6 +80,7 @@ import { gmailImapConnector } from './connectors/gmail_imap.mjs'
 import { imapConnector } from './connectors/imap.mjs'
 import { notionConnector } from './connectors/notion.mjs'
 import { slackConnector } from './connectors/slack.mjs'
+import { githubNotificationsConnector } from './connectors/github_notifications.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { googleTasksConnector } from './connectors/google_tasks.mjs'
@@ -553,6 +554,12 @@ connectors.registerAll([
     // only channels the bot was invited to, from slack.com only.
     id: 'slack',
     create: (ctx) => slackConnector().create(ctx),
+  },
+  {
+    // GitHub notifications (task C23): paste a classic token with only the
+    // notifications scope; reads unread threads from api.github.com only.
+    id: 'github_notifications',
+    create: (ctx) => githubNotificationsConnector().create(ctx),
   },
   {
     // Obsidian (task C13): grant access to one vault folder; reads its notes
