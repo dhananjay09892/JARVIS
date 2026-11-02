@@ -45,7 +45,7 @@ short, scannable and not "spoken" style.
 
 ## Phases
 1. ✅ **Spec and security design (2 d):** channel interface, sender allow-list schema, threat model (spoofing, injection, flooding), data-flow disclosure. No code before this is reviewed. Written in [20-messaging-spec.md](20-messaging-spec.md) (Q35); merging that PR is the review.
-2. ◐ **Telegram adapter (3–4 d):** first slice built (Q36): adapter, pipeline, allow-list, pairing and limits in `bridge/channels/`, tested against a fake Telegram. Wiring into the bridge, Settings → Channels and the disclaimer is Q79; live test with a real bot is Q80.
+2. ◐ **Telegram adapter (3–4 d):** built and wired, waiting for the live test. Q36 built the adapter, pipeline, allow-list, pairing and limits in `bridge/channels/`; Q79 wired them into the bridge (chat turns through the brain and policy engine, kill switch, bus topics, settings, Settings → Channels, the disclaimer, metrics), tested end to end against a fake Telegram. The live test with a real bot is Q80.
    - Bot token in OS keychain/DPAPI, never in logs.
    - Pairing: bot gives a one-time code; you enter it in the HUD to bind your Telegram user id as `owner`. Unknown ids get no answer (or a fixed "not authorised").
    - Text in/out, voice notes through `/stt`, images through vision (11), optional audio replies through `/tts`.
@@ -130,3 +130,26 @@ short, scannable and not "spoken" style.
   spec §10, the pairing and bindings screen, `ChannelBinding` in `shared/contracts.ts`, the
   disclaimer text with re-checked Telegram facts, metrics); voice notes, images and approval
   cards are later phases; Q80 is the live test with your bot token.
+- **2026-11-02 — Phase 2, wired into the bridge (Q79).** `bridge/channels/turn.mjs` runs a chat
+  turn as a one-shot brain session (actor `chat`, the brain Settings picked, taint on from the
+  start, the same policy engine, taint guard and PostToolUse hook as voice; owner and members get
+  the configured MCP servers and connectors, children and guests web search only, nobody gets the
+  workspace, development, HUD or task tools; 90 s timeout; a reply after any tool call is
+  `private`). `kill-switch.mjs`: freeze from chat or the HUD publishes `freeze.on` and makes the
+  policy engine refuse every tool; only the HUD unfreezes (in memory: a bridge restart clears it,
+  plan 15 owns a persisted one). `service.mjs`: starts and stops the pipeline live from the
+  settings, opens `channels.db` in the settings folder only once switched on, puts
+  `channel.received/rejected/sent` on the bus (ids, rule, length; strangers as a salted hash),
+  keeps the spec §12 metrics (turn latency p50/p95, delivery success, unknown senders, messages per
+  channel today, unauthorised actions 0) and serves `/channels` for Settings → Channels (switches,
+  token with Save/Test/Remove, Pair → code → Confirm/Cancel, paired people with last seen and
+  Revoke, private-answers switch, Freeze/Unfreeze). Settings: `JARVIS_CHANNELS`, `JARVIS_TELEGRAM`,
+  `TELEGRAM_BOT_TOKEN` (keychain), `JARVIS_CHANNEL_PRIVATE_TELEGRAM`, `JARVIS_CHANNEL_LIMITS`, all
+  live, all off by default except private answers. Contracts: `ChannelBinding`, `ChannelEvent`,
+  `FreezeChange` and the three topics. DISCLAIMER.txt has the Telegram section, with the two
+  provider facts re-checked against Telegram's pages (cloud chats are not end-to-end encrypted;
+  uncollected updates are kept at most 24 hours). **Left:** `JARVIS_CHANNEL_UNKNOWN_REPLY` (the
+  pipeline never answers strangers, the spec's recommendation) and `JARVIS_CHANNEL_CHAT_R3`
+  (approvals over chat) belong with phase 4; voice notes and images are phase 3; delivery through
+  the notification policy is phase 5; spend per channel needs plan 16's cost counters. Q80 is the
+  live test with your bot.

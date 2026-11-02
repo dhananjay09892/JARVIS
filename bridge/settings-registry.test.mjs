@@ -20,13 +20,14 @@ function sample(def) {
   if (def.type === 'enum') return def.options.find((o) => o !== def.default)
   if (def.type === 'boolean') return def.default === '1' ? '0' : '1'
   if (def.type === 'secret') {
-    const v = ['test-secret-1234567890', 'sk-ant-test-secret-1234567890'].find((x) => isValid(def, x))
+    const v = ['test-secret-1234567890', 'sk-ant-test-secret-1234567890', '123456789:AAHfakeTokenForTestsOnly_abcdefghijklmn'].find((x) => isValid(def, x))
     assert.ok(v, `no sample for ${def.id}`)
     return v
   }
   // Strings whose shape a suffix would break (a time window).
   if (def.id === 'JARVIS_QUIET_HOURS') return '23:00-06:30'
   if (def.id === 'JARVIS_BRIEFING_TIME') return '07:30'
+  if (def.id === 'JARVIS_CHANNEL_LIMITS') return '10/min,100/day'
   // A string: the default with a suffix still fits the shapes used today.
   const v = `${def.default}-x`.slice(-40)
   assert.ok(isValid(def, v), `no sample for ${def.id}`)
@@ -51,7 +52,8 @@ test('every setting that existed before the registry is declared', () => {
     .concat(['JARVIS_SETUP_METRICS'])
     .concat(['JARVIS_ALERTS', 'JARVIS_QUIET_HOURS'])
     .concat(['JARVIS_BRIEFING', 'JARVIS_BRIEFING_MAIL'])
-    .concat(['JARVIS_BRIEFING_TIME']).sort())
+    .concat(['JARVIS_BRIEFING_TIME'])
+    .concat(['JARVIS_CHANNELS', 'JARVIS_TELEGRAM', 'TELEGRAM_BOT_TOKEN', 'JARVIS_CHANNEL_PRIVATE_TELEGRAM', 'JARVIS_CHANNEL_LIMITS']).sort())
 })
 
 test('quick start is on by default, live, and can be turned off (plan 05 phase 2, Q24)', () => {
@@ -231,7 +233,7 @@ test('the page keeps its own copy of the shapes it reads in step with the regist
 
 test('live apply: only settings read once at start wait for a restart (plan 39 phase 4)', () => {
   const by = (apply) => REGISTRY.filter((d) => d.apply === apply).map((d) => d.id).sort()
-  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_ALERTS', 'JARVIS_BRIEFING', 'JARVIS_BRIEFING_MAIL', 'JARVIS_BRIEFING_TIME', 'JARVIS_FAST_MODEL', 'JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_QUICK_START', 'JARVIS_QUIET_HOURS', 'JARVIS_REFLEXES', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_ROUTING', 'JARVIS_SETUP_METRICS', 'JARVIS_TEXT_SCRIPT', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'setupDone'])
+  assert.deepEqual(by('live'), ['ELEVENLABS_API_KEY', 'JARVIS_ALERTS', 'JARVIS_BRIEFING', 'JARVIS_BRIEFING_MAIL', 'JARVIS_BRIEFING_TIME', 'JARVIS_CHANNELS', 'JARVIS_CHANNEL_LIMITS', 'JARVIS_CHANNEL_PRIVATE_TELEGRAM', 'JARVIS_FAST_MODEL', 'JARVIS_LANG_PRIMARY', 'JARVIS_LANG_SECONDARY', 'JARVIS_QUICK_START', 'JARVIS_QUIET_HOURS', 'JARVIS_REFLEXES', 'JARVIS_REPLY_LANGUAGE', 'JARVIS_ROUTING', 'JARVIS_SETUP_METRICS', 'JARVIS_TELEGRAM', 'JARVIS_TEXT_SCRIPT', 'JARVIS_TRACES', 'JARVIS_VOICE_ID', 'TELEGRAM_BOT_TOKEN', 'setupDone'])
   assert.deepEqual(by('reconnect'), ['ANTHROPIC_API_KEY', 'JARVIS_BRAIN', 'JARVIS_CLAUDE_AUTH', 'JARVIS_EFFORT', 'JARVIS_MODEL', 'JARVIS_OPENAI_AUTH', 'JARVIS_OPENAI_MODEL', 'OPENAI_API_KEY'])
   // The writes switch stays restart-only until the Safety section (phase 5)
   // adds confirmation for dangerous changes; the audit log stays on until then too.
@@ -285,4 +287,19 @@ test('the briefing time is off by default, per person, live, under Alerts (plan 
   assert.equal(t.apply, 'live')
   for (const ok of ['off', '00:00', '07:30', '23:59']) assert.ok(isValid(t, ok), ok)
   for (const bad of ['7:30', '24:00', '07:60', '07:30-08:00', 'morning', '']) assert.ok(!isValid(t, bad), bad)
+})
+
+test('channels are off by default, live, under Channels, and the token is a secret (plan 20, Q79)', async () => {
+  const { CHANNEL_SETTINGS } = await import('./channels/service.mjs')
+  for (const id of CHANNEL_SETTINGS) {
+    const d = settingDef(id)
+    assert.equal(d.section, 'channels', id)
+    assert.equal(d.apply, 'live', id)
+  }
+  assert.equal(settingDef('JARVIS_CHANNELS').default, '0')
+  assert.equal(settingDef('JARVIS_TELEGRAM').default, '0')
+  assert.equal(settingDef('TELEGRAM_BOT_TOKEN').type, 'secret')
+  assert.ok(!isValid(settingDef('TELEGRAM_BOT_TOKEN'), 'not-a-token'))
+  assert.equal(settingDef('JARVIS_CHANNEL_LIMITS').default, '20/min,300/day')
+  assert.match(settingDef('JARVIS_CHANNELS').help, /DISCLAIMER\.txt/)
 })

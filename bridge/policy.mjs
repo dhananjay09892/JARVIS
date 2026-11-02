@@ -681,7 +681,7 @@ export function createPolicy(options) {
         const request = { kind: 'tool', name: toolName }
         const decision = decide(request)
         const ok = decision.verdict === 'allow'
-        recordDecision(audit, console, { actor: context === 'worker' ? 'worker' : 'voice', stage: 'can-use-tool', request, decision })
+        recordDecision(audit, console, { actor: context === 'worker' || context === 'chat' ? context : 'voice', stage: 'can-use-tool', request, decision })
         log?.(`[jarvis] tool ${toolName} -> ${ok ? 'allow' : 'deny'}`)
         return ok ? { behavior: 'allow' } : { behavior: 'deny', message }
       }

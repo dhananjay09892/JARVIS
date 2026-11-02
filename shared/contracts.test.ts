@@ -194,3 +194,14 @@ test('task.finished carries a TaskOutcome that is private by default', () => {
   assert.equal(checkContract('BusEvent', bus('task.finished', { ...OUTCOME, summary: 'x'.repeat(301) })).ok, false)
   assert.equal(checkContract('BusEvent', bus('task.finished', { ...OUTCOME, costUsd: -1 })).ok, false)
 })
+
+test('ChannelBinding matches what the allow-list stores (plan 20, Q79)', async () => {
+  const { makeBinding } = await import('../bridge/channels/allowlist.mjs')
+  const owner = makeBinding({ channel: 'telegram', senderId: '111111', role: 'owner', personId: 'owner', assurance: 'high' }, { now: 1 })
+  const guest = makeBinding({ channel: 'telegram', senderId: '222222', role: 'guest', assurance: 'high' }, { now: 1 })
+  assert.ok(checkContract('ChannelBinding', owner).ok)
+  assert.ok(checkContract('ChannelBinding', { ...guest, lastSeenAt: 2 }).ok)
+  assert.equal(checkContract('ChannelBinding', { ...owner, assurance: 'low' }).ok, false, 'low assurance never approves')
+  assert.equal(checkContract('ChannelBinding', { ...guest, allow: { ...guest.allow, proactive: true } }).ok, false)
+  assert.equal(checkContract('ChannelBinding', { ...owner, channel: 'irc' }).ok, false)
+})

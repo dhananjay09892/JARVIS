@@ -299,6 +299,56 @@ export const ChannelMessage = z.object({
 })
 export type ChannelMessage = z.infer<typeof ChannelMessage>
 
+export const ChannelId = z.enum(['telegram', 'sms', 'whatsapp', 'signal', 'email'])
+
+/**
+ * Who may talk to JARVIS over a channel (plan 20 spec §4.1; Q36 built it in
+ * bridge/channels/allowlist.mjs, Q79 added it here). Keyed on the provider's
+ * stable sender id, never a display name. Times are epoch milliseconds, like
+ * every other `Ts` here. Local personal data: it never leaves the computer.
+ */
+export const ChannelBinding = z.object({
+  ...envelope,
+  channel: ChannelId,
+  senderId: z.string().min(1).max(64),
+  senderLabel: z.string().max(80).optional(),
+  personId: z.union([Id, z.literal('guest')]),
+  role: Role,
+  assurance: z.enum(['high', 'low']),
+  boundVia: z.enum(['pairing', 'manual']),
+  limits: z.object({ perMinute: z.number().int().positive(), perDay: z.number().int().positive() }),
+  allow: z.object({ chat: z.boolean(), voiceNotes: z.boolean(), approvals: z.boolean(), proactive: z.boolean() }),
+  status: z.enum(['active', 'revoked']),
+  expiresAt: Ts.optional(),
+  lastSeenAt: Ts.optional(),
+}).refine((b) => !(b.assurance === 'low' && b.allow.approvals), {
+  message: 'a low-assurance channel never answers approvals', path: ['allow', 'approvals'],
+}).refine((b) => !((b.role === 'child' || b.role === 'guest') && (b.allow.approvals || b.allow.proactive)), {
+  message: 'children and guests may only chat', path: ['allow'],
+})
+export type ChannelBinding = z.infer<typeof ChannelBinding>
+
+/**
+ * One message a channel received, rejected or sent (bus topics
+ * `channel.received` / `channel.rejected` / `channel.sent`). Ids, the rule
+ * that decided it and a length; never the text. A sender with no binding
+ * appears only as a salted hash.
+ */
+export const ChannelEvent = z.object({
+  channel: ChannelId,
+  rule: z.string().regex(/^[a-z0-9-]{1,40}$/),
+  length: Count,
+  bindingId: Id.optional(),
+  senderHash: z.string().regex(/^[0-9a-f]{16}$/).optional(),
+}).refine((e) => (e.bindingId === undefined) !== (e.senderHash === undefined), {
+  message: 'exactly one of bindingId and senderHash', path: ['bindingId'],
+})
+export type ChannelEvent = z.infer<typeof ChannelEvent>
+
+/** The kill switch set (`freeze.on`) or cleared (`freeze.off`). Unfreeze is HUD-only. */
+export const FreezeChange = z.object({ source: z.enum(['chat', 'hud']), at: Ts })
+export type FreezeChange = z.infer<typeof FreezeChange>
+
 // ---------------------------------------------------------------------------
 // Skills, devices, audit
 // ---------------------------------------------------------------------------
@@ -357,6 +407,8 @@ export const TOPICS = [
   // background-task completion, the first two publishers.
   'workflow.started', 'workflow.finished',
   'task.finished',
+  // Plan 20 (Q79): what the messaging channels did, ids and lengths only.
+  'channel.received', 'channel.rejected', 'channel.sent',
 ] as const
 export const Topic = z.enum(TOPICS)
 export type Topic = z.infer<typeof Topic>
@@ -418,6 +470,11 @@ const TOPIC_PAYLOADS: Partial<Record<Topic, z.ZodType>> = {
   'workflow.started': WorkflowRun,
   'workflow.finished': WorkflowRun,
   'task.finished': TaskOutcome,
+  'channel.received': ChannelEvent,
+  'channel.rejected': ChannelEvent,
+  'channel.sent': ChannelEvent,
+  'freeze.on': FreezeChange,
+  'freeze.off': FreezeChange,
 }
 
 export const BusEvent = z.object({
@@ -445,7 +502,7 @@ export const CONTRACTS = {
   Identity, Utterance, ContextSlice, ToolManifest, TurnContext, BrainEvent,
   PolicyRequest, PolicyDecision, ApprovalResolution, Notification, MemoryItem,
   Mission, ChannelMessage, SkillManifest, DeviceEvent, AuditRecord, BusEvent,
-  WorkflowRun, TaskOutcome,
+  WorkflowRun, TaskOutcome, ChannelBinding, ChannelEvent, FreezeChange,
 } as const
 export type ContractName = keyof typeof CONTRACTS
 export type Contract<N extends ContractName> = z.infer<(typeof CONTRACTS)[N]>

@@ -56,6 +56,26 @@ Your settings, keys and memories are stored on your own computer. What you say
 to JARVIS is sent to the services you connect (for example Claude, and
 ElevenLabs if you add a key), under their own privacy terms.
 
+MESSAGING JARVIS FROM TELEGRAM (OFF UNLESS YOU TURN IT ON)
+If you turn on Settings > Channels > Telegram and add your own bot's token:
+- What leaves this computer: your messages to the bot and JARVIS's replies,
+  anything you send the bot (voice notes, photos, files), and your Telegram
+  user id. JARVIS does not download voice notes, photos or files yet; it only
+  reads typed text. The brain you use (for example Claude) sees the text of
+  each message for that turn, as it does with speech.
+- Who can read it: Telegram. Chats with a bot are ordinary Telegram cloud
+  chats, which are not end-to-end encrypted
+  (https://tsf.telegram.org/manuals/e2ee-simple).
+- How long Telegram keeps it: messages stay in Telegram's cloud until you
+  delete them. Messages waiting for JARVIS to collect them are kept by
+  Telegram for at most 24 hours (https://core.telegram.org/bots/api).
+- How to delete it: delete the chat in Telegram (for both sides), revoke the
+  pairing in Settings > Channels, and delete the bot with @BotFather.
+- What stays here: who is paired, in JARVIS's local data folder. People you
+  have not paired get no answer at all. Sending "freeze" to the bot stops all
+  of JARVIS's actions and his chat replies; only the app on this computer can
+  unfreeze him.
+
 QUESTIONS OR CONCERNS
 If you are a rights holder with a concern about this project, please open an
 issue at https://github.com/dhananjay09892/JARVIS/issues and it will be

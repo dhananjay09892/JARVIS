@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BACKEND, BRIDGE_HTTP_URL } from '../config'
 import { Connectors } from './Connectors'
+import { Channels } from './Channels'
 import { OpenAISignIn } from './OpenAISignIn'
 import { SelfTest } from './SelfTest'
 import { setQuickStart } from '../lib/tts'
@@ -934,6 +935,9 @@ export function Settings() {
 
             <h3>Connectors</h3>
             <Connectors />
+
+            <h3>Channels</h3>
+            <Channels />
 
             <h3>Diagnostics</h3>
             {metricsToggle}
