@@ -224,7 +224,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** real notifications are read.
 
 ### C25 · openjarvis/data-connectors/news_rss · News / RSS feeds
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03
 - **Scope:** R0; feed list in Settings; RSS/Atom parsing with size and redirect limits; ETag/Last-Modified caching; feed text is untrusted.
 - **Done when:** fixture feeds, malformed feed, offline and injection tests pass.
