@@ -7,12 +7,16 @@
  *     .json(url, init) → parsed JSON, or throws ConnectorError
  *     .text(url, init, { maxChars }) → the body as text (shortened to maxChars),
  *       for APIs that answer with a plain-text or CSV export (task C08)
+ *     .response(url, init) → { status, headers, body } for APIs whose polling
+ *       lives in the headers; a 304 is an answer here, with `body: null` (task C23)
  *
  * Failure codes (ConnectorError.code), each with an owner-facing message:
  *   auth        401/403: the key or token is wrong or lacks a scope
  *   revoked     the token was revoked or the grant expired: reconnect
  *   rate-limit  429 (or 503 with Retry-After, or Google's 403 rateLimitExceeded /
- *               userRateLimitExceeded) still failing after retries
+ *               userRateLimitExceeded, or a 403 that says it is a rate limit in its
+ *               headers or names a secondary limit, as GitHub's do) still failing
+ *               after retries
  *   offline     no network, DNS failure, connection refused, timeout
  *   server      5xx from the provider
  *   bad-response  a reply that is not the JSON the adapter expects
@@ -95,6 +99,23 @@ const REVOKED = /invalid_grant|token[_ ]?(has been )?(revoked|expired)|revoked|u
 /** Google APIs (Drive, Calendar) also say "slow down" as a 403 with one of these reasons. */
 const GOOGLE_RATE_LIMIT = /"reason"\s*:\s*"(rateLimitExceeded|userRateLimitExceeded)"/
 
+/** GitHub says "you have exceeded a secondary rate limit" with no header to go on. */
+const SECONDARY_RATE_LIMIT = /secondary rate limit/i
+/** GitHub: "wait at least one minute" when a secondary limit gives no time. */
+const SECONDARY_WAIT_MS = 60_000
+
+/**
+ * How long a response says to wait, from Retry-After, or from the epoch
+ * seconds in x-ratelimit-reset when x-ratelimit-remaining is 0. Null if neither.
+ */
+function rateLimitWaitMs(header, now) {
+  const wait = retryAfterMs(header('retry-after'), now)
+  if (wait !== null) return wait
+  if (String(header('x-ratelimit-remaining') ?? '') !== '0') return null
+  const reset = Number(header('x-ratelimit-reset'))
+  return Number.isFinite(reset) && reset > 0 ? Math.max(0, reset * 1000 - now) : null
+}
+
 /**
  * Classify a non-OK response. `bodyText` is the response body, read once.
  * @returns {ConnectorError}
@@ -107,10 +128,18 @@ export function errorForResponse(status, bodyText, headers, now = Date.now()) {
       const wait = retryAfterMs(header('retry-after'), now)
       return new ConnectorError('rate-limit', { status, retryAfterMs: wait ?? undefined })
     }
+    if (status === 403) {
+      // A primary or secondary limit, not a refused token (GitHub answers both ways).
+      const wait = rateLimitWaitMs(header, now)
+      if (wait !== null) return new ConnectorError('rate-limit', { status, retryAfterMs: wait })
+      if (SECONDARY_RATE_LIMIT.test(bodyText ?? '')) {
+        return new ConnectorError('rate-limit', { status, retryAfterMs: SECONDARY_WAIT_MS })
+      }
+    }
     if (status !== 400) return new ConnectorError('auth', { status })
   }
   if (status === 429 || (status === 503 && header('retry-after'))) {
-    const wait = retryAfterMs(header('retry-after'), now)
+    const wait = rateLimitWaitMs(header, now)
     return new ConnectorError('rate-limit', { status, retryAfterMs: wait ?? undefined })
   }
   if (status >= 500) return new ConnectorError('server', { status })
@@ -157,7 +186,7 @@ export function createHttp({
     if (!hosts.has(u.hostname.toLowerCase())) throw new ConnectorError('egress', { detail: `host ${u.hostname}` })
   }
 
-  async function once(url, init, raw = false, maxChars = Infinity) {
+  async function once(url, init, raw = false, maxChars = Infinity, full = false) {
     let res
     try {
       const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
@@ -169,21 +198,23 @@ export function createHttp({
       throw new ConnectorError('other', { detail: err?.name })
     }
     const text = await res.text().catch(() => '')
+    if (full && res.status === 304) return { status: 304, headers: res.headers, body: null }
     if (!res.ok) throw errorForResponse(res.status, text, res.headers, now())
     if (raw) return text.length > maxChars ? text.slice(0, maxChars) : text
-    if (!text) return null
+    if (!text) return full ? { status: res.status, headers: res.headers, body: null } : null
     try {
-      return JSON.parse(text)
+      const body = JSON.parse(text)
+      return full ? { status: res.status, headers: res.headers, body } : body
     } catch {
       throw new ConnectorError('bad-response', { status: res.status, detail: 'not JSON' })
     }
   }
 
-  async function withRetries(url, init, raw, maxChars) {
+  async function withRetries(url, init, raw, maxChars, full) {
     checkHost(url)
     for (let attempt = 0; ; attempt++) {
       try {
-        return await once(url, init, raw, maxChars)
+        return await once(url, init, raw, maxChars, full)
       } catch (err) {
         if (!(err instanceof ConnectorError) || err.code !== 'rate-limit' || attempt >= maxRetries) throw err
         const wait = err.retryAfterMs ?? defaultWaitMs * 2 ** attempt
@@ -201,6 +232,11 @@ export function createHttp({
      * empty, shortened to `maxChars`. Throws ConnectorError on any failure.
      */
     text: (url, init = {}, { maxChars = 1_000_000 } = {}) => withRetries(url, init, true, Math.max(0, maxChars)),
+    /**
+     * Fetch JSON with its status and headers, retrying rate limits. A 304 is
+     * returned (`body: null`), not thrown. Throws ConnectorError otherwise.
+     */
+    response: (url, init = {}) => withRetries(url, init, false, undefined, true),
     allowedHosts: [...hosts],
   }
 }
