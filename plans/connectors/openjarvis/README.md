@@ -29,7 +29,7 @@ Source files used for the counts: `connectors/__init__.py` auto-registers the da
 | [Google Calendar](data-connectors/gcalendar/README.md) | oauth | Any | P1 |
 | [Google Contacts](data-connectors/gcontacts/README.md) | oauth | Any | P2 |
 | [Google Tasks](data-connectors/google_tasks/README.md) | oauth | Any | P2 |
-| [Outlook / Microsoft 365 mail (IMAP)](data-connectors/outlook/README.md) | app password | Any | P2 |
+| [Outlook / Microsoft 365 mail](data-connectors/outlook/README.md) | OAuth (Graph `Mail.Read`; app passwords retired) | Any | P2 |
 | [Generic IMAP mail](data-connectors/imap/README.md) | username + password / app password | Any | P2 |
 | [Dropbox](data-connectors/dropbox/README.md) | oauth (access token) | Any | Later |
 | [Notion](data-connectors/notion/README.md) | integration token | Any | P1 |

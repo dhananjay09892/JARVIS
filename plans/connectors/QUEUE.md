@@ -198,7 +198,7 @@ Each task builds the adapter at `bridge/connectors/<id>.mjs` against fixtures/mo
 - **Done when:** fixture mailbox, bad host, wrong password, injection fixture and erase tests pass.
 
 ### C21 · openjarvis/data-connectors/outlook · Outlook / Microsoft 365 mail
-- **Status:** todo
+- **Status:** done
 - **Depends on:** C02, C03, C09
 - **Scope:** Check first whether Microsoft still allows app-password IMAP for the account types we target (*verify*; basic auth was retired for many Exchange Online tenants) and, if not, compare Microsoft Graph OAuth or Microsoft's official MCP server; record the choice in the README. Read-only.
 - **Done when:** fixture mailbox sync, auth failure, injection fixture and erase tests pass.

@@ -85,6 +85,8 @@ import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { googleTasksConnector } from './connectors/google_tasks.mjs'
 import { createConnectorWatcher } from './connectors/watch.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
+import { outlookConnector } from './connectors/outlook.mjs'
+import { createMicrosoftClient, MICROSOFT_CLIENT_ID } from './connectors/microsoft-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { createConnectorOptions } from './connectors/options.mjs'
 import { checkForUpdate } from './update.mjs'
@@ -518,6 +520,15 @@ connectors.registerAll([
     // TLS only; the inbox opened read-only; private and local hosts refused.
     id: 'imap',
     create: (ctx) => imapConnector().create(ctx),
+  },
+  {
+    // Outlook / Microsoft 365 mail (task C21), read-only over Microsoft Graph
+    // (Mail.Read). The owner's own app registration (a public client: client
+    // ID only) lives under its own `microsoft` credential id, like `google`.
+    id: 'outlook',
+    create: (ctx) => outlookConnector({
+      microsoftClient: createMicrosoftClient(connectorCredentialStore.scoped(MICROSOFT_CLIENT_ID)),
+    }).create(ctx),
   },
   {
     // Notion (task C11): paste an internal integration's secret; reads only
