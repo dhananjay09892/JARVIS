@@ -27,13 +27,19 @@ More detail, and a ready-to-paste block for video descriptions: [public/audio/CR
   https://github.com/dscripka/openWakeWord
 - **MediaPipe** Tasks Vision and the Hand Landmarker model by Google (Apache-2.0), for hand gestures.
 - Text-to-phoneme conversion for Kokoro uses **eSpeak NG** (GPL-3.0-or-later) through the
-  `phonemizer` package. See issue B1 in the licence register.
+  `phonemizer` 1.2.1 package, which is a WebAssembly build of eSpeak NG. We accept the GPL for
+  that component and ship its notices: the licence text is in
+  [installer/licences/GPL-3.0.txt](installer/licences/GPL-3.0.txt) (installed under `licences\`),
+  with the source links in [installer/licences/ESPEAK-NG-NOTICE.txt](installer/licences/ESPEAK-NG-NOTICE.txt).
+  Source: https://github.com/xenova/phonemizer.js (phonemizer 1.2.1) and
+  https://github.com/espeak-ng/espeak-ng (eSpeak NG). JARVIS's own code stays MIT.
 
 ## Software
 
 - **Claude Agent SDK** and **Claude Code** by Anthropic, used under Anthropic's Commercial Terms of
   Service. JARVIS is powered by Claude; it is not made or endorsed by Anthropic.
-- **Node.js** (MIT, with bundled third-party licences), shipped inside the Windows installer.
+- **Node.js** (MIT, with bundled third-party licences), shipped inside the Windows installer with its
+  `LICENSE` file next to `node.exe`.
 - **React**, **three.js**, **react-three-fiber** and **drei** (pmndrs), **postprocessing** (Zlib),
   **Framer Motion**, **Zustand**, **DOMPurify** (Apache-2.0 option of MPL-2.0 OR Apache-2.0),
   **ws**, **zod**, and the other open-source packages listed in `package-lock.json`. Their licence
