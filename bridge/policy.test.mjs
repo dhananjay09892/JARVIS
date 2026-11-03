@@ -393,10 +393,15 @@ test('server.mjs routes every tool path through policy.mjs', () => {
   // is started by calling the SDK directly.
   assert.equal(count(/\bquery\(/g), 0, 'agents start through the brain, not the SDK')
   const agents = count(/\b(brain|voiceBrain|chatBrain)\.converse\(\{/g)
-  assert.ok(agents >= 3, 'expected the voice session, the task worker and chat turns')
+  assert.ok(agents >= 4, 'expected the voice session, the task worker, named agents and chat turns')
   assert.equal(count(/^\s+policy,$/gm), agents, 'every session is given the policy engine')
-  // Chat turns narrow the tools by role first, then run the same taint guard.
-  assert.equal(count(/guard: (scopeGuard\(turn\.toolScope, )?taintGuard\(/g), agents, 'every session runs the taint guard')
+  // Chat turns narrow the tools by role first, and named agents by their
+  // allow-list and budget; both then run the same taint guard.
+  assert.equal(
+    count(/guard: (scopeGuard\(turn\.toolScope, |agentGuard\(\{ allowed, budget, next: )?taintGuard\(/g), agents,
+    'every session runs the taint guard')
+  // A named agent's policy is the one engine's own view, never a second engine.
+  assert.match(src, /const policy = basePolicy\.forAgent\(agent\.id\)/)
 
   // The brain builds every session's options in one place, all from policy.
   const brain = readFileSync(new URL('./brains/claude.mjs', import.meta.url), 'utf8')
@@ -603,4 +608,23 @@ test("none of JARVIS's own tools trips the never-list", () => {
     jarvis_task: ['report_progress', 'ask_owner'],
   }
   for (const [server, tools] of Object.entries(ownTools)) assertNotNever(tools.map((t) => `mcp__${server}__${t}`))
+})
+
+test('forAgent is the same policy with the agent id on its audit entries', async () => {
+  const entries = []
+  const base = createPolicy({ allowWrites: false, isMemoryTool: () => false, isWorkflowTool: () => false, isTaskTool: () => false, audit: (e) => entries.push(e) })
+  const agent = base.forAgent('researcher')
+  for (const name of ['Read', 'Bash', 'mcp__jarvis_tasks__spawn_task']) {
+    assert.deepEqual(agent.decide({ kind: 'tool', name }), base.decide({ kind: 'tool', name }))
+  }
+  assert.deepEqual(agent.disallowedTools(), base.disallowedTools())
+  await agent.authorize({ name: 'Read', actor: 'worker', stage: 'tool-bridge' })
+  await agent.preToolUse({ actor: 'worker' }).hooks[0]({ tool_name: 'Bash', tool_input: {} })
+  await agent.canUseTool('worker')('Read')
+  await base.authorize({ name: 'Read', actor: 'worker', stage: 'tool-bridge' })
+  assert.deepEqual(entries.map((e) => [e.request.name, e.decision.verdict, e.agentId]), [
+    ['Read', 'allow', 'researcher'], ['Bash', 'deny', 'researcher'], ['Read', 'allow', 'researcher'], ['Read', 'allow', undefined],
+  ])
+  await base.forAgent('').authorize({ name: 'Read', actor: 'worker' })
+  assert.equal(entries.at(-1).agentId, undefined)
 })

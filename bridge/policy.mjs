@@ -627,7 +627,7 @@ export function createPolicy(options) {
    * else the words handed back to the model.
    */
   const authorize = async ({
-    name, input, actor = 'voice', stage = 'pre-tool-use', guard = null, reason = DENY_MESSAGES.hook, log = console,
+    name, input, actor = 'voice', stage = 'pre-tool-use', guard = null, reason = DENY_MESSAGES.hook, log = console, agentId = null,
   } = {}) => {
     let refusal = null
     const request = { kind: 'tool', name }
@@ -645,20 +645,27 @@ export function createPolicy(options) {
         decision = denyBy('guard-failed')
       }
     }
-    recordDecision(audit, log, { actor, stage, request, decision })
+    recordDecision(audit, log, { actor, stage, request, decision, ...(agentId && { agentId }) })
     return { decision, refusal: refusal ?? null }
   }
 
-  return Object.freeze({
+  /**
+   * The policy as one session sees it. `agentId` only tags the audit entries
+   * of a worker running as a named agent (agent-runtime.mjs); every decision
+   * is taken by the same `decide` as everyone else's.
+   */
+  const view = (agentId = null) => Object.freeze({
     allowWrites: opts.allowWrites,
     decide,
     decideTool,
     disallowedTools: () => (opts.allowWrites ? [] : [...GENERAL_WRITE_TOOLS]),
-    authorize,
+    authorize: (call = {}) => authorize({ ...call, agentId: call.agentId ?? agentId }),
+    /** The same policy, with this agent's id on every audit entry it writes. */
+    forAgent: (id) => view(typeof id === 'string' && id ? id : null),
     preToolUse: ({ reason = DENY_MESSAGES.hook, guard = null, log = console, actor = 'voice' } = {}) => {
       const hook = async (input) => {
         const { refusal } = await authorize({
-          name: input?.tool_name, input: input?.tool_input, actor, stage: 'pre-tool-use', guard, reason, log,
+          name: input?.tool_name, input: input?.tool_input, actor, stage: 'pre-tool-use', guard, reason, log, agentId,
         })
         return refusal === null ? {} : {
           hookSpecificOutput: {
@@ -681,10 +688,12 @@ export function createPolicy(options) {
         const request = { kind: 'tool', name: toolName }
         const decision = decide(request)
         const ok = decision.verdict === 'allow'
-        recordDecision(audit, console, { actor: context === 'worker' || context === 'chat' ? context : 'voice', stage: 'can-use-tool', request, decision })
+        recordDecision(audit, console, { actor: context === 'worker' || context === 'chat' ? context : 'voice', stage: 'can-use-tool', request, decision, ...(agentId && { agentId }) })
         log?.(`[jarvis] tool ${toolName} -> ${ok ? 'allow' : 'deny'}`)
         return ok ? { behavior: 'allow' } : { behavior: 'deny', message }
       }
     },
   })
+
+  return view()
 }

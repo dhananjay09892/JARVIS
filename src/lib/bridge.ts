@@ -220,6 +220,9 @@ export type TaskView = {
   createdAt: number
   startedAt: number | null
   endedAt: number | null
+  /** Set when the task runs as a named agent. */
+  agentId?: string
+  agentName?: string
 }
 
 let onTask: ((task: TaskView) => void) | null = null
