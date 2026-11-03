@@ -205,3 +205,36 @@ test('ChannelBinding matches what the allow-list stores (plan 20, Q79)', async (
   assert.equal(checkContract('ChannelBinding', { ...guest, allow: { ...guest.allow, proactive: true } }).ok, false)
   assert.equal(checkContract('ChannelBinding', { ...owner, channel: 'irc' }).ok, false)
 })
+
+// Agent definitions (agents phase A0). The file format and the bridge copy are
+// tested in bridge/agent-definition.test.mjs; these are the contract's own rules.
+const AGENT = { id: 'helper', name: 'Helper', description: 'Helps.', body: 'Help.' }
+const AGENT_BUDGET = { maxToolCalls: 5, maxMinutes: 1, maxCostUsd: 0 }
+
+test('AgentDefinition fills safe defaults: no tools, no memory, no delegation', () => {
+  const r = checkContract('AgentDefinition', AGENT)
+  assert.ok(r.ok)
+  if (!r.ok) return
+  assert.deepEqual(
+    { v: r.value.v, mode: r.value.mode, tools: r.value.tools, memory: r.value.memory, delegate: r.value.delegate, createdBy: r.value.createdBy },
+    { v: 1, mode: 'on-demand', tools: [], memory: 'none', delegate: [], createdBy: 'user' },
+  )
+})
+
+test('AgentDefinition refuses what the agent rules forbid', () => {
+  const bad: [string, Record<string, unknown>, string][] = [
+    ['bad id', { id: 'Helper Bot' }, 'id'],
+    ['unknown mode', { mode: 'sometimes' }, 'mode'],
+    ['memory write', { memory: 'write' }, 'memory'],
+    ['scheduled without budget', { mode: 'scheduled', schedule: '0 7 * * *' }, 'budget'],
+    ['worker with delegate', { delegate: ['writer'] }, 'delegate'],
+    ['agent-made without requester', { createdBy: 'agent' }, 'requestedBy'],
+  ]
+  for (const [what, patch, path] of bad) {
+    const r = checkContract('AgentDefinition', { ...AGENT, ...patch })
+    assert.equal(r.ok, false, what)
+    if (!r.ok) assert.ok(r.errors.some((e) => e.startsWith(`${path}:`)), `${what}: ${r.errors.join('; ')}`)
+  }
+  assert.ok(checkContract('AgentDefinition', { ...AGENT, id: 'coordinator', delegate: ['writer'] }).ok)
+  assert.ok(checkContract('AgentDefinition', { ...AGENT, mode: 'scheduled', schedule: '0 7 * * *', budget: AGENT_BUDGET }).ok)
+})
