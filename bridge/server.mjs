@@ -82,6 +82,7 @@ import { imapConnector } from './connectors/imap.mjs'
 import { notionConnector } from './connectors/notion.mjs'
 import { slackConnector } from './connectors/slack.mjs'
 import { githubNotificationsConnector } from './connectors/github_notifications.mjs'
+import { ouraConnector } from './connectors/oura.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { newsRssConnector, NEWS_RSS_OPTIONS } from './connectors/news_rss.mjs'
@@ -584,6 +585,12 @@ connectors.registerAll([
     // notifications scope; reads unread threads from api.github.com only.
     id: 'github_notifications',
     create: (ctx) => githubNotificationsConnector().create(ctx),
+  },
+  {
+    // Oura (task C26): paste an access token; reads daily sleep and readiness from
+    // api.ouraring.com only, stored as health data that stays on this device.
+    id: 'oura',
+    create: (ctx) => ouraConnector().create(ctx),
   },
   {
     // Obsidian (task C13): grant access to one vault folder; reads its notes
