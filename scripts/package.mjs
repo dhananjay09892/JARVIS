@@ -23,6 +23,19 @@ const run = (cmd, args, cwd = root) => {
   if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} failed`)
 }
 
+/**
+ * Node's LICENSE (MIT plus the third-party licences bundled into Node) must ship next to node.exe.
+ * It is fetched for the exact version being copied, so it always matches the binary.
+ */
+async function fetchNodeLicence(dest) {
+  const url = `https://raw.githubusercontent.com/nodejs/node/${process.version}/LICENSE`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`could not download Node's LICENSE for ${process.version} (${res.status}): ${url}`)
+  const text = await res.text()
+  if (!text.includes('Node.js is licensed for use as follows')) throw new Error(`unexpected Node LICENSE content from ${url}`)
+  writeFileSync(dest, text)
+}
+
 if (process.platform !== 'win32') throw new Error('The installer is Windows-only; run this on Windows.')
 if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Node 22+ is required (node:sqlite).')
 
@@ -48,10 +61,13 @@ rmSync(stage, { recursive: true, force: true })
 mkdirSync(join(stage, 'node'), { recursive: true })
 mkdirSync(join(stage, 'app'), { recursive: true })
 cpSync(process.execPath, join(stage, 'node', 'node.exe'))
+await fetchNodeLicence(join(stage, 'node', 'LICENSE'))
 cpSync(join(root, 'launcher/JARVIS.vbs'), join(stage, 'JARVIS.vbs'))
 cpSync(join(root, 'LICENSE'), join(stage, 'LICENSE'))
 cpSync(join(root, 'DISCLAIMER.txt'), join(stage, 'DISCLAIMER.txt'))
 cpSync(join(root, 'CREDITS.md'), join(stage, 'CREDITS.md'))
+// Licence texts and source links that must travel with the installer (GPL-3.0 and eSpeak NG notice).
+cpSync(join(root, 'installer/licences'), join(stage, 'licences'), { recursive: true })
 cpSync(join(root, 'bridge'), join(stage, 'app/bridge'), {
   recursive: true,
   filter: (src) => !src.endsWith('.test.mjs'),

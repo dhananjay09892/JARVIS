@@ -1,0 +1,28 @@
+eSpeak NG (GPL-3.0-or-later) inside JARVIS
+==========================================
+
+The JARVIS user interface can speak with the optional Kokoro voice (off by default).
+Kokoro turns text into phonemes with the npm package "phonemizer" 1.2.1, which is a
+WebAssembly build of eSpeak NG. eSpeak NG is licensed under the GNU General Public
+License, version 3 or (at your option) any later version. The full licence text is in
+GPL-3.0.txt next to this file.
+
+The WebAssembly build is part of the built interface that this installer puts in
+app\dist\ (the Kokoro part is loaded only when the Kokoro voice is turned on).
+
+Corresponding source code (the exact versions JARVIS uses):
+
+  phonemizer 1.2.1 (the WebAssembly packaging of eSpeak NG)
+    npm package:  https://www.npmjs.com/package/phonemizer/v/1.2.1
+    source:       https://github.com/xenova/phonemizer.js
+    tarball:      https://registry.npmjs.org/phonemizer/-/phonemizer-1.2.1.tgz
+
+  eSpeak NG (the speech synthesiser compiled into it)
+    source:       https://github.com/espeak-ng/espeak-ng
+
+You may also ask for the source by opening an issue at
+https://github.com/dhananjay09892/JARVIS/issues.
+
+JARVIS's own code is MIT-licensed (see LICENSE). Which parts of the combined work the
+GPL reaches is under review; see CREDITS.md and LICENCES.md in the source repository.
+This notice does not change the licence of any other component.
