@@ -494,6 +494,94 @@ export const BusEvent = z.object({
 export type BusEvent = z.infer<typeof BusEvent>
 
 // ---------------------------------------------------------------------------
+// Agents: one definition per named specialist
+// ---------------------------------------------------------------------------
+
+/**
+ * Lowercase, starts with a letter, letters/digits/dashes, at most 40
+ * characters. Used by voice ("ask the researcher"), so it stays speakable.
+ */
+export const AgentId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, 'agent id must be lowercase letters, digits and dashes, starting with a letter')
+/** The only agent that may start other agents. */
+export const COORDINATOR_ID = 'coordinator'
+export const AGENT_MODES = ['on-demand', 'scheduled', 'triggered', 'continuous'] as const
+export const AgentMode = z.enum(AGENT_MODES)
+/** Modes that run without the owner asking each time; these need a budget. */
+export const UNATTENDED_MODES: readonly AgentMode[] = ['scheduled', 'triggered', 'continuous']
+export type AgentMode = z.infer<typeof AgentMode>
+
+const ToolName = z.string().regex(/^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,127}$/, 'invalid tool name')
+const ConnectorName = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/, 'invalid connector name')
+
+/** Per-run limits. Every bound is checked by the runtime, not just recorded. */
+export const AgentBudget = z.object({
+  maxToolCalls: z.number().int().positive().max(1000),
+  maxMinutes: z.number().positive().max(24 * 60),
+  /** Ignored on a subscription, enforced on an API key. */
+  maxCostUsd: z.number().nonnegative().max(100),
+})
+export type AgentBudget = z.infer<typeof AgentBudget>
+
+/**
+ * One agent: a Markdown file whose frontmatter is these fields and whose body
+ * is the agent's instructions (bridge/agent-definition.mjs reads and writes
+ * the file). Built-in agents ship with the app; user agents live in the
+ * user's JARVIS folder.
+ *
+ * A definition only ever narrows what an agent can do: `tools` is an
+ * allow-list (empty = no tools), connectors are read unless `write` is listed,
+ * and every call still goes through the policy engine. Memory is never written
+ * directly (`propose` at most), and only the Coordinator may delegate.
+ */
+export const AgentDefinition = z.object({
+  v: Version.default(CONTRACT_VERSION),
+  id: AgentId,
+  name: z.string().trim().min(1).max(60),
+  description: z.string().trim().min(1).max(500),
+  icon: z.string().regex(/^[a-z0-9-]{1,40}$/, 'invalid icon name').optional(),
+  mode: AgentMode.default('on-demand'),
+  /** 5-field cron string; set exactly when `mode` is `scheduled`. */
+  schedule: z.string().regex(/^\S+(?:[ \t]+\S+){4}$/, 'schedule must be a 5-field cron string').nullable().default(null),
+  /** Bus topic; set exactly when `mode` is `triggered`. */
+  trigger: z.string().regex(/^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$/, 'trigger must be a bus topic such as meeting.ended').nullable().default(null),
+  /** A registered brain, or `external:<name>` for an outside agent. */
+  brain: z.string().regex(/^(?:external:)?[a-z][a-z0-9-]{0,39}$/, 'invalid brain name').default('claude'),
+  /** A model id, or `default` to follow Settings. */
+  model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/, 'invalid model id').default('default'),
+  tools: z.array(ToolName).max(100).default([]),
+  connectors: z.record(ConnectorName, z.enum(['read', 'write'])).default({}),
+  memory: z.enum(['none', 'read', 'propose'], {
+    error: (issue) => (issue.input === 'write'
+      ? 'agents never write memory directly; use propose'
+      : 'memory must be none, read or propose'),
+  }).default('none'),
+  budget: AgentBudget.optional(),
+  /** Run the Reviewer on the result (max 3 attempts, then fail honestly). */
+  review: z.boolean().default(false),
+  /** Agents this one may start. Only the Coordinator gets any. */
+  delegate: z.array(AgentId).max(20).default([]),
+  output: z.enum(['report', 'draft', 'artifact', 'alert', 'none']).default('report'),
+  createdBy: z.enum(['builtin', 'user', 'agent']).default('user'),
+  /** Which agent asked for this one; required when `createdBy` is `agent`. */
+  requestedBy: AgentId.optional(),
+  /** The instructions: the Markdown body of the file. */
+  body: z.string().trim().min(1).max(20_000),
+}).superRefine((d, ctx) => {
+  const issue = (path: string, message: string) => ctx.addIssue({ code: 'custom', path: [path], message })
+  if (d.mode === 'scheduled' && d.schedule === null) issue('schedule', 'a scheduled agent needs a schedule')
+  if (d.mode !== 'scheduled' && d.schedule !== null) issue('schedule', 'only a scheduled agent has a schedule')
+  if (d.mode === 'triggered' && d.trigger === null) issue('trigger', 'a triggered agent needs a trigger')
+  if (d.mode !== 'triggered' && d.trigger !== null) issue('trigger', 'only a triggered agent has a trigger')
+  if (UNATTENDED_MODES.includes(d.mode) && d.budget === undefined) issue('budget', `a ${d.mode} agent needs a budget`)
+  if (d.delegate.length > 0 && d.id !== COORDINATOR_ID) issue('delegate', 'only the coordinator may delegate')
+  if (d.delegate.includes(d.id)) issue('delegate', 'an agent cannot delegate to itself')
+  if (new Set(d.delegate).size !== d.delegate.length) issue('delegate', 'duplicate agent')
+  if (new Set(d.tools).size !== d.tools.length) issue('tools', 'duplicate tool')
+  if (d.createdBy === 'agent' && d.requestedBy === undefined) issue('requestedBy', 'an agent-made definition records who asked for it')
+})
+export type AgentDefinition = z.infer<typeof AgentDefinition>
+
+// ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
 
@@ -503,6 +591,7 @@ export const CONTRACTS = {
   PolicyRequest, PolicyDecision, ApprovalResolution, Notification, MemoryItem,
   Mission, ChannelMessage, SkillManifest, DeviceEvent, AuditRecord, BusEvent,
   WorkflowRun, TaskOutcome, ChannelBinding, ChannelEvent, FreezeChange,
+  AgentDefinition,
 } as const
 export type ContractName = keyof typeof CONTRACTS
 export type Contract<N extends ContractName> = z.infer<(typeof CONTRACTS)[N]>
