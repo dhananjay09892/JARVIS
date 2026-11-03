@@ -59,10 +59,12 @@ export const MAX_TURNS = Object.freeze({ voice: 24, worker: 40, chat: 12 })
  */
 export function claudeOptions({
   policy, actor, mcpServers, systemPrompt, model, effort, guard, afterTool, log,
-  abortController, maxTurns = MAX_TURNS[actor], cwd = homedir(),
+  abortController, maxTurns = MAX_TURNS[actor], cwd = homedir(), hideTools = [],
 }) {
   if (!policy) throw new Error('claudeOptions needs the policy engine.')
   if (!Object.hasOwn(MAX_TURNS, actor)) throw new Error(`Unknown actor: ${actor}`)
+  const base = new Set(policy.disallowedTools())
+  const hiddenExtra = [...new Set(Array.isArray(hideTools) ? hideTools.filter((n) => typeof n === 'string' && n && !base.has(n)) : [])]
   return {
     ...(abortController && { abortController }),
     mcpServers,
@@ -99,7 +101,10 @@ export function claudeOptions({
     effort,
     maxTurns,
     permissionMode: 'default',
-    disallowedTools: policy.disallowedTools(),
+    // A named agent's session (agent-runtime.mjs) also hides every tool
+    // outside its allow-list, so the model is never offered them. Hiding only
+    // removes; the hook and canUseTool below still decide every call.
+    disallowedTools: policy.disallowedTools().concat(hiddenExtra),
     hooks: {
       // The gate, then the taint check: once a session has read private
       // content, opening, fetching or sending to a destination the owner did

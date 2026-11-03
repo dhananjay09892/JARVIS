@@ -19,8 +19,17 @@
  * Nothing here grants anything. A task asks for approval through the same cards
  * as everything else; the manager only tags the card with the task it came from
  * and marks the task as waiting while the card is open.
+ *
+ * A task may carry an `agentId`: it is then a named agent (agents.mjs) and
+ * `runAgent` is handed that agent's checked definition, which narrows what the
+ * session gets (agent-runtime.mjs). The manager enforces the definition's
+ * budget as hard stops: tool calls (through `budget.toolCall`, which the
+ * session's guard asks before each call), minutes, and cost when `costCounts()`
+ * says this run is billed per use. A stopped run ends `failed` with the reason.
+ * A task without an agent id runs exactly as it always has.
  */
 import { randomUUID } from 'node:crypto'
+import { BUDGET_STOPS, AGENT_REFUSALS } from './agent-runtime.mjs'
 
 export const MAX_CONCURRENT = 3
 const MAX_KEPT = 50
@@ -50,10 +59,20 @@ function snapshot(t) {
     createdAt: t.createdAt,
     startedAt: t.startedAt,
     endedAt: t.endedAt,
+    ...(t.agentId && { agentId: t.agentId, agentName: t.agentName }),
   }
 }
 
-export function createTaskManager({ runAgent, store = null, bus = null, concurrency = MAX_CONCURRENT, now = () => Date.now(), log = console } = {}) {
+/**
+ * @param {object} o
+ * @param {Function} o.runAgent starts one task's session; returns its BrainEvents
+ * @param {{ has: Function, get: Function, isActive: Function }} [o.agents] the agent registry
+ * @param {(agent: object) => boolean} [o.costCounts] is this agent's run billed per use (an API key)? Only then is maxCostUsd enforced.
+ */
+export function createTaskManager({
+  runAgent, store = null, bus = null, agents = null, costCounts = () => false,
+  concurrency = MAX_CONCURRENT, now = () => Date.now(), log = console,
+} = {}) {
   const tasks = new Map()
   const listeners = new Set()
 
@@ -90,6 +109,7 @@ export function createTaskManager({ runAgent, store = null, bus = null, concurre
         step: s.steps.filter((x) => x.state === 'done').length + 1, note: s.note, log: s.log, result: s.result,
         error: s.error, costUsd: s.costUsd, startedAt: s.startedAt, endedAt: s.endedAt, createdAt: s.createdAt ?? s.startedAt ?? now(),
         waiting: 0, question: null, tools: new Set(), abort: new AbortController(),
+        ...(typeof s.agentId === 'string' && s.agentId && { agentId: s.agentId, agentName: clip(s.agentName, 60) || s.agentId }),
       }
       if (ACTIVE.has(t.status)) {
         t.status = 'interrupted'
@@ -128,6 +148,7 @@ export function createTaskManager({ runAgent, store = null, bus = null, concurre
 
   function finish(t, status, fields = {}) {
     if (!isActive(t)) return
+    if (t.timer) { clearTimeout(t.timer); t.timer = null }
     // Release a parked question first, while the task still counts as active.
     t.question?.settle(null)
     Object.assign(t, fields, { status, endedAt: now() })
@@ -167,7 +188,8 @@ export function createTaskManager({ runAgent, store = null, bus = null, concurre
     note(t, 'approval', title)
     emit(t)
     try {
-      return await approve(`Task "${t.title}": ${title}`, details)
+      const who = t.agentName ? ` (${t.agentName})` : ''
+      return await approve(`Task "${t.title}"${who}: ${title}`, details)
     } finally {
       t.waiting -= 1
       if (t.status === 'waiting_approval' && t.waiting === 0) t.status = t.question ? 'waiting_input' : 'running'
@@ -207,11 +229,56 @@ export function createTaskManager({ runAgent, store = null, bus = null, concurre
     return `The agent stopped: ${e.code}.`
   }
 
+  /**
+   * End a run at a budget limit: abort its session and fail it with the reason.
+   * Like cancel, but honest that the work stopped short rather than finished.
+   */
+  const stopper = (t) => (reason) => {
+    if (!isActive(t)) return
+    t.abort.abort()
+    finish(t, 'failed', { error: reason })
+  }
+
+  /** The budget the session's guard spends from; null without one. */
+  function budgetFor(t, limits) {
+    if (!Number.isInteger(limits?.maxToolCalls)) return null
+    return {
+      /** One tool call is about to run. Returns null to let it, or the refusal. */
+      toolCall() {
+        if (!isActive(t)) return AGENT_REFUSALS.budget
+        if (t.calls >= limits.maxToolCalls) {
+          stopper(t)(BUDGET_STOPS.toolCalls(limits.maxToolCalls))
+          return AGENT_REFUSALS.budget
+        }
+        t.calls += 1
+        return null
+      },
+    }
+  }
+
   async function start(t) {
+    let agent = null
+    if (t.agentId) {
+      // Checked again at start: the agent may have been switched off or
+      // changed while this task sat in the queue.
+      let ok = false
+      try { ok = agents?.isActive(t.agentId) === true; agent = ok ? agents.get(t.agentId) : null } catch { ok = false }
+      if (!ok || !agent) {
+        t.startedAt = now()
+        finish(t, 'failed', { error: `The ${t.agentName} agent is not available any more.` })
+        return
+      }
+    }
     t.status = 'running'
     t.startedAt = now()
-    note(t, 'start', 'started')
+    t.calls = 0
+    note(t, 'start', agent ? `started as ${agent.name}` : 'started')
     emit(t)
+    const limits = agent?.budget ?? null
+    if (limits && typeof limits.maxMinutes === 'number' && limits.maxMinutes > 0) {
+      t.timer = setTimeout(() => stopper(t)(BUDGET_STOPS.minutes(limits.maxMinutes)), limits.maxMinutes * 60_000)
+      t.timer.unref?.()
+    }
     try {
       const stream = runAgent({
         task: snapshot(t),
@@ -219,6 +286,7 @@ export function createTaskManager({ runAgent, store = null, bus = null, concurre
         report: reporter(t),
         ask: asker(t),
         wrapApprove: (approve) => approver(t, approve),
+        ...(agent && { agent, budget: budgetFor(t, limits), stop: stopper(t) }),
       })
       // The worker's session as BrainEvents (brains/events.mjs). The summary is
       // the text after the last tool call: what the worker wrote once its work
@@ -242,6 +310,11 @@ export function createTaskManager({ runAgent, store = null, bus = null, concurre
             break
           case 'usage':
             if (e.costUsd !== undefined) t.costUsd = e.costUsd
+            if (typeof limits?.maxCostUsd === 'number' && typeof t.costUsd === 'number' && t.costUsd > limits.maxCostUsd) {
+              let billed = false
+              try { billed = costCounts(agent) === true } catch { billed = false }
+              if (billed) stopper(t)(BUDGET_STOPS.cost(limits.maxCostUsd))
+            }
             break
           case 'error':
             failure = e
@@ -279,9 +352,17 @@ export function createTaskManager({ runAgent, store = null, bus = null, concurre
       for (const send of listeners) send({ type: 'task_removed', id })
       return { ok: true }
     },
-    spawn({ title, goal }) {
+    spawn({ title, goal, agentId }) {
       const g = clip(goal, 4000)
       if (!g) return { ok: false, reason: 'A task needs a goal.' }
+      let agent = null
+      if (agentId !== undefined && agentId !== null) {
+        try { agent = typeof agentId === 'string' && agents?.has(agentId) ? agents.get(agentId) : null } catch { agent = null }
+        if (!agent) return { ok: false, reason: 'There is no agent by that name.' }
+        let on = false
+        try { on = agents.isActive(agentId) === true } catch { on = false }
+        if (!on) return { ok: false, reason: `The ${agent.name} agent is not switched on.` }
+      }
       const t = {
         id: `t${randomUUID().slice(0, 8)}`,
         title: clip(title, 60) || clip(g, 60),
@@ -301,6 +382,7 @@ export function createTaskManager({ runAgent, store = null, bus = null, concurre
         question: null,
         tools: new Set(),
         abort: new AbortController(),
+        ...(agent && { agentId: agent.id, agentName: agent.name }),
       }
       tasks.set(t.id, t)
       note(t, 'queued', 'queued')

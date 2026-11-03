@@ -93,6 +93,9 @@ export function normaliseEntry(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('entry must be an object')
   const type = oneOf(ENTRY_TYPES, input.type, 'entry type')
   const entry = { type, actor: oneOf(ACTORS, input.actor ?? 'system', 'actor') }
+  // Which named agent (agents.mjs) the worker was running as, if any.
+  const agentId = word(input.agentId, /^[a-z][a-z0-9-]{0,39}$/)
+  if (agentId) entry.agentId = agentId
 
   if (type === 'decision') {
     entry.stage = oneOf(STAGES, input.stage, 'stage')
@@ -233,6 +236,16 @@ export function auditSink(store, log = console) {
       log?.error?.('[jarvis] audit entry not written:', err?.message ?? err)
     }
   }
+}
+
+/**
+ * The sink, with every entry tagged as coming from one named agent. Used for
+ * a worker running as an agent, so its decisions and approval cards can be
+ * told apart from other workers' on the trail.
+ */
+export function agentAuditSink(sink, agentId) {
+  if (typeof sink !== 'function') return sink ?? null
+  return (entry) => sink({ ...entry, agentId })
 }
 
 /**

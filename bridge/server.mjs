@@ -30,6 +30,8 @@ import { workspaceServer, workspaceFiles, WORKSPACE_ROOT } from './workspace.mjs
 import { openWorkflows, createApprovalHub, createEngine } from './workflows.mjs'
 import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
+import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
+import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
 import { createBus } from './bus.mjs'
 import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.mjs'
 import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSource, timeSource } from './context-broker.mjs'
@@ -39,7 +41,7 @@ import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
 import { openTraces } from './traces.mjs'
 import { createSetupMetrics, setupMetricsOn } from './setup-metrics.mjs'
-import { auditSink, auditedApprove, openAudit } from './audit.mjs'
+import { agentAuditSink, auditSink, auditedApprove, openAudit } from './audit.mjs'
 import { createSessionMemory } from './conversation.mjs'
 import { memoryServer, isMemoryTool } from './memory-tools.mjs'
 import { developmentServer } from './development.mjs'
@@ -66,7 +68,7 @@ import { chooseBrain, toolParams } from './brains/select.mjs'
 import { createSiwcAuth, SIWC_AUTH_BASE } from './brains/siwc.mjs'
 import { createOpenAIAuthRoutes, createOpenAIBrainSwitch, SIWC_VAULT_PREFIX } from './brains/openai-auth.mjs'
 import { openUrl } from './open-url.mjs'
-import { zodSchemaAdapter } from './brains/sdk-tools.mjs'
+import { TOOL_DEFS, zodSchemaAdapter } from './brains/sdk-tools.mjs'
 import { createConnectorRegistry } from './connectors/registry.mjs'
 import { createCredentialStore, createUnavailableCredentialStore } from './connectors/credentials.mjs'
 import { openDocumentStore } from './connectors/store.mjs'
@@ -2122,10 +2124,125 @@ try {
   console.error('[jarvis] task history unavailable — tasks will not survive a restart:', err.message)
 }
 
+/**
+ * The servers a worker session is built from. A named agent gets a cut-down
+ * copy (agent-runtime.mjs narrowServers); a plain task gets them all, as
+ * before. Memory is only there for an agent whose definition may read it.
+ */
+function workerServers({ report, ask, approve, withMemory = false }) {
+  return {
+    ...MCP_SERVERS,
+    jarvis_task: progressServer(report, ask),
+    jarvis_workspace: workspaceServer(approve),
+    jarvis_development: developmentServer(approve),
+    ...connectorServerEntry(),
+    ...(withMemory && memory && { jarvis_memory: memoryServer(memory, { conversation: () => null, project: () => '' }) }),
+  }
+}
+
+/** Tool names of the bridge's own servers (sdk-server.mjs remembers them). */
+const toolNamesOf = (server) => (Array.isArray(server?.[TOOL_DEFS]) ? server[TOOL_DEFS].map((d) => d?.name).filter((n) => typeof n === 'string') : null)
+
+/**
+ * What a worker could be given, for checking agent files against
+ * (agents.mjs). Other people's MCP servers are listed by name only: the
+ * bridge cannot read their tool lists, so any tool on them counts as existing
+ * and the agent's guard still refuses anything outside its list.
+ */
+function workerCatalogue() {
+  const noop = () => null
+  const servers = {}
+  try {
+    for (const [key, server] of Object.entries(workerServers({ report: noop, ask: noop, approve: async () => false, withMemory: true }))) {
+      servers[key] = toolNamesOf(server)
+    }
+  } catch (err) {
+    console.error('[jarvis] agent tool catalogue incomplete:', err?.message ?? err)
+  }
+  return { catalogue: createToolCatalogue({ servers }), servers }
+}
+
+const basePolicy = policy
+
+/**
+ * Named agents. Built-in definitions ship read-only in
+ * bridge/agents/; the owner's own live in the data folder. Loading never
+ * throws: a bad file is reported and skipped.
+ */
+const agentTools = workerCatalogue()
+const agentRegistry = createAgentRegistry({ tools: agentTools.catalogue, connectors })
+try {
+  const r = agentRegistry.load()
+  if (r.loaded || r.refused) console.log(`[jarvis] agents: ${r.active} active of ${r.loaded}, ${r.refused} file(s) refused`)
+} catch (err) {
+  console.error('[jarvis] agents unavailable:', err?.message ?? err)
+}
+
+/** Is a worker billed per use? Only then does an agent's cost limit apply (ADR 001). */
+const workerBilledPerUse = (b) => (b?.id === 'claude' ? claudeAuth().mode === 'apikey' : b?.id !== undefined && b.id !== 'claude')
+
+/**
+ * A worker session as a named agent: the definition's prompt, brain and
+ * model; only the tools its file lists that the worker rules, its memory
+ * scope, its connector grants and the policy leave; and every call through
+ * the same policy engine, with the agent's guard after the gate and its id on
+ * every audit entry and approval card.
+ */
+function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget }) {
+  // The one policy engine, as this agent's view: the same decisions, with the
+  // agent's id on every audit entry.
+  const policy = basePolicy.forAgent(agent.id)
+  const pick = agentBrain(agent, brains)
+  if (!pick.ok) {
+    return (async function* refused() {
+      yield { t: 'error', code: 'session_error', retryable: false, message: pick.reason }
+      yield { t: 'done', reason: 'error' }
+    })()
+  }
+  if (pick.note) console.log(`[jarvis] agent ${agent.id}: ${pick.note}`)
+  const brain = pick.brain
+  const approve = auditedApprove(wrapApprove(approvalHub.request), agentAuditSink(audit, agent.id), 'worker')
+  const taint = createTaintTracker({ seen: seenUrls, isEffectful: isVetoed, tainted: true })
+  taint.noteOwnerText(`${task.title}\n${task.goal}`)
+  const controller = new AbortController()
+  signal.addEventListener('abort', () => controller.abort(), { once: true })
+
+  const { allowed, dropped } = agentToolPlan(agent, { decideTool: policy.decideTool })
+  if (dropped.length) console.log(`[jarvis] agent ${agent.id}: not offered ${dropped.map((d) => `${d.tool} (${d.reason})`).join(', ')}`)
+  const all = workerServers({ report, ask, approve, withMemory: agent.memory !== 'none' })
+  const mcpServers = narrowServers(all, allowed)
+  const known = Object.entries(mcpServers).flatMap(([key, server]) => (toolNamesOf(server) ?? []).map((n) => `mcp__${key}__${n}`))
+
+  return brainMetrics.observe(brain.id, 'worker', brain.converse({
+    prompt: `Task: ${task.title}
+
+${task.goal}`,
+    actor: 'worker',
+    abortController: controller,
+    mcpServers,
+    ...narrowToolParams(toolParams(brain, mcpServers, { schema: toolSchemas, log: console }), allowed),
+    hideTools: hiddenTools(allowed, { known }),
+    systemPrompt: agentPrompt(agent, WORKER_PROMPT),
+    model: agentModel(agent, () => modelFor(brain)),
+    effort: currentEffort(),
+    policy,
+    // The gate, then the agent's allow-list and budget, then the taint check.
+    guard: agentGuard({ allowed, budget, next: taintGuard(taint, approve) }),
+    afterTool: postToolUse(taint, 'worker'),
+  })).events
+}
+
 const taskManager = createTaskManager({
   store: taskStore,
   bus,
-  runAgent: ({ task, signal, report, ask, wrapApprove }) => {
+  agents: agentRegistry,
+  costCounts: (agent) => {
+    const pick = agentBrain(agent, brains)
+    return pick.ok && workerBilledPerUse(pick.brain)
+  },
+  runAgent: (ctx) => {
+    if (ctx.agent) return runNamedAgent(ctx)
+    const { task, signal, report, ask, wrapApprove } = ctx
     const approve = auditedApprove(wrapApprove(approvalHub.request), audit, 'worker')
     // A brief is written by a model that may have read private content, so a
     // worker starts tainted; the links in its brief count as named (taint.mjs).

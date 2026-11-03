@@ -71,6 +71,9 @@ test('worker session options: 40 turns and its own abort controller', () => {
 test('disallowedTools follows the write switch', () => {
   assert.deepEqual(claudeOptions(base()).disallowedTools, [...GENERAL_WRITE_TOOLS])
   assert.deepEqual(claudeOptions(base({ policy: makePolicy(true) })).disallowedTools, [])
+  // A named agent's session also hides what is outside its allow-list; it only adds.
+  assert.deepEqual(claudeOptions(base({ hideTools: ['Bash', 'Read', 'Read', 7] })).disallowedTools, [...GENERAL_WRITE_TOOLS, 'Read'])
+  assert.deepEqual(claudeOptions(base({ policy: makePolicy(true), hideTools: ['Read'] })).disallowedTools, ['Read'])
 })
 
 test('canUseTool asks the policy engine and audits as the right actor', async () => {
@@ -286,9 +289,10 @@ test('server.mjs reaches the SDK only through the brain registry', () => {
   // query is imported once and handed to the brain, never called directly.
   assert.equal((src.match(/\bquery\(/g) ?? []).length, 0)
   assert.match(src, /createClaudeBrain\(\{ query(, auth: claudeAuth)? \}\)/)
-  // Both sessions (voice and task worker) are read as BrainEvents. The voice
-  // session's brain is the one Settings → Brain picks (Q54).
-  assert.equal((src.match(/\b(brain|voiceBrain)\.converse\(/g) ?? []).length, 2)
+  // The voice session, the task worker and a named agent's worker are read
+  // as BrainEvents. The voice session's brain is the one Settings → Brain
+  // picks (Q54); a named agent's is the one its definition names.
+  assert.equal((src.match(/\b(brain|voiceBrain)\.converse\(/g) ?? []).length, 3)
   assert.equal((src.match(/\.startSession\(/g) ?? []).length, 0)
   // Session options are built in one place only.
   assert.doesNotMatch(src, /(settingSources|includePartialMessages|permissionMode|canUseTool):/)
