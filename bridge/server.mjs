@@ -87,6 +87,7 @@ import { slackConnector } from './connectors/slack.mjs'
 import { githubNotificationsConnector } from './connectors/github_notifications.mjs'
 import { ouraConnector } from './connectors/oura.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
+import { appleHealthConnector } from './connectors/apple_health.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { newsRssConnector, NEWS_RSS_OPTIONS } from './connectors/news_rss.mjs'
 import { googleTasksConnector } from './connectors/google_tasks.mjs'
@@ -594,6 +595,12 @@ connectors.registerAll([
     // api.ouraring.com only, stored as health data that stays on this device.
     id: 'oura',
     create: (ctx) => ouraConnector().create(ctx),
+  },
+  {
+    // Apple Health (task C28): grant access to one export file (export.zip or
+    // export.xml); stream-parsed locally, stored as health data kept on this device.
+    id: 'apple_health',
+    create: (ctx) => appleHealthConnector().create(ctx),
   },
   {
     // Obsidian (task C13): grant access to one vault folder; reads its notes
