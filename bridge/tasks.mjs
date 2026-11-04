@@ -42,11 +42,18 @@
  *   - `refresh()` also stops any agent task whose agent is no longer active
  *     (switched off, or its file changed), and starts what may now start.
  *
+ * A named agent may get a reviewer pass (agent-review.mjs): its result is
+ * checked against the goal and the run's log before the task is done; on a
+ * fail the agent runs again with the reasons, at most three attempts, and
+ * then the task fails saying why. `runAgent` is then handed `retry` (the
+ * attempt and the reasons) and a task whose goal carries them.
+ *
  * Only background tasks live here. The voice session is not a task, so the
  * cap and the pause never hold it back.
  */
 import { randomUUID } from 'node:crypto'
 import { BUDGET_STOPS, AGENT_REFUSALS } from './agent-runtime.mjs'
+import { MAX_REVIEW_ATTEMPTS, REVIEW_STOPS, parseVerdict, retryGoal, reviewWanted } from './agent-review.mjs'
 
 export const MAX_CONCURRENT = 3
 /** The cap is a setting from 1 to 8 (agent-settings.mjs); anything else falls back to the default. */
@@ -90,10 +97,13 @@ function snapshot(t) {
  * @param {number | (() => number)} [o.concurrency] how many tasks may run at once (1–8)
  * @param {() => string | null} [o.paused] why background work is paused, or null
  * @param {() => object | null} [o.defaultBudget] the budget for an agent whose file sets none
+ * @param {Function} [o.reviewer] checks a named agent's result (agent-review.mjs createReviewer); without one nothing is reviewed
+ * @param {() => boolean} [o.reviewDefault] the owner's reviewer default, for agents whose file does not say
  */
 export function createTaskManager({
   runAgent, store = null, bus = null, agents = null, costCounts = () => false,
   concurrency = MAX_CONCURRENT, paused = () => null, defaultBudget = () => null,
+  reviewer = null, reviewDefault = () => false,
   now = () => Date.now(), log = console,
 } = {}) {
   const tasks = new Map()
@@ -328,37 +338,33 @@ export function createTaskManager({
     }
   }
 
-  async function start(t) {
-    let agent = null
-    if (t.agentId) {
-      // Checked again at start: the agent may have been switched off or
-      // changed while this task sat in the queue.
-      let ok = false
-      try { ok = agents?.isActive(t.agentId) === true; agent = ok ? agents.get(t.agentId) : null } catch { ok = false }
-      if (!ok || !agent) {
-        t.startedAt = now()
-        finish(t, 'failed', { error: `The ${t.agentName} agent is not available any more.` })
-        return
-      }
-    }
-    t.status = 'running'
-    t.startedAt = now()
-    t.calls = 0
-    note(t, 'start', agent ? `started as ${agent.name}` : 'started')
-    emit(t)
-    const limits = agent ? budgetOf(agent) : null
-    if (limits && typeof limits.maxMinutes === 'number' && limits.maxMinutes > 0) {
-      t.timer = setTimeout(() => stopper(t)(BUDGET_STOPS.minutes(limits.maxMinutes)), limits.maxMinutes * 60_000)
-      t.timer.unref?.()
-    }
+  /** The owner's reviewer default now. A getter that throws counts as off. */
+  const reviewDefaultNow = () => {
+    try { return reviewDefault() === true } catch { return false }
+  }
+
+  /** Add one attempt's (or one review's) cost to what the task has spent before it. */
+  const spend = (t, usd) => {
+    if (typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0) return
+    t.costUsd = (typeof t.costBase === 'number' ? t.costBase : 0) + usd
+  }
+
+  /**
+   * One run of the task's session. Returns the agent's summary when the run
+   * completed, or null when the run ended the task itself (failed, cancelled
+   * or stopped at a budget).
+   */
+  async function attemptOnce(t, agent, limits, retry) {
     try {
+      const task = snapshot(t)
       const stream = runAgent({
-        task: snapshot(t),
+        task: retry ? { ...task, goal: retry.goal } : task,
         signal: t.abort.signal,
         report: reporter(t),
         ask: asker(t),
         wrapApprove: (approve) => approver(t, approve),
         ...(agent && { agent, budget: budgetFor(t, limits), stop: stopper(t) }),
+        ...(retry && { retry: { attempt: retry.attempt, reasons: [...retry.reasons] } }),
       })
       // The worker's session as BrainEvents (brains/events.mjs). The summary is
       // the text after the last tool call: what the worker wrote once its work
@@ -381,7 +387,7 @@ export function createTaskManager({
             }
             break
           case 'usage':
-            if (e.costUsd !== undefined) t.costUsd = e.costUsd
+            if (e.costUsd !== undefined) spend(t, e.costUsd)
             if (typeof limits?.maxCostUsd === 'number' && typeof t.costUsd === 'number' && t.costUsd > limits.maxCostUsd) {
               let billed = false
               try { billed = costCounts(agent) === true } catch { billed = false }
@@ -392,23 +398,108 @@ export function createTaskManager({
             failure = e
             break
           case 'done':
-            if (e.reason === 'complete') finish(t, 'done', { result: clip(reply, 1200) })
-            else if (e.reason === 'cancelled' || t.abort.signal.aborted) finish(t, 'cancelled', { error: 'Cancelled.' })
+            if (e.reason === 'complete') return isActive(t) ? clip(reply, 1200) : null
+            if (e.reason === 'cancelled' || t.abort.signal.aborted) finish(t, 'cancelled', { error: 'Cancelled.' })
             else {
               log.error?.('[jarvis] task failed:', failure?.message ?? failure?.code ?? e.reason)
               finish(t, 'failed', { error: failureText(failure) })
             }
-            break
+            return null
         }
       }
       // A stream that ends with no result and no cancel is a failure, not a success.
       if (isActive(t)) finish(t, 'failed', { error: 'The agent ended without a result.' })
+      return null
     } catch (err) {
       if (t.abort.signal.aborted) finish(t, 'cancelled', { error: 'Cancelled.' })
       else {
         log.error?.('[jarvis] task failed:', err)
         finish(t, 'failed', { error: clip(String(err?.message ?? err), 300) })
       }
+      return null
+    }
+  }
+
+  /**
+   * The reviewer's verdict on one attempt (agent-review.mjs), or null when
+   * the review itself ended the task (cancelled, or the reviewer failed).
+   * The reviewer is handed the owner's original goal and a copy of the log.
+   */
+  async function reviewOnce(t, agent, result, attempt) {
+    note(t, 'review', `reviewing attempt ${attempt}`)
+    emit(t)
+    let verdict
+    try {
+      verdict = await reviewer({
+        task: { id: t.id, title: t.title, goal: t.goal },
+        agent,
+        result,
+        log: t.log.map((l) => ({ ...l })),
+        attempt,
+        signal: t.abort.signal,
+      })
+    } catch (err) {
+      if (!isActive(t)) return null
+      if (t.abort.signal.aborted) { finish(t, 'cancelled', { error: 'Cancelled.' }); return null }
+      log.error?.('[jarvis] review failed:', err?.message ?? err)
+      finish(t, 'failed', { result, error: REVIEW_STOPS.unavailable(clip(String(err?.message ?? ''), 120)) })
+      return null
+    }
+    if (!isActive(t)) return null
+    if (!verdict || typeof verdict.pass !== 'boolean') verdict = parseVerdict('')
+    if (typeof verdict.costUsd === 'number') { spend(t, verdict.costUsd); t.costBase = t.costUsd }
+    const reasons = Array.isArray(verdict.reasons) ? verdict.reasons.filter((r) => typeof r === 'string' && r.trim()).map((r) => clip(r, 300)) : []
+    return { pass: verdict.pass, reasons }
+  }
+
+  async function start(t) {
+    let agent = null
+    if (t.agentId) {
+      // Checked again at start: the agent may have been switched off or
+      // changed while this task sat in the queue.
+      let ok = false
+      try { ok = agents?.isActive(t.agentId) === true; agent = ok ? agents.get(t.agentId) : null } catch { ok = false }
+      if (!ok || !agent) {
+        t.startedAt = now()
+        finish(t, 'failed', { error: `The ${t.agentName} agent is not available any more.` })
+        return
+      }
+    }
+    t.status = 'running'
+    t.startedAt = now()
+    t.calls = 0
+    t.costBase = 0
+    note(t, 'start', agent ? `started as ${agent.name}` : 'started')
+    emit(t)
+    const limits = agent ? budgetOf(agent) : null
+    if (limits && typeof limits.maxMinutes === 'number' && limits.maxMinutes > 0) {
+      t.timer = setTimeout(() => stopper(t)(BUDGET_STOPS.minutes(limits.maxMinutes)), limits.maxMinutes * 60_000)
+      t.timer.unref?.()
+    }
+    // Only a named agent is reviewed, and only when its file or the owner's
+    // default asks for it. The budget covers every attempt together.
+    const reviewed = Boolean(agent) && typeof reviewer === 'function' && reviewWanted(agent, reviewDefaultNow())
+    let retry = null
+    for (let attempt = 1; ; attempt++) {
+      const result = await attemptOnce(t, agent, limits, retry)
+      if (result === null || !isActive(t)) return
+      if (!reviewed) { finish(t, 'done', { result }); return }
+      if (typeof t.costUsd === 'number') t.costBase = t.costUsd
+      const verdict = await reviewOnce(t, agent, result, attempt)
+      if (!verdict) return
+      if (verdict.pass) {
+        note(t, 'review', `passed on attempt ${attempt}`)
+        finish(t, 'done', { result })
+        return
+      }
+      note(t, 'review', `not accepted: ${verdict.reasons[0] ?? 'no reason given'}`)
+      if (attempt >= MAX_REVIEW_ATTEMPTS) {
+        finish(t, 'failed', { result, error: REVIEW_STOPS.failed(attempt, verdict.reasons) })
+        return
+      }
+      retry = { attempt: attempt + 1, reasons: verdict.reasons, goal: retryGoal(t.goal, verdict.reasons, attempt + 1) }
+      note(t, 'retry', `attempt ${attempt + 1} of ${MAX_REVIEW_ATTEMPTS}`)
+      emit(t)
     }
   }
 
