@@ -1,11 +1,11 @@
 import { createSdkMcpServer, tool } from './sdk-server.mjs'
 import { z } from 'zod'
+import { agentOperations, roster, taskBrief as brief } from './agent-ask.mjs'
 
-const ORCHESTRATOR_TOOLS = ['spawn_task', 'list_tasks', 'task_status', 'cancel_task']
+const ORCHESTRATOR_TOOLS = ['spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'start_agent', 'list_agents']
 export const isTaskTool = (name) => ORCHESTRATOR_TOOLS.includes(name)
 
 const reply = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }] })
-const brief = (t) => ({ id: t.id, title: t.title, status: t.status, percent: t.percent, note: t.note, error: t.error || undefined })
 
 /**
  * The orchestrator's side: hand work to a background agent and ask how it is
@@ -27,8 +27,25 @@ export function taskOperations(manager) {
   }
 }
 
-export function taskServer(manager) {
+/** The start_agent description, naming the agents that can be asked when the session starts. */
+function startAgentText(agents) {
+  const on = roster(agents).filter((a) => a.on).slice(0, 20).map((a) => `${a.name} (${a.id})`)
+  return 'Start a named agent on a goal, in the background. Use it when the owner asks an agent by name: ' +
+    '"ask the researcher to…", "get the writer to…", "have the coder…". Pass the agent and a complete goal, ' +
+    'or pass the owner\'s own words as request and they are split for you. If the answer says the agent is unknown or off, ' +
+    'say so in a sentence; do not start a plain task instead.' +
+    (on.length ? ` Agents that can be asked now: ${on.join(', ')}.` : ' No agents are set up yet.')
+}
+
+/**
+ * @param {object} manager the task manager (tasks.mjs)
+ * @param {{ agents?: { list?: Function, isActive: Function } | null }} [o] the
+ *   switched agent registry. Only the voice session builds this server, so
+ *   only it can start or list agents.
+ */
+export function taskServer(manager, { agents = null } = {}) {
   const ops = taskOperations(manager)
+  const agentOps = agentOperations(manager, agents)
   return createSdkMcpServer({
     name: 'jarvis_tasks',
     version: '1.0.0',
@@ -45,6 +62,15 @@ export function taskServer(manager) {
       tool('list_tasks', 'Every task with its status and progress.', {}, async () => reply(ops.list())),
       tool('task_status', 'Detail for one task: steps, latest activity and, when finished, the result.', { id: z.string() }, async (a) => reply(ops.status(a))),
       tool('cancel_task', 'Stop a running or queued task.', { id: z.string() }, async (a) => reply(ops.cancel(a))),
+      tool('start_agent', startAgentText(agents),
+        {
+          agent: z.string().max(60).optional().describe('The agent\'s id or name, e.g. researcher'),
+          goal: z.string().max(4000).optional().describe('Everything the agent needs; it cannot see this conversation'),
+          title: z.string().max(60).optional().describe('Short name for the board'),
+          request: z.string().max(4000).optional().describe('The owner\'s own words, e.g. "ask the researcher to compare three desks"'),
+        },
+        async (a) => reply(agentOps.start(a))),
+      tool('list_agents', 'Every named agent, what it is for, and whether it can be asked now.', {}, async () => reply(agentOps.list())),
     ],
   })
 }

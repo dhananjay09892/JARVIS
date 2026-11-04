@@ -161,5 +161,7 @@ export function switchedRegistry(registry, agentSettings) {
     has: (id) => registry.has(id),
     get: (id) => registry.get(id),
     isActive: (id) => registry.isActive(id) === true && agentSettings.isSwitchedOn(id, registry.get(id)) === true,
+    /** Every loaded agent as the registry lists it (`active` is approval only; ask `isActive` for the switch too). */
+    list: () => (typeof registry.list === 'function' ? registry.list() : []),
   }
 }

@@ -1024,6 +1024,10 @@ Tasks:
   when its status shows it finished, and then in a sentence.
 - A task that needs approval shows its own card, named for the task. Never claim
   a task did something its status does not say.
+- Named agents (a researcher, a writer…) are started with start_agent when the
+  owner asks one by name: "ask the researcher to…", "get the writer to…". If it
+  says the agent is unknown or switched off, say so in a sentence and offer a
+  plain task; never start one silently instead. list_agents says who there is.
 
 Using tools:
 - You have real tools on this machine. Use them rather than guessing.
@@ -2368,10 +2372,13 @@ const agentReviewer = (ctx) => createReviewer({ converse: reviewerTurn(ctx.agent
  */
 const agentSettings = createAgentSettings({ read: setting, frozen: killSwitch.isFrozen })
 
+/** The registry with the owner's switches applied: what the task manager and the voice session's agent tools see. */
+const switchedAgents = switchedRegistry(agentRegistry, agentSettings)
+
 const taskManager = createTaskManager({
   store: taskStore,
   bus,
-  agents: switchedRegistry(agentRegistry, agentSettings),
+  agents: switchedAgents,
   concurrency: agentSettings.maxConcurrent,
   paused: agentSettings.paused,
   defaultBudget: agentSettings.defaultBudget,
@@ -2692,7 +2699,9 @@ wss.on('connection', (socket, req) => {
     jarvis_development: developmentServer(approve),
     // The camera, which unlike everything else here has to ask and wait.
     jarvis_eyes: visionServer(ask),
-    jarvis_tasks: taskServer(taskManager),
+    // Only the voice session gets this server, so only it can start or list
+    // named agents; a worker never does (agent-runtime.mjs WORKER_RULES).
+    jarvis_tasks: taskServer(taskManager, { agents: switchedAgents }),
     // Connector tools (plans/connectors): only granted, active ones; each
     // call is decided by the policy engine and again by the registry.
     ...connectorServerEntry(),
