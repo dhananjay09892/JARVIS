@@ -78,6 +78,7 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_REPLY_LANGUAGE: { default: 'primary', options: ['primary', 'mirror', 'en', 'gu', 'hi'], help: '' },
   JARVIS_TEXT_SCRIPT: { default: 'native', options: ['native', 'roman'], help: '' },
   JARVIS_SETUP_METRICS: { default: '0', help: '' },
+  JARVIS_SPEAKER_ID: { default: '0', help: '' },
   JARVIS_ALERTS: { default: '1', help: '' },
   JARVIS_QUIET_HOURS: { default: '22:00-07:00', help: '' },
   JARVIS_CONTEXT: { default: '0', help: '' },

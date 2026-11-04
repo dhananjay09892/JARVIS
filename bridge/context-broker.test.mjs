@@ -270,7 +270,8 @@ test('settings: off by default, opt-in, in the Context section, applied live', (
 
 test('the bridge gathers context per turn, off the owner\'s words, and never stores it', () => {
   const src = readFileSync(new URL('./server.mjs', import.meta.url), 'utf8')
-  assert.match(src, /contextBroker\.forTurn\(msg\.text, \{ role: 'owner' \}\)/)
+  assert.match(src, /contextBroker\.forTurn\(msg\.text, \{ role: speakerRole\(\) \}\)/)
+  assert.match(src, /return speakerRecent\(\)\?\.role \?\? 'owner'/, 'owner unless a voice was checked')
   assert.match(src, /hasPrivate\(slices\)\) taint\.markPrivate/, 'private context taints the session')
   const ask = src.slice(src.indexOf('sm.receive({ id, text: msg.text, preface })') - 200, src.indexOf('handOver(id, msg.text, text)'))
   assert.ok(ask.indexOf('sm.receive') < ask.indexOf('contextBroker.forTurn'), 'gathered after the turn is stored')

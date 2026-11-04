@@ -43,6 +43,8 @@ export type PublicSettings = {
   JARVIS_TEXT_SCRIPT: string
   /** '1' | '0' — opt-in setup drop-off metric (plan 29, Q77). '' means the default (off). */
   JARVIS_SETUP_METRICS: string
+  /** '1' | '0' — recognise who is speaking (plan 01, Q28). '' means the default (off). */
+  JARVIS_SPEAKER_ID: string
   /** '1' | '0' — JARVIS may bring things up on his own (plan 12, Q33). '' means the default (on). */
   JARVIS_ALERTS: string
   /** 'HH:MM-HH:MM' local time, or 'off' (plan 12, Q33). '' means the default (22:00-07:00). */

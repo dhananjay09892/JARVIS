@@ -148,6 +148,17 @@ const DEFS = [
     visibleIn: 'simple',
   },
   {
+    id: 'JARVIS_SPEAKER_ID',
+    section: 'people',
+    label: 'Recognise who is speaking',
+    help: 'Learn each person\'s voice so JARVIS can greet them by name and treat strangers as guests (chat only, no private information). Voiceprints stay on this computer and can be deleted any time. Off: everyone is treated the same as before.',
+    type: 'boolean',
+    default: '0',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'advanced',
+  },
+  {
     id: 'JARVIS_ROUTING',
     section: 'brains',
     label: 'Fast/deep routing',

@@ -40,6 +40,9 @@ import { createBriefing } from './briefing.mjs'
 import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
 import { openMemory } from './memory.mjs'
+import {
+  createSpeakerService, createVoiceprintStore, loadSpeakerEmbedder, pcm16ToFloat, speakerPreface,
+} from './speaker.mjs'
 import { openTraces } from './traces.mjs'
 import { createSetupMetrics, setupMetricsOn } from './setup-metrics.mjs'
 import { agentAuditSink, auditSink, auditedApprove, openAudit } from './audit.mjs'
@@ -119,6 +122,36 @@ if (process.env.JARVIS_MEMORY !== 'off') {
   } catch (err) {
     console.error('[jarvis] memory unavailable — nothing will be saved:', err.message)
   }
+}
+
+/**
+ * Speaker identification (plan 01 phase 1, Q28; see bridge/speaker.mjs).
+ * Off until the owner turns it on in Settings. Built on first use so a
+ * disabled feature never touches the disk.
+ */
+let speakerService = null
+function speakerOn() {
+  return setting('JARVIS_SPEAKER_ID') === '1'
+}
+function getSpeaker() {
+  if (!speakerService) {
+    const embedder = loadSpeakerEmbedder()
+    if (!embedder) return null
+    speakerService = createSpeakerService({ store: createVoiceprintStore(), embedder })
+  }
+  return speakerService
+}
+/**
+ * Who spoke last (within the carry-over window), or null. Null when the
+ * feature is off, when nobody is enrolled, or when no voice was checked
+ * (typed text): then the turn is the owner's, as it was before this feature.
+ */
+function speakerRecent() {
+  if (!speakerOn() || !speakerService || speakerService.people().length === 0) return null
+  return speakerService.recent()
+}
+function speakerRole() {
+  return speakerRecent()?.role ?? 'owner'
 }
 
 /**
@@ -1868,6 +1901,54 @@ const handleRequest = async (req, res) => {
     }
   }
 
+  // Speaker identification. Body is raw 16 kHz mono 16-bit little-endian PCM.
+  // Only a page of ours may call these (same Origin rule as a settings save).
+  if (requestUrl.pathname.startsWith('/speaker/')) {
+    const json = (code, obj) => {
+      res.writeHead(code, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify(obj))
+    }
+    if (!origin) return json(403, { ok: false, reason: 'forbidden' })
+    if (!speakerOn()) return json(409, { ok: false, reason: 'off' })
+    const svc = getSpeaker()
+    if (!svc) return json(503, { ok: false, reason: 'speaker model not installed' })
+    const sub = requestUrl.pathname.slice('/speaker/'.length)
+    if (req.method === 'GET' && sub === 'people') return json(200, { ok: true, people: svc.people() })
+    if (req.method === 'DELETE' && sub.startsWith('people/')) {
+      const gone = svc.forget(decodeURIComponent(sub.slice(7)))
+      return json(gone ? 200 : 404, { ok: gone })
+    }
+    if (req.method === 'POST' && (sub === 'enroll' || sub === 'identify')) {
+      const chunks = []
+      let size = 0
+      for await (const chunk of req) {
+        chunks.push(chunk)
+        size += chunk.length
+        if (size > 2 * 1024 * 1024) {
+          req.destroy()
+          return json(413, { ok: false, reason: 'audio too large' })
+        }
+      }
+      const pcm = pcm16ToFloat(Buffer.concat(chunks))
+      try {
+        if (sub === 'identify') return json(200, { ok: true, ...(await svc.identify(pcm)) })
+        const q = requestUrl.searchParams
+        const person = await svc.enroll({
+          pcm,
+          name: q.get('name') ?? undefined,
+          role: q.get('role') ?? undefined,
+          personId: q.get('personId') ?? undefined,
+          consent: q.get('consent') === '1',
+        })
+        return json(200, { ok: true, person })
+      } catch (err) {
+        const known = ['consent-required', 'name-required', 'bad-role', 'too-short', 'too-long']
+        return json(known.includes(err?.code) ? 400 : 500, { ok: false, reason: err?.code ?? 'failed' })
+      }
+    }
+    return json(404, { ok: false, reason: 'not found' })
+  }
+
   // Speech to text. The browser captures one spoken segment as a compressed
   // audio blob and posts the raw bytes here; the bridge hands them to
   // ElevenLabs Scribe and returns the transcript. This is what replaced the
@@ -2780,7 +2861,8 @@ wss.on('connection', (socket, req) => {
       // Q30), read per turn so a change in Settings applies at once. Whatever
       // the page adds rides after it.
       const pagePreface = typeof msg.preface === 'string' ? msg.preface.slice(0, 1000) : ''
-      const preface = [languagePreface(readLanguageProfile(setting), msg.text), pagePreface].filter(Boolean).join('\n')
+      const who = speakerPreface(speakerRecent())
+      const preface = [languagePreface(readLanguageProfile(setting), msg.text), who, pagePreface].filter(Boolean).join('\n')
       // Persisted now, so a refresh right after cannot lose the question. A turn
       // id this conversation has already seen is a retry and is dropped.
       const stored = sm && id ? sm.receive({ id, text: msg.text, preface }) : null
@@ -2788,7 +2870,7 @@ wss.on('connection', (socket, req) => {
       // Gathered now and kept in arrival order, but never stored with the
       // conversation: context goes stale, and a retry should get fresh slices.
       // The page's socket is the owner's; other actors pass their own role.
-      const context = contextQueue.then(() => contextBroker.forTurn(msg.text, { role: 'owner' }))
+      const context = contextQueue.then(() => contextBroker.forTurn(msg.text, { role: speakerRole() }))
       contextQueue = context.catch(() => {})
       void settling.then(() => context).catch(() => null).then((gathered) => {
         answering = id
