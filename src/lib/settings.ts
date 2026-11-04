@@ -55,6 +55,18 @@ export type PublicSettings = {
   JARVIS_CONTEXT_SYSTEM: string
   /** Most context tokens per turn, as digits (plan 14, Q39). '' means the default (200). */
   JARVIS_CONTEXT_TOKENS: string
+  /** '1'–'8' — agents and background tasks at once. '' means the default (3). */
+  JARVIS_AGENTS_MAX_CONCURRENT: string
+  /** '1' | '2' — delegation depth; only the Coordinator may delegate. '' means the default (1). */
+  JARVIS_AGENTS_MAX_DEPTH: string
+  /** 'N calls, N min, $N.NN' — the budget for an agent that sets none. '' means the default (40 calls, 20 min, $1.00). */
+  JARVIS_AGENTS_BUDGET: string
+  /** '1' | '0' — reviewer pass for agents that do not say otherwise. '' means the default (off). */
+  JARVIS_AGENTS_REVIEWER: string
+  /** '1' | '0' — pause all agents and background tasks. '' means the default (off). */
+  JARVIS_AGENTS_PAUSED: string
+  /** 'id=on|off,…' or 'none' — per-agent switches. '' means the default (none). */
+  JARVIS_AGENT_SWITCHES: string
   /** '1' | '0' — the morning briefing answers "brief me" (plan 12, Q34). '' means the default (on). */
   JARVIS_BRIEFING: string
   /** '1' | '0' — the briefing names who new mail is from (plan 12, Q34). '' means the default (off). */

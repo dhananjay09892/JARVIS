@@ -27,11 +27,30 @@
  * session's guard asks before each call), minutes, and cost when `costCounts()`
  * says this run is billed per use. A stopped run ends `failed` with the reason.
  * A task without an agent id runs exactly as it always has.
+ *
+ * The owner's agent settings (agent-settings.mjs) reach the manager as
+ * getters, read each time they matter, so they apply live:
+ *
+ *   - `concurrency` (a number, or a function returning one) caps how many
+ *     tasks run at once; the rest queue. Raising it starts queued tasks at
+ *     the next `refresh()`; lowering it lets running tasks finish.
+ *   - `paused()` returns why background work is paused ("pause all agents",
+ *     or the kill switch), or null. While paused nothing new is accepted or
+ *     started, and `refresh()` stops every queued and running task.
+ *   - `defaultBudget()` is the budget an agent runs under when its file sets
+ *     none. Tasks without an agent id get no budget, as before.
+ *   - `refresh()` also stops any agent task whose agent is no longer active
+ *     (switched off, or its file changed), and starts what may now start.
+ *
+ * Only background tasks live here. The voice session is not a task, so the
+ * cap and the pause never hold it back.
  */
 import { randomUUID } from 'node:crypto'
 import { BUDGET_STOPS, AGENT_REFUSALS } from './agent-runtime.mjs'
 
 export const MAX_CONCURRENT = 3
+/** The cap is a setting from 1 to 8 (agent-settings.mjs); anything else falls back to the default. */
+const CAP_MAX = 8
 const MAX_KEPT = 50
 const MAX_LOG = 40
 const MAX_STEPS = 12
@@ -68,13 +87,39 @@ function snapshot(t) {
  * @param {Function} o.runAgent starts one task's session; returns its BrainEvents
  * @param {{ has: Function, get: Function, isActive: Function }} [o.agents] the agent registry
  * @param {(agent: object) => boolean} [o.costCounts] is this agent's run billed per use (an API key)? Only then is maxCostUsd enforced.
+ * @param {number | (() => number)} [o.concurrency] how many tasks may run at once (1–8)
+ * @param {() => string | null} [o.paused] why background work is paused, or null
+ * @param {() => object | null} [o.defaultBudget] the budget for an agent whose file sets none
  */
 export function createTaskManager({
   runAgent, store = null, bus = null, agents = null, costCounts = () => false,
-  concurrency = MAX_CONCURRENT, now = () => Date.now(), log = console,
+  concurrency = MAX_CONCURRENT, paused = () => null, defaultBudget = () => null,
+  now = () => Date.now(), log = console,
 } = {}) {
   const tasks = new Map()
   const listeners = new Set()
+
+  /** The cap now. A getter that throws or returns nonsense falls back to the default. */
+  const cap = () => {
+    let n
+    try { n = typeof concurrency === 'function' ? concurrency() : concurrency } catch { n = MAX_CONCURRENT }
+    return Number.isInteger(n) && n >= 1 && n <= CAP_MAX ? n : MAX_CONCURRENT
+  }
+
+  /** Why nothing may run now, or null. A getter that throws counts as paused. */
+  const pauseReason = () => {
+    let r
+    try { r = paused() } catch { return 'Background work is paused.' }
+    return typeof r === 'string' && r ? r : null
+  }
+
+  /** The budget an agent runs under: its own, else the owner's default. */
+  const budgetOf = (agent) => {
+    if (agent?.budget) return agent.budget
+    let b = null
+    try { b = defaultBudget() } catch { b = null }
+    return b && typeof b === 'object' ? b : null
+  }
 
   /** A `TaskOutcome` (shared/contracts.ts) on the bus. The bus never throws. */
   const announce = (t) => {
@@ -140,10 +185,37 @@ export function createTaskManager({
   const running = () => [...tasks.values()].filter((t) => isActive(t) && t.status !== 'queued').length
 
   function pump() {
+    if (pauseReason()) return
     for (const t of tasks.values()) {
-      if (running() >= concurrency) return
+      if (running() >= cap()) return
       if (t.status === 'queued') start(t)
     }
+  }
+
+  /** Is this task's agent still allowed to run? Plain tasks always are. */
+  const agentStillActive = (t) => {
+    if (!t.agentId) return true
+    try { return agents?.isActive(t.agentId) === true } catch { return false }
+  }
+
+  /**
+   * Apply the settings as they are now: while paused, stop every queued and
+   * running task; otherwise stop agent tasks whose agent was switched off,
+   * then start whatever the cap allows.
+   */
+  function refresh() {
+    const reason = pauseReason()
+    let stopped = 0
+    for (const t of [...tasks.values()]) {
+      if (!isActive(t)) continue
+      const why = reason ?? (agentStillActive(t) ? null : `The ${t.agentName} agent was switched off.`)
+      if (!why) continue
+      t.abort.abort()
+      finish(t, 'cancelled', { error: why })
+      stopped += 1
+    }
+    pump()
+    return { stopped, paused: reason !== null }
   }
 
   function finish(t, status, fields = {}) {
@@ -274,7 +346,7 @@ export function createTaskManager({
     t.calls = 0
     note(t, 'start', agent ? `started as ${agent.name}` : 'started')
     emit(t)
-    const limits = agent?.budget ?? null
+    const limits = agent ? budgetOf(agent) : null
     if (limits && typeof limits.maxMinutes === 'number' && limits.maxMinutes > 0) {
       t.timer = setTimeout(() => stopper(t)(BUDGET_STOPS.minutes(limits.maxMinutes)), limits.maxMinutes * 60_000)
       t.timer.unref?.()
@@ -355,6 +427,8 @@ export function createTaskManager({
     spawn({ title, goal, agentId }) {
       const g = clip(goal, 4000)
       if (!g) return { ok: false, reason: 'A task needs a goal.' }
+      const held = pauseReason()
+      if (held) return { ok: false, reason: held }
       let agent = null
       if (agentId !== undefined && agentId !== null) {
         try { agent = typeof agentId === 'string' && agents?.has(agentId) ? agents.get(agentId) : null } catch { agent = null }
@@ -410,6 +484,8 @@ export function createTaskManager({
     cancelAll() {
       for (const t of tasks.values()) if (isActive(t)) { t.abort.abort(); finish(t, 'cancelled', { error: 'Cancelled.' }) }
     },
+    /** Apply changed agent settings or the kill switch at once (see refresh above). */
+    refresh,
     /** A connected browser receives every task now and every change after. */
     subscribe(send) {
       listeners.add(send)

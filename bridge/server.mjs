@@ -30,6 +30,7 @@ import { workspaceServer, workspaceFiles, WORKSPACE_ROOT } from './workspace.mjs
 import { openWorkflows, createApprovalHub, createEngine } from './workflows.mjs'
 import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
+import { AGENT_LIVE_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
 import { createBus } from './bus.mjs'
@@ -2018,6 +2019,10 @@ onSettingsChange(({ changed, appliedLive, nextConversation, needsRestart }) => {
   if (changed.includes('JARVIS_TRACES')) applyTraces()
   if (channels.watches(changed)) void channels.apply()
   if (changed.includes('JARVIS_SETUP_METRICS')) applySetupMetrics()
+  if (changed.some((k) => AGENT_LIVE_SETTINGS.includes(k))) {
+    const r = taskManager.refresh()
+    if (r.stopped) console.log(`[jarvis] agent settings: stopped ${r.stopped} background task(s)`)
+  }
   if (appliedLive.length) console.log(`[jarvis] settings applied: ${appliedLive.join(', ')}`)
   if (nextConversation.length) console.log(`[jarvis] settings apply from the next conversation: ${nextConversation.join(', ')}`)
   if (needsRestart.length) console.log(`[jarvis] settings waiting for a restart: ${needsRestart.join(', ')}`)
@@ -2232,10 +2237,21 @@ ${task.goal}`,
   })).events
 }
 
+/**
+ * The owner's agent settings (Settings → Agents), read live: the cap on
+ * tasks at once, the default budget, per-agent switches, and "pause all
+ * agents", which the kill switch also sets. The voice session is not a task,
+ * so none of this ever holds it back.
+ */
+const agentSettings = createAgentSettings({ read: setting, frozen: killSwitch.isFrozen })
+
 const taskManager = createTaskManager({
   store: taskStore,
   bus,
-  agents: agentRegistry,
+  agents: switchedRegistry(agentRegistry, agentSettings),
+  concurrency: agentSettings.maxConcurrent,
+  paused: agentSettings.paused,
+  defaultBudget: agentSettings.defaultBudget,
   costCounts: (agent) => {
     const pick = agentBrain(agent, brains)
     return pick.ok && workerBilledPerUse(pick.brain)
@@ -2275,6 +2291,13 @@ ${task.goal}`,
       afterTool: postToolUse(taint, 'worker'),
     })).events
   },
+})
+
+// Freezing stops every queued and running task at once; unfreezing lets the
+// queue move again (unless "pause all agents" is on).
+killSwitch.onChange(() => {
+  const r = taskManager.refresh()
+  if (r.stopped) console.log(`[jarvis] kill switch: stopped ${r.stopped} background task(s)`)
 })
 
 /**
