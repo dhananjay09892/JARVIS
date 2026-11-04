@@ -33,6 +33,7 @@ import { createTaskManager } from './tasks.mjs'
 import { AGENT_LIVE_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
+import { createReviewer } from './agent-review.mjs'
 import { createBus } from './bus.mjs'
 import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.mjs'
 import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSource, timeSource } from './context-broker.mjs'
@@ -2238,6 +2239,40 @@ ${task.goal}`,
 }
 
 /**
+ * The reviewer pass for named agents (agent-review.mjs): one tool-less turn
+ * on the default brain. It is given no servers, every built-in is hidden, and
+ * its guard allows nothing (an empty allow-list) before the taint guard, so it
+ * can only read the evidence in its prompt. Its policy is the reviewed agent's
+ * view of the one engine, so its audit entries carry that agent's id.
+ */
+function reviewerTurn(agent) {
+  return ({ prompt, systemPrompt, signal }) => {
+    const policy = basePolicy.forAgent(agent.id)
+    const allowed = []
+    const budget = null
+    const deny = async () => false
+    const taint = createTaintTracker({ seen: seenUrls, isEffectful: isVetoed, tainted: true })
+    const controller = new AbortController()
+    signal?.addEventListener('abort', () => controller.abort(), { once: true })
+    return brainMetrics.observe(brain.id, 'worker', brain.converse({
+      prompt,
+      actor: 'worker',
+      abortController: controller,
+      mcpServers: {},
+      hideTools: hiddenTools(allowed),
+      systemPrompt,
+      model: modelFor(brain),
+      effort: currentEffort(),
+      policy,
+      guard: agentGuard({ allowed, budget, next: taintGuard(taint, deny) }),
+      afterTool: postToolUse(taint, 'worker'),
+    })).events
+  }
+}
+
+const agentReviewer = (ctx) => createReviewer({ converse: reviewerTurn(ctx.agent) })(ctx)
+
+/**
  * The owner's agent settings (Settings → Agents), read live: the cap on
  * tasks at once, the default budget, per-agent switches, and "pause all
  * agents", which the kill switch also sets. The voice session is not a task,
@@ -2252,6 +2287,8 @@ const taskManager = createTaskManager({
   concurrency: agentSettings.maxConcurrent,
   paused: agentSettings.paused,
   defaultBudget: agentSettings.defaultBudget,
+  reviewer: agentReviewer,
+  reviewDefault: agentSettings.reviewerDefault,
   costCounts: (agent) => {
     const pick = agentBrain(agent, brains)
     return pick.ok && workerBilledPerUse(pick.brain)

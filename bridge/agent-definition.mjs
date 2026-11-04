@@ -61,6 +61,12 @@ const isRecord = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const isString = (v) => typeof v === 'string'
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v)
 
+/**
+ * Marks a checked definition whose file set `review` itself. Hidden (a
+ * non-enumerable symbol), so the value still equals the contract's shape.
+ */
+export const REVIEW_SET = Symbol.for('jarvis.agent.reviewSet')
+
 /** Fields in file order (TEMPLATE order); `body` is the Markdown after the header. */
 export const FIELD_ORDER = Object.freeze([
   'id', 'name', 'description', 'icon', 'mode', 'schedule', 'trigger', 'brain', 'model',
@@ -149,6 +155,9 @@ export function checkAgentDefinition(d) {
 
   out.review = d.review === undefined ? false : d.review
   if (typeof out.review !== 'boolean') err('review', 'must be true or false')
+  // Whether the file itself said, so the owner's reviewer default
+  // (agent-review.mjs) applies only when it did not. Not a contract field.
+  if (d.review !== undefined) Object.defineProperty(out, REVIEW_SET, { value: true })
 
   out.delegate = d.delegate === undefined ? [] : d.delegate
   if (!Array.isArray(out.delegate)) err('delegate', 'must be a list')
