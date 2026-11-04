@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { answerTask, cancelTask, dismissTask, watchTasks, type TaskView } from '../lib/bridge'
+import { missionAgent } from '../lib/missionAgent'
 
 const LIVE = new Set<TaskView['status']>(['queued', 'running', 'waiting_approval', 'waiting_input'])
 const LABEL: Record<TaskView['status'], string> = {
@@ -63,38 +64,42 @@ export function Missions() {
         MISSIONS · {live} ACTIVE{list.length > live ? ` · ${list.length - live} ENDED` : ''}
         <span>{collapsed ? '▸' : '▾'}</span>
       </button>
-      {!collapsed && list.map((t) => (
-        <section key={t.id} className={`mission mission-${t.status}`}>
-          <div className="mission-row" onClick={() => setOpen(open === t.id ? null : t.id)}>
-            <b>{t.title}</b>
-            <em>{LABEL[t.status]}</em>
-          </div>
-          <div className="mission-bar" role="progressbar" aria-valuenow={t.percent} aria-valuemin={0} aria-valuemax={100}>
-            <i style={{ width: `${t.percent}%` }} />
-          </div>
-          <div className="mission-meta">
-            <span>{t.error && !LIVE.has(t.status) && t.status !== 'done' ? t.error : t.note || t.steps.find((s) => s.state === 'active')?.label || ' '}</span>
-            <span>{elapsed(t, now)}{t.costUsd != null ? ` · $${t.costUsd.toFixed(2)}` : ''}</span>
-          </div>
-          {open === t.id && (
-            <div className="mission-detail">
-              <ol>
-                {t.steps.map((s, i) => <li key={i} className={`step-${s.state}`}>{s.label}</li>)}
-              </ol>
-              <ul>
-                {t.log.slice(-6).map((l, i) => <li key={i}><code>{l.kind}</code> {l.text}</li>)}
-              </ul>
-              {t.result && <p className="mission-result">{t.result}</p>}
+      {!collapsed && list.map((t) => {
+        const agent = missionAgent(t)
+        return (
+          <section key={t.id} className={`mission mission-${t.status}`} aria-label={agent?.aria ?? t.title}>
+            <div className="mission-row" onClick={() => setOpen(open === t.id ? null : t.id)}>
+              <b>{t.title}</b>
+              {agent && <small className="mission-agent" title={agent.title}>{agent.label}</small>}
+              <em>{LABEL[t.status]}</em>
             </div>
-          )}
-          {t.status === 'waiting_input' && <Question task={t} />}
-          <div className="mission-actions">
-            {LIVE.has(t.status)
-              ? <button onClick={() => cancelTask(t.id)}>CANCEL</button>
-              : <button onClick={() => dismissTask(t.id)}>DISMISS</button>}
-          </div>
-        </section>
-      ))}
+            <div className="mission-bar" role="progressbar" aria-valuenow={t.percent} aria-valuemin={0} aria-valuemax={100}>
+              <i style={{ width: `${t.percent}%` }} />
+            </div>
+            <div className="mission-meta">
+              <span>{t.error && !LIVE.has(t.status) && t.status !== 'done' ? t.error : t.note || t.steps.find((s) => s.state === 'active')?.label || ' '}</span>
+              <span>{elapsed(t, now)}{t.costUsd != null ? ` · $${t.costUsd.toFixed(2)}` : ''}</span>
+            </div>
+            {open === t.id && (
+              <div className="mission-detail">
+                <ol>
+                  {t.steps.map((s, i) => <li key={i} className={`step-${s.state}`}>{s.label}</li>)}
+                </ol>
+                <ul>
+                  {t.log.slice(-6).map((l, i) => <li key={i}><code>{l.kind}</code> {l.text}</li>)}
+                </ul>
+                {t.result && <p className="mission-result">{t.result}</p>}
+              </div>
+            )}
+            {t.status === 'waiting_input' && <Question task={t} />}
+            <div className="mission-actions">
+              {LIVE.has(t.status)
+                ? <button onClick={() => cancelTask(t.id)}>CANCEL</button>
+                : <button onClick={() => dismissTask(t.id)}>DISMISS</button>}
+            </div>
+          </section>
+        )
+      })}
     </aside>
   )
 }

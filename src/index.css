@@ -2065,6 +2065,7 @@ kbd {
 .mission-row { display: flex; justify-content: space-between; gap: 8px; cursor: pointer; }
 .mission-row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .mission-row em { font-style: normal; font-size: 9px; letter-spacing: 0.15em; white-space: nowrap; }
+.mission-row .mission-agent { margin-left: auto; font-size: 9px; letter-spacing: 0.12em; white-space: nowrap; opacity: 0.75; }
 .mission-waiting_approval .mission-row em { color: #ffb300; }
 .mission-failed .mission-row em { color: #ff5252; }
 .mission-bar { height: 3px; margin: 6px 0; background: color-mix(in srgb, var(--accent) 18%, transparent); }
