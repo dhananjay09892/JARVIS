@@ -24,6 +24,8 @@
  *   consent-denied  the owner cancelled a guided sign-in or did not grant what it needs
  *   setup-needed    a setup step on the card is not done (e.g. no OAuth client pasted)
  *   folder-missing  a local connector's folder is gone, moved or not usable (task C13)
+ *   permission-needed  macOS has not given JARVIS access to a local database (Full Disk Access) (task C29)
+ *   unsupported-platform  the connector reads something that only exists on another OS (task C29)
  *   not-granted / disabled / frozen / other  — set by the registry
  *
  * Retry-After is honoured (seconds or an HTTP date), capped, and retried at
@@ -32,7 +34,7 @@
 
 export const ERROR_CODES = Object.freeze([
   'auth', 'revoked', 'rate-limit', 'offline', 'server', 'bad-response', 'egress',
-  'consent-denied', 'setup-needed', 'folder-missing',
+  'consent-denied', 'setup-needed', 'folder-missing', 'permission-needed', 'unsupported-platform',
   'not-granted', 'disabled', 'frozen', 'not-connected', 'other',
 ])
 
@@ -48,6 +50,8 @@ export const ERROR_MESSAGES = Object.freeze({
   'consent-denied': 'The sign-in was cancelled, or the permission it needs was not given. Press Connect to try again.',
   'setup-needed': 'Finish the setup steps on this card first (for example: paste the Google OAuth client ID, type a location Weather can find, or enter a mail server JARVIS can use over TLS).',
   'folder-missing': 'The folder could not be found or read. Check the folder path in Settings → Connectors.',
+  'permission-needed': 'macOS has not allowed JARVIS to read this yet. Open System Settings → Privacy & Security → Full Disk Access, turn it on for JARVIS (or the terminal that runs it), restart JARVIS, then press Test.',
+  'unsupported-platform': 'This connector only works on a Mac.',
   'not-granted': 'That permission has not been granted for this connector.',
   'disabled': 'This connector is turned off.',
   'frozen': 'All connectors are frozen by the kill switch.',

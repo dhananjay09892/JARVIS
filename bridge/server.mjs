@@ -94,6 +94,7 @@ import { githubNotificationsConnector } from './connectors/github_notifications.
 import { ouraConnector } from './connectors/oura.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
 import { appleHealthConnector } from './connectors/apple_health.mjs'
+import { appleCalendarConnector } from './connectors/apple_calendar.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { newsRssConnector, NEWS_RSS_OPTIONS } from './connectors/news_rss.mjs'
 import { googleTasksConnector } from './connectors/google_tasks.mjs'
@@ -637,6 +638,12 @@ connectors.registerAll([
     // export.xml); stream-parsed locally, stored as health data kept on this device.
     id: 'apple_health',
     create: (ctx) => appleHealthConnector().create(ctx),
+  },
+  {
+    // Apple Calendar (task C29): macOS only; reads a private copy of the Calendar
+    // database after Full Disk Access is granted; unavailable on other systems.
+    id: 'apple_calendar',
+    create: (ctx) => appleCalendarConnector().create(ctx),
   },
   {
     // Obsidian (task C13): grant access to one vault folder; reads its notes
