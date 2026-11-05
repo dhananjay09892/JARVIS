@@ -250,6 +250,8 @@ export function createApprovalHub({ ttlMs = APPROVAL_TTL_MS } = {}) {
  */
 export function createEngine({ store, files, approve, execute, bus = null, log = console, clock = () => new Date() }) {
   const active = new Set()
+  /** Other due-time checks that share this ticker (scheduled agents, agent-schedule.mjs). */
+  const jobs = new Set()
 
   async function run(workflow, trigger) {
     if (active.has(workflow.id)) return { ok: false, reason: 'That workflow is already running.' }
@@ -330,13 +332,38 @@ export function createEngine({ store, files, approve, execute, bus = null, log =
         void run(w, 'schedule')
         started += 1
       }
+      // One job failing never stops the workflows or the other jobs.
+      for (const job of jobs) {
+        try { job.tick() } catch (err) { log.error('[jarvis] scheduled job failed:', err) }
+      }
       return started
     },
+    /**
+     * Adds a job `{ tick() }` that runs on this scheduler's every tick, so the
+     * bridge keeps one scheduler. Returns a remove function.
+     */
+    addJob(job) {
+      if (typeof job?.tick !== 'function') throw new TypeError('A scheduled job needs a tick function.')
+      jobs.add(job)
+      return () => { jobs.delete(job) }
+    },
     start(intervalMs = 30_000) {
-      const t = setInterval(() => { try { this.tick() } catch (err) { log.error('[jarvis] scheduler tick failed:', err) } }, intervalMs)
-      t.unref?.()
-      setTimeout(() => this.tick(), 3000).unref?.()
-      return () => clearInterval(t)
+      return startTicker(() => this.tick(), { intervalMs, log })
     },
   }
+}
+
+/**
+ * The bridge's one scheduler clock: calls `tick` every `intervalMs` and once
+ * shortly after start. Used by the workflow engine; when workflows are
+ * switched off, the bridge runs its other jobs on this alone. Returns a stop
+ * function.
+ */
+export function startTicker(tick, { intervalMs = 30_000, firstMs = 3000, log = console } = {}) {
+  const safe = () => { try { tick() } catch (err) { log.error('[jarvis] scheduler tick failed:', err) } }
+  const t = setInterval(safe, intervalMs)
+  t.unref?.()
+  const first = setTimeout(safe, firstMs)
+  first.unref?.()
+  return () => { clearInterval(t); clearTimeout(first) }
 }
