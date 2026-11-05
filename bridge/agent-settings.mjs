@@ -136,17 +136,26 @@ export function createAgentSettings({ read, frozen = () => false } = {}) {
       return null
     },
 
+    /** Whether the owner has set this agent's switch (rather than its mode's default). */
+    hasSwitch: (id) => switches().has(id),
+
     /** Is this agent switched on? Its own switch, else the default for its mode. */
     isSwitchedOn(id, definition) {
       const s = switches()
       return s.has(id) ? s.get(id) : onByDefault(definition)
     },
 
-    /** The settings patch that switches one agent on or off (for PATCH /settings). */
+    /**
+     * The settings patch that switches one agent on or off (for PATCH /settings).
+     * `null` forgets the agent's switch, so it falls back to its mode's default
+     * (used when a definition is deleted, so a new file with the same id never
+     * inherits an old "on").
+     */
     switchPatch(id, on) {
       if (typeof id !== 'string' || !AGENT_ID.test(id)) throw new Error('agent settings: bad agent id')
       const s = switches()
-      s.set(id, on === true)
+      if (on === null) s.delete(id)
+      else s.set(id, on === true)
       return { [AGENT_SETTINGS.switches]: formatSwitches(s) }
     },
   }

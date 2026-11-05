@@ -32,6 +32,7 @@ import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
 import { AGENT_LIVE_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
+import { createAgentRoutes } from './agent-routes.mjs'
 import { createAgentScheduler, createScheduleState, scheduleStateFile } from './agent-schedule.mjs'
 import { createAgentTriggers } from './agent-triggers.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
@@ -1311,6 +1312,9 @@ const STATIC_TYPES = {
 // One HTTP server for both the speech proxy and the WebSocket upgrade.
 const http = await import('node:http')
 
+/** Settings → Agents routes; set once the task manager exists (further down). */
+let agentRoutes = null
+
 const handleRequest = async (req, res) => {
   const origin = req.headers.origin
   if (origin && !originAllowed(origin)) {
@@ -1584,6 +1588,43 @@ const handleRequest = async (req, res) => {
       }
     }
     const out = await connectorRoutes.handle({ method: req.method, path: requestUrl.pathname, body })
+    if (out) {
+      res.writeHead(out.status, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+      return res.end(JSON.stringify(out.body))
+    }
+  }
+
+  // ---- Settings → Agents (agents phase A3) -----------------------------
+  // The roster, one agent's definition and runs, and the owner's changes.
+  // Same Origin rule as connectors for anything that changes state.
+  if (requestUrl.pathname === '/agents' || requestUrl.pathname.startsWith('/agents/')) {
+    if (req.method !== 'GET' && !origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    if (!agentRoutes) {
+      res.writeHead(503, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ ok: false, reason: 'Agents are still starting.' }))
+    }
+    let body
+    if (req.method === 'POST') {
+      let raw = ''
+      for await (const chunk of req) {
+        raw += chunk
+        if (raw.length > 80 * 1024) {
+          req.destroy()
+          res.writeHead(400, cors)
+          return res.end('body too large')
+        }
+      }
+      try {
+        body = raw ? JSON.parse(raw) : {}
+      } catch {
+        res.writeHead(400, { ...cors, 'content-type': 'application/json' })
+        return res.end(JSON.stringify({ ok: false, reason: 'Send JSON.' }))
+      }
+    }
+    const out = agentRoutes.handle({ method: req.method, path: requestUrl.pathname, body })
     if (out) {
       res.writeHead(out.status, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
       return res.end(JSON.stringify(out.body))
@@ -2433,6 +2474,22 @@ ${task.goal}`,
       afterTool: postToolUse(taint, 'worker'),
     })).events
   },
+})
+
+/**
+ * Settings → Agents (agent-routes.mjs): list, read, create, edit, copy,
+ * switch and delete agents, with run numbers from the task manager. Built-ins
+ * stay read-only; every write is checked like a file at load and is refused
+ * while the kill switch is on. A change refreshes the task manager, so an
+ * agent that was switched off or deleted stops at once.
+ */
+agentRoutes = createAgentRoutes({
+  registry: agentRegistry,
+  settings: agentSettings,
+  saveSettings: updateSettings,
+  tasks: taskManager,
+  gate: () => (killSwitch.isFrozen() ? 'JARVIS is frozen by the kill switch, so agents cannot be changed.' : null),
+  changed: () => { taskManager.refresh() },
 })
 
 /**

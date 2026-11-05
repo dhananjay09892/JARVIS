@@ -170,6 +170,20 @@ export function createAgentRegistry({
     return problems
   }
 
+  /** Where a definition may sit: file name, creator and id clashes. */
+  function placementProblems(def, { source, file, existing }) {
+    const problems = []
+    if (source === 'user' && basename(file, '.md') !== def.id) problems.push(`id: the file must be named ${def.id}.md`)
+    if (source === 'builtin' && def.createdBy !== 'builtin') problems.push('createdBy: a built-in agent must say builtin')
+    if (source === 'user' && def.createdBy === 'builtin') problems.push('createdBy: only agents shipped with JARVIS are builtin')
+    if (existing) {
+      problems.push(existing.source === 'builtin' && source === 'user'
+        ? `id: ${def.id} is a built-in agent; copy it under a new id to change it`
+        : `id: another file already uses ${def.id}`)
+    }
+    return problems
+  }
+
   function readOne(dir, file, source) {
     const path = join(dir, file)
     try {
@@ -200,16 +214,7 @@ export function createAgentRegistry({
         const r = readOne(dir, file, source)
         if (r.problems) { refuse(source, file, r.problems); continue }
         const { def } = r
-        const problems = []
-        if (source === 'user' && basename(file, '.md') !== def.id) problems.push(`id: the file must be named ${def.id}.md`)
-        if (source === 'builtin' && def.createdBy !== 'builtin') problems.push('createdBy: a built-in agent must say builtin')
-        if (source === 'user' && def.createdBy === 'builtin') problems.push('createdBy: only agents shipped with JARVIS are builtin')
-        const existing = next.get(def.id)
-        if (existing) {
-          problems.push(existing.source === 'builtin' && source === 'user'
-            ? `id: ${def.id} is a built-in agent; copy it under a new id to change it`
-            : `id: another file already uses ${def.id}`)
-        }
+        const problems = placementProblems(def, { source, file, existing: next.get(def.id) })
         problems.push(...installedProblems(def, hasTool, connectorCaps))
         if (problems.length) { refuse(source, file, problems); continue }
 
@@ -260,6 +265,33 @@ export function createAgentRegistry({
     refused: () => refused.map((r) => ({ ...r, reasons: [...r.reasons] })),
 
     has: (id) => agents.has(id),
+
+    /** The owner's folder, where user definitions are written (agent-routes.mjs). */
+    userDir,
+
+    /**
+     * Every check `load()` makes on a user file, for a checked definition that
+     * is about to be written as `<id>.md`: placement (creator, a built-in's id)
+     * and installed tools and connectors. `replacing` names the user agent the
+     * file will replace, so its own id does not count as taken. Returns the
+     * problems (empty when the file would load).
+     * @param {object} def a definition that already passed checkAgentDefinition
+     * @param {{ replacing?: string | null }} [o]
+     */
+    check(def, { replacing = null } = {}) {
+      const existing = agents.get(def?.id)
+      const clash = existing && !(existing.source === 'user' && existing.id === replacing) ? existing : undefined
+      return [
+        ...placementProblems(def, { source: 'user', file: `${def?.id}.md`, existing: clash }),
+        ...installedProblems(def, toolCheck(tools), connectorIndex(connectors)),
+      ]
+    },
+
+    /** Where a loaded agent came from: `{ source, file, hash, active }`, or null. */
+    entry(id) {
+      const e = agents.get(id)
+      return e ? { source: e.source, file: e.file, hash: e.hash, active: e.active } : null
+    },
 
     /** The checked definition, or null. Inactive agents are returned too; check `isActive`. */
     get: (id) => agents.get(id)?.definition ?? null,
