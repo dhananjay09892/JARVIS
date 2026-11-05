@@ -33,6 +33,7 @@ import { createTaskManager } from './tasks.mjs'
 import { AGENT_LIVE_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
 import { createAgentScheduler, createScheduleState, scheduleStateFile } from './agent-schedule.mjs'
+import { createAgentTriggers } from './agent-triggers.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
 import { createReviewer } from './agent-review.mjs'
 import { createBus } from './bus.mjs'
@@ -54,7 +55,7 @@ import { developmentServer } from './development.mjs'
 import { approvalQueue } from './approvals.mjs'
 import { createPolicy, writesEnabled, isVetoed } from './policy.mjs'
 import { createSeenUrls, createTaintTracker, guardOutbound, proxiedMediaIn } from './taint.mjs'
-import { UNTRUSTED_PROMPT, createPostToolUse } from './untrusted.mjs'
+import { UNTRUSTED_PROMPT, createPostToolUse, withoutUntrusted } from './untrusted.mjs'
 import { freemem, homedir, tmpdir, totalmem, uptime } from 'node:os'
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
@@ -2302,7 +2303,7 @@ function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget }
   const brain = pick.brain
   const approve = auditedApprove(wrapApprove(approvalHub.request), agentAuditSink(audit, agent.id), 'worker')
   const taint = createTaintTracker({ seen: seenUrls, isEffectful: isVetoed, tainted: true })
-  taint.noteOwnerText(`${task.title}\n${task.goal}`)
+  taint.noteOwnerText(withoutUntrusted(`${task.title}\n${task.goal}`))
   const controller = new AbortController()
   signal.addEventListener('abort', () => controller.abort(), { once: true })
 
@@ -2396,7 +2397,7 @@ const taskManager = createTaskManager({
     // A brief is written by a model that may have read private content, so a
     // worker starts tainted; the links in its brief count as named (taint.mjs).
     const taint = createTaintTracker({ seen: seenUrls, isEffectful: isVetoed, tainted: true })
-    taint.noteOwnerText(`${task.title}\n${task.goal}`)
+    taint.noteOwnerText(withoutUntrusted(`${task.title}\n${task.goal}`))
     const controller = new AbortController()
     signal.addEventListener('abort', () => controller.abort(), { once: true })
     // The worker's session as BrainEvents; tasks.mjs reads nothing else.
@@ -2439,8 +2440,27 @@ const agentScheduler = createAgentScheduler({
   notifier,
   state: createScheduleState({ file: scheduleStateFile() }),
 })
-if (engine) engine.addJob(agentScheduler)
-else startTicker(() => agentScheduler.tick())
+/**
+ * Triggered and continuous agents (agent-triggers.mjs): on the same ticker,
+ * which keeps their bus subscriptions in step with the roster. Each is off
+ * until switched on; the event is untrusted input; loop guards (own finish,
+ * depth, cooldown, rate limit) apply; results go to the notification policy.
+ */
+const agentTriggers = createAgentTriggers({
+  agents: switchedAgents,
+  tasks: taskManager,
+  bus,
+  paused: agentSettings.paused,
+  maxDepth: agentSettings.maxDepth,
+  notifier,
+})
+if (engine) {
+  engine.addJob(agentScheduler)
+  engine.addJob(agentTriggers)
+} else {
+  startTicker(() => agentScheduler.tick())
+  startTicker(() => agentTriggers.tick())
+}
 
 // Freezing stops every queued and running task at once; unfreezing lets the
 // queue move again (unless "pause all agents" is on).

@@ -136,9 +136,9 @@ test('BusEvent checks the payload against its topic', () => {
   assert.equal(checkContract('BusEvent', { ...clone(find(s, 'BusEvent')), topic: 'made.up' }).ok, false)
 })
 
-test('BusEvent topics are the plan 38 list plus the Q32 publishers', () => {
-  assert.equal(TOPICS.length, 23)
-  for (const t of ['workflow.started', 'workflow.finished', 'task.finished']) assert.ok(TOPICS.includes(t as never), t)
+test('BusEvent topics are the plan 38 list plus the Q32, Q79 and A08 additions', () => {
+  assert.equal(TOPICS.length, 27)
+  for (const t of ['workflow.started', 'workflow.finished', 'task.finished', 'channel.sent', 'meeting.ended']) assert.ok(TOPICS.includes(t as never), t)
   assert.equal(new Set(TOPICS).size, TOPICS.length)
 })
 

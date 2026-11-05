@@ -47,6 +47,9 @@ export const TOPICS = Object.freeze([
   'task.finished',
   // Plan 20 (Q79): what the messaging channels did, ids and lengths only.
   'channel.received', 'channel.rejected', 'channel.sent',
+  // A topic triggered agents can wait on (agent-triggers.mjs). Nothing
+  // publishes it yet, so it has no payload check here.
+  'meeting.ended',
 ])
 
 const VERSION = 1

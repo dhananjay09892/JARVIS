@@ -332,6 +332,19 @@ export function wrapUntrusted(text, source) {
   )
 }
 
+/**
+ * The text with every <untrusted_data> envelope taken out (an envelope with no
+ * end is cut to the end of the text). For the taint check: only what is left
+ * may count as the owner's own words, so a link or an address inside outside
+ * content never becomes "named by the owner". Removing too much only makes the
+ * check stricter.
+ */
+export function withoutUntrusted(text) {
+  return String(text ?? '')
+    .replace(/<untrusted_data\b[^>]*>[\s\S]*?<\/untrusted_data>/gi, ' ')
+    .replace(/<untrusted_data\b[\s\S]*$/i, ' ')
+}
+
 /** True when a string is already an envelope, so it is never wrapped twice. */
 export const isWrapped = (text) => /^<untrusted_data\b/.test(String(text ?? ''))
 
