@@ -409,6 +409,9 @@ export const TOPICS = [
   'task.finished',
   // Plan 20 (Q79): what the messaging channels did, ids and lengths only.
   'channel.received', 'channel.rejected', 'channel.sent',
+  // Agents A2 (A08): a topic triggered agents can wait on. Nothing publishes
+  // it yet; its payload is fixed when the meeting source is built.
+  'meeting.ended',
 ] as const
 export const Topic = z.enum(TOPICS)
 export type Topic = z.infer<typeof Topic>
