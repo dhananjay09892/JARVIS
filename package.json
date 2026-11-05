@@ -30,6 +30,7 @@
     "dotenv": "^18.0.7",
     "framer-motion": "^12.43.0",
     "kokoro-js": "^1.2.1",
+    "onnxruntime-node": "1.21.0",
     "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

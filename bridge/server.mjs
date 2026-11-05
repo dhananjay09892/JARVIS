@@ -1955,6 +1955,7 @@ const handleRequest = async (req, res) => {
         })
         return json(200, { ok: true, person })
       } catch (err) {
+        if (err?.code === 'model-unavailable') return json(503, { ok: false, reason: 'speaker model not installed' })
         const known = ['consent-required', 'name-required', 'bad-role', 'too-short', 'too-long']
         return json(known.includes(err?.code) ? 400 : 500, { ok: false, reason: err?.code ?? 'failed' })
       }

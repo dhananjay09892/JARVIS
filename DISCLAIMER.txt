@@ -76,6 +76,21 @@ If you turn on Settings > Channels > Telegram and add your own bot's token:
   of JARVIS's actions and his chat replies; only the app on this computer can
   unfreeze him.
 
+VOICEPRINTS (SPEAKER RECOGNITION)
+Speaker recognition is off by default. When you turn it on and enrol someone,
+JARVIS turns a few seconds of their speech into a list of numbers (a
+voiceprint) and uses it to tell who is talking. A voiceprint is biometric
+data, so:
+- Only the person being enrolled, or their parent or guardian, should agree
+  to it. Enrolment asks for that agreement first.
+- Voiceprints and the audio they come from stay on this computer, in JARVIS's
+  local data folder. They are never sent to a model, a service or anyone else.
+- The only thing downloaded is the recognition model itself (about 29 MB,
+  WeSpeaker CAM++, once, from GitHub).
+- Deleting a person deletes all of their voiceprints; nothing is kept.
+- A voice match never approves anything by itself. Actions that matter still
+  need your click, and a voice can be imitated or recorded.
+
 QUESTIONS OR CONCERNS
 If you are a rights holder with a concern about this project, please open an
 issue at https://github.com/dhananjay09892/JARVIS/issues and it will be

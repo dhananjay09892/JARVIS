@@ -20,6 +20,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, chmodSy
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { CAMPP_MODEL_ID, createCamppEmbedder } from './speaker-campp.mjs'
 
 export const SAMPLE_RATE = 16000
 /** Shorter than this and a voice cannot be told from noise. */
@@ -45,15 +46,16 @@ export function assertEmbedder(e) {
   return e
 }
 
-export const DEFAULT_MODEL_ID = 'wespeaker-campp'
+export const DEFAULT_MODEL_ID = CAMPP_MODEL_ID
 
 /**
- * The installed embedder for `modelId`, or null. The WeSpeaker CAM++ ONNX
- * model is not bundled in this slice, so this returns null and the endpoints
- * answer 503 until it lands; any embedder passed to the service already works.
+ * The embedder for `modelId`, or null for a model we do not know. The model
+ * file is fetched and loaded on the first embed(), not here, so building the
+ * service costs nothing; a failed fetch surfaces as code 'model-unavailable'.
  */
-export function loadSpeakerEmbedder(_modelId = DEFAULT_MODEL_ID) {
-  return null
+export function loadSpeakerEmbedder(modelId = DEFAULT_MODEL_ID, { dir = defaultSpeakerDir(), ...opts } = {}) {
+  if (modelId !== CAMPP_MODEL_ID) return null
+  return createCamppEmbedder({ dir: join(dir, 'models'), modelPath: process.env.JARVIS_SPEAKER_MODEL_PATH || undefined, ...opts })
 }
 
 export function cosine(a, b) {
