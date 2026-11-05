@@ -27,11 +27,12 @@ import { chromeAvailable, chromeServer } from './chrome.mjs'
 import { visionServer } from './vision.mjs'
 import { appsServer } from './apps.mjs'
 import { workspaceServer, workspaceFiles, WORKSPACE_ROOT } from './workspace.mjs'
-import { openWorkflows, createApprovalHub, createEngine } from './workflows.mjs'
+import { openWorkflows, createApprovalHub, createEngine, startTicker } from './workflows.mjs'
 import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
 import { AGENT_LIVE_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
+import { createAgentScheduler, createScheduleState, scheduleStateFile } from './agent-schedule.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
 import { createReviewer } from './agent-review.mjs'
 import { createBus } from './bus.mjs'
@@ -2424,6 +2425,22 @@ ${task.goal}`,
     })).events
   },
 })
+
+/**
+ * Scheduled agents (agent-schedule.mjs): on the workflow engine's ticker, so
+ * the bridge keeps one scheduler. Each is off until switched on; a due run
+ * is an ordinary named-agent task, so the cap, budget, pause and kill switch
+ * apply; the result goes to the notification policy.
+ */
+const agentScheduler = createAgentScheduler({
+  agents: switchedAgents,
+  tasks: taskManager,
+  paused: agentSettings.paused,
+  notifier,
+  state: createScheduleState({ file: scheduleStateFile() }),
+})
+if (engine) engine.addJob(agentScheduler)
+else startTicker(() => agentScheduler.tick())
 
 // Freezing stops every queued and running task at once; unfreezing lets the
 // queue move again (unless "pause all agents" is on).
