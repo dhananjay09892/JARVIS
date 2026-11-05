@@ -51,6 +51,13 @@ More detail, and a ready-to-paste block for video descriptions: [public/audio/CR
 **Chakra Petch** (Cadson Demak) and **JetBrains Mono** (JetBrains), both under the SIL Open Font
 License 1.1, loaded from Google Fonts.
 
+## Speaker recognition
+
+The optional speaker-recognition feature uses the **WeSpeaker CAM++** model trained on VoxCeleb
+(WeSpeaker, Apache-2.0 code; model under CC BY 4.0), as exported to ONNX by the
+[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) project, run with `onnxruntime-node` (MIT).
+The model is downloaded on first use, not bundled. Test clips are made with the CMU Flite voices.
+
 ## Services
 
 Optional, with your own account: **ElevenLabs** (voice and transcription; on the ElevenLabs free
