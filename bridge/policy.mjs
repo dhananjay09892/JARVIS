@@ -18,6 +18,16 @@
  */
 
 /**
+ * The delegation tools (agent-delegation.mjs) and the one agent whose session
+ * may use them. Kept here, not imported, so this module stays dependency-free;
+ * agent-delegation.test.mjs pins that the id matches the contract's
+ * COORDINATOR_ID.
+ */
+export const DELEGATE_SERVER = 'jarvis_delegate'
+export const DELEGATE_TOOL_NAMES = Object.freeze(['start_agent', 'check_agent'])
+export const DELEGATOR_ID = 'coordinator'
+
+/**
  * Both spellings of every renamed built-in are listed on purpose. The SDK
  * presents several tools to the model under newer names — Task is Agent,
  * BashOutput is TaskOutput, KillShell is TaskStop, and the MCP resource tools
@@ -334,7 +344,7 @@ function frozenNow(isFrozen) {
  * it. The order of the checks is the policy; the table in policy.test.mjs pins
  * every branch.
  */
-function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool, isFrozen, connectorRule }) {
+function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool, isFrozen, connectorRule }, agentId = null) {
   const writes = (rule) => ({ allow: allowWrites, rule })
   const fixed = (allow, rule) => ({ allow, rule })
 
@@ -383,6 +393,13 @@ function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool,
     if (server === 'jarvis_tasks') return fixed(isTaskTool(tool) === true, 'own-server-list')
     if (server === 'jarvis_task') {
       return fixed(['report_progress', 'ask_owner'].includes(tool), 'own-server-list')
+    }
+    // Starting agents from inside a run (agent-delegation.mjs): only for the
+    // Coordinator's own session, which is the only one that names itself so.
+    // The voice session, plain workers and every other agent are refused.
+    if (server === DELEGATE_SERVER) {
+      if (agentId !== DELEGATOR_ID) return fixed(false, 'delegate-coordinator-only')
+      return fixed(DELEGATE_TOOL_NAMES.includes(tool), 'own-server-list')
     }
 
     // Connectors (plans/connectors, task C01). The connector registry knows
@@ -510,6 +527,7 @@ export const GENERAL_WRITE_TOOLS = Object.freeze([
 export const RULE_REASONS = Object.freeze({
   'malformed-name': 'The tool name is missing or malformed.',
   'subagent': 'Starting a sub-agent needs general writes.',
+  'delegate-coordinator-only': 'Only the Coordinator may start other agents.',
   'read-only-builtin': 'A built-in tool that only reads.',
   'write-builtin': 'A built-in tool that writes or runs commands needs general writes.',
   'own-display': "JARVIS's own display and interface controls.",
@@ -605,15 +623,15 @@ export function createPolicy(options) {
   const opts = gateOptions(options)
   const audit = typeof options?.audit === 'function' ? options.audit : null
 
-  const decide = (action) => {
+  /** Decisions as one session takes them; the agent id only matters for the delegation tools. */
+  const decideAs = (agentId = null) => (action) => {
     if (action?.kind !== 'tool') {
       return { verdict: 'deny', rule: 'unknown-action', reason: RULE_REASONS['unknown-action'] }
     }
-    const { allow, rule } = toolRule(action.name, opts)
+    const { allow, rule } = toolRule(action.name, opts, agentId)
     return { verdict: allow ? 'allow' : 'deny', rule, reason: RULE_REASONS[rule] }
   }
-
-  const decideTool = (name) => decide({ kind: 'tool', name }).verdict === 'allow'
+  const decideToolAs = (agentId = null) => (name) => decideAs(agentId)({ kind: 'tool', name }).verdict === 'allow'
   const denyBy = (rule) => ({ verdict: 'deny', rule, reason: RULE_REASONS[rule] })
 
   /**
@@ -631,7 +649,7 @@ export function createPolicy(options) {
   } = {}) => {
     let refusal = null
     const request = { kind: 'tool', name }
-    let decision = decide(request)
+    let decision = decideAs(agentId)(request)
     if (decision.verdict !== 'allow') {
       refusal = reason
     } else if (guard) {
@@ -656,8 +674,8 @@ export function createPolicy(options) {
    */
   const view = (agentId = null) => Object.freeze({
     allowWrites: opts.allowWrites,
-    decide,
-    decideTool,
+    decide: decideAs(agentId),
+    decideTool: decideToolAs(agentId),
     disallowedTools: () => (opts.allowWrites ? [] : [...GENERAL_WRITE_TOOLS]),
     authorize: (call = {}) => authorize({ ...call, agentId: call.agentId ?? agentId }),
     /** The same policy, with this agent's id on every audit entry it writes. */
@@ -686,7 +704,7 @@ export function createPolicy(options) {
       const message = DENY_MESSAGES[context] ?? DENY_MESSAGES.voice
       return async (toolName) => {
         const request = { kind: 'tool', name: toolName }
-        const decision = decide(request)
+        const decision = decideAs(agentId)(request)
         const ok = decision.verdict === 'allow'
         recordDecision(audit, console, { actor: context === 'worker' || context === 'chat' ? context : 'voice', stage: 'can-use-tool', request, decision, ...(agentId && { agentId }) })
         log?.(`[jarvis] tool ${toolName} -> ${ok ? 'allow' : 'deny'}`)

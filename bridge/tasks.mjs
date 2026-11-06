@@ -48,12 +48,24 @@
  * then the task fails saying why. `runAgent` is then handed `retry` (the
  * attempt and the reasons) and a task whose goal carries them.
  *
+ * Delegation (agent-delegation.mjs): a run of the Coordinator may start
+ * the agents on its `delegate` list through `delegate()`, which `runAgent`
+ * is handed bound to that run as `delegation` when the run may delegate at
+ * all. Each child is a task one level deeper (`parentId`, `depth`), held to
+ * `maxDepth()` (hard ceiling 2), the children cap and a share of what its
+ * parent has left; it ends when its parent ends. Everything is checked here,
+ * on every start, whatever the session asked for.
+ *
  * Only background tasks live here. The voice session is not a task, so the
  * cap and the pause never hold it back.
  */
 import { randomUUID } from 'node:crypto'
 import { BUDGET_STOPS, AGENT_REFUSALS } from './agent-runtime.mjs'
 import { MAX_REVIEW_ATTEMPTS, REVIEW_STOPS, parseVerdict, retryGoal, reviewWanted } from './agent-review.mjs'
+import {
+  DELEGATION_REFUSALS, DELEGATION_STOPS, MAX_CHILDREN, MAX_WAIT_MS, DEPTH_CEILING, budgetSpent, mayDelegate, remainingBudget, shareBudget,
+} from './agent-delegation.mjs'
+import { resolveAgent } from './agent-ask.mjs'
 
 export const MAX_CONCURRENT = 3
 /** The cap is a setting from 1 to 8 (agent-settings.mjs); anything else falls back to the default. */
@@ -86,6 +98,8 @@ function snapshot(t) {
     startedAt: t.startedAt,
     endedAt: t.endedAt,
     ...(t.agentId && { agentId: t.agentId, agentName: t.agentName }),
+    ...(t.depth > 1 && { depth: t.depth }),
+    ...(t.parentId && { parentId: t.parentId }),
   }
 }
 
@@ -99,11 +113,13 @@ function snapshot(t) {
  * @param {() => object | null} [o.defaultBudget] the budget for an agent whose file sets none
  * @param {Function} [o.reviewer] checks a named agent's result (agent-review.mjs createReviewer); without one nothing is reviewed
  * @param {() => boolean} [o.reviewDefault] the owner's reviewer default, for agents whose file does not say
+ * @param {() => number} [o.maxDepth] agents.maxDepth (1–2); how deep delegation may go
+ * @param {number} [o.maxChildren] how many agents one run may start in all
  */
 export function createTaskManager({
   runAgent, store = null, bus = null, agents = null, costCounts = () => false,
   concurrency = MAX_CONCURRENT, paused = () => null, defaultBudget = () => null,
-  reviewer = null, reviewDefault = () => false,
+  reviewer = null, reviewDefault = () => false, maxDepth = () => 1, maxChildren = MAX_CHILDREN,
   now = () => Date.now(), log = console,
 } = {}) {
   const tasks = new Map()
@@ -165,6 +181,9 @@ export function createTaskManager({
         error: s.error, costUsd: s.costUsd, startedAt: s.startedAt, endedAt: s.endedAt, createdAt: s.createdAt ?? s.startedAt ?? now(),
         waiting: 0, question: null, tools: new Set(), abort: new AbortController(),
         ...(typeof s.agentId === 'string' && s.agentId && { agentId: s.agentId, agentName: clip(s.agentName, 60) || s.agentId }),
+        depth: Number.isInteger(s.depth) && s.depth > 1 ? s.depth : 1,
+        ...(typeof s.parentId === 'string' && s.parentId && { parentId: s.parentId }),
+        children: 0, childCostUsd: 0, waiters: new Set(),
       }
       if (ACTIVE.has(t.status)) {
         t.status = 'interrupted'
@@ -238,6 +257,18 @@ export function createTaskManager({
     note(t, status, fields.error ?? fields.result ?? status)
     emit(t)
     announce(t)
+    // A delegating run waiting on this one hears at once.
+    for (const wake of t.waiters) wake()
+    t.waiters.clear()
+    // What a child spent counts against what its parent may still share.
+    const parent = t.parentId ? tasks.get(t.parentId) : null
+    if (parent && typeof t.costUsd === 'number' && t.costUsd > 0) parent.childCostUsd += t.costUsd
+    // A child never outlives the run that started it.
+    for (const c of [...tasks.values()]) {
+      if (c.parentId !== t.id || !isActive(c)) continue
+      c.abort.abort()
+      finish(c, 'cancelled', { error: DELEGATION_STOPS.parentEnded })
+    }
     prune()
     pump()
   }
@@ -332,6 +363,16 @@ export function createTaskManager({
           stopper(t)(BUDGET_STOPS.toolCalls(limits.maxToolCalls))
           return AGENT_REFUSALS.budget
         }
+        // A child spends from its parent's tool calls as it goes, so the
+        // children of one run share what that run has, not each a copy.
+        const parent = t.parentId ? tasks.get(t.parentId) : null
+        if (parent && Number.isInteger(parent.limits?.maxToolCalls)) {
+          if (!isActive(parent) || parent.calls >= parent.limits.maxToolCalls) {
+            stopper(t)(DELEGATION_STOPS.parentBudget)
+            return AGENT_REFUSALS.budget
+          }
+          parent.calls += 1
+        }
         t.calls += 1
         return null
       },
@@ -364,6 +405,8 @@ export function createTaskManager({
         ask: asker(t),
         wrapApprove: (approve) => approver(t, approve),
         ...(agent && { agent, budget: budgetFor(t, limits), stop: stopper(t) }),
+        ...(agent && { depth: t.depth }),
+        ...(agent && delegationFor(t, agent)),
         ...(retry && { retry: { attempt: retry.attempt, reasons: [...retry.reasons] } }),
       })
       // The worker's session as BrainEvents (brains/events.mjs). The summary is
@@ -465,13 +508,30 @@ export function createTaskManager({
         return
       }
     }
+    // A child runs within what its parent has left now, not when it was asked for.
+    let limits = agent ? budgetOf(agent) : null
+    if (t.parentId) {
+      const parent = tasks.get(t.parentId)
+      if (!parent || !isActive(parent)) {
+        t.startedAt = now()
+        finish(t, 'cancelled', { error: DELEGATION_STOPS.parentEnded })
+        return
+      }
+      const left = parentLeft(parent)
+      if (budgetSpent(left)) {
+        t.startedAt = now()
+        finish(t, 'failed', { error: DELEGATION_STOPS.parentBudget })
+        return
+      }
+      limits = shareBudget(limits, left)
+    }
+    t.limits = limits
     t.status = 'running'
     t.startedAt = now()
     t.calls = 0
     t.costBase = 0
     note(t, 'start', agent ? `started as ${agent.name}` : 'started')
     emit(t)
-    const limits = agent ? budgetOf(agent) : null
     if (limits && typeof limits.maxMinutes === 'number' && limits.maxMinutes > 0) {
       t.timer = setTimeout(() => stopper(t)(BUDGET_STOPS.minutes(limits.maxMinutes)), limits.maxMinutes * 60_000)
       t.timer.unref?.()
@@ -503,6 +563,126 @@ export function createTaskManager({
     }
   }
 
+  /** A new task in the queue; started as soon as the cap allows. */
+  function enqueue({ title, goal, agent = null, depth = 1, parentId = null }) {
+    const g = goal
+    const t = {
+      id: `t${randomUUID().slice(0, 8)}`,
+      title: clip(title, 60) || clip(g, 60),
+      goal: g,
+      status: 'queued',
+      steps: [],
+      step: 0,
+      note: '',
+      log: [],
+      result: '',
+      error: '',
+      costUsd: null,
+      createdAt: now(),
+      startedAt: null,
+      endedAt: null,
+      waiting: 0,
+      question: null,
+      tools: new Set(),
+      abort: new AbortController(),
+      ...(agent && { agentId: agent.id, agentName: agent.name }),
+      // A schedule or an event may start a run below another (agent-triggers.mjs).
+      depth: Number.isInteger(depth) && depth > 1 ? Math.min(depth, DEPTH_CEILING) : 1,
+      ...(parentId && { parentId }),
+      children: 0, childCostUsd: 0, waiters: new Set(),
+    }
+    tasks.set(t.id, t)
+    note(t, 'queued', 'queued')
+    emit(t)
+    return t
+  }
+
+  const maxChildrenNow = () => (Number.isInteger(maxChildren) && maxChildren >= 1 ? maxChildren : MAX_CHILDREN)
+
+  /** What a parent has left to share, from its budget and what it and its children spent. */
+  const parentLeft = (p) => remainingBudget(p.limits, { calls: p.calls, startedAt: p.startedAt, costUsd: p.costUsd, childCostUsd: p.childCostUsd }, now())
+
+  /** The agents a delegating definition may start, with their names. */
+  function allowList(def) {
+    return (Array.isArray(def?.delegate) ? def.delegate : []).map((id) => {
+      let name = id
+      try { if (agents?.has(id)) name = agents.get(id)?.name || id } catch { name = id }
+      return { id, name }
+    })
+  }
+
+  /** The run's agent definition, while it may still run; null otherwise. */
+  function liveDefinition(t) {
+    if (!t?.agentId) return null
+    try { return agents?.isActive(t.agentId) === true ? agents.get(t.agentId) ?? null : null } catch { return null }
+  }
+
+  /** Start an agent from inside run `parent`. Every rule is checked here, every time. */
+  function delegate(parent, { agent: who, goal, title } = {}) {
+    if (!parent || !isActive(parent)) return { ok: false, reason: DELEGATION_REFUSALS.ended }
+    const held = pauseReason()
+    if (held) return { ok: false, reason: held }
+    const def = liveDefinition(parent)
+    if (!def) return { ok: false, reason: DELEGATION_REFUSALS.notDelegator }
+    const may = mayDelegate(def, { depth: parent.depth, maxDepth })
+    if (!may.ok) return { ok: false, reason: may.reason }
+    const entries = allowList(def)
+    const target = resolveAgent(entries, typeof who === 'string' ? who : '')
+    if (!target) return { ok: false, reason: DELEGATION_REFUSALS.offList(entries.map((e) => e.name)) }
+    if (parent.children >= maxChildrenNow()) return { ok: false, reason: DELEGATION_REFUSALS.children(maxChildrenNow()) }
+    // With room for one, a parent waiting on its child would wait for ever.
+    if (cap() < 2) return { ok: false, reason: DELEGATION_REFUSALS.cap }
+    if (budgetSpent(parentLeft(parent))) return { ok: false, reason: DELEGATION_REFUSALS.noBudget }
+    const g = clip(goal, 4000)
+    if (!g) return { ok: false, reason: DELEGATION_REFUSALS.noGoal }
+    let agent = null
+    try { agent = agents.has(target.id) && agents.isActive(target.id) === true ? agents.get(target.id) : null } catch { agent = null }
+    if (!agent) return { ok: false, reason: `The ${target.name} agent is not switched on.` }
+    parent.children += 1
+    const t = enqueue({ title, goal: g, agent, depth: parent.depth + 1, parentId: parent.id })
+    note(parent, 'delegate', `started ${agent.name}`)
+    emit(parent)
+    pump()
+    return { ok: true, task: snapshot(t) }
+  }
+
+  /** A child's state for the run that started it; with `wait` (ms, capped), once it ends or the wait runs out. */
+  async function child(parent, { id, wait } = {}) {
+    if (!parent) return { ok: false, reason: DELEGATION_REFUSALS.ended }
+    const c = typeof id === 'string' ? tasks.get(id) : null
+    if (!c || c.parentId !== parent.id) return { ok: false, reason: DELEGATION_REFUSALS.notChild }
+    const ms = typeof wait === 'number' && Number.isFinite(wait) ? Math.min(Math.max(0, wait), MAX_WAIT_MS) : 0
+    if (ms > 0 && isActive(c) && isActive(parent)) {
+      await new Promise((resolve) => {
+        const done = () => { clearTimeout(timer); c.waiters.delete(done); parent.waiters.delete(done); resolve() }
+        const timer = setTimeout(done, ms)
+        timer.unref?.()
+        c.waiters.add(done)
+        parent.waiters.add(done)
+      })
+    }
+    const v = snapshot(c)
+    return {
+      ok: true,
+      task: {
+        id: v.id, agent: v.agentName, status: v.status, percent: v.percent, note: v.note,
+        ...(v.result && { result: v.result }), ...(v.error && { error: v.error }),
+      },
+    }
+  }
+
+  /** The delegation handle for a run that may delegate, as `runAgent` gets it; nothing otherwise. */
+  function delegationFor(t, agent) {
+    if (!mayDelegate(agent, { depth: t.depth, maxDepth }).ok) return null
+    return {
+      delegation: {
+        start: (request) => delegate(t, request),
+        check: (request) => child(t, request),
+        agents: () => allowList(agent),
+      },
+    }
+  }
+
   restore()
 
   return {
@@ -515,7 +695,7 @@ export function createTaskManager({
       for (const send of listeners) send({ type: 'task_removed', id })
       return { ok: true }
     },
-    spawn({ title, goal, agentId }) {
+    spawn({ title, goal, agentId, depth }) {
       const g = clip(goal, 4000)
       if (!g) return { ok: false, reason: 'A task needs a goal.' }
       const held = pauseReason()
@@ -528,30 +708,7 @@ export function createTaskManager({
         try { on = agents.isActive(agentId) === true } catch { on = false }
         if (!on) return { ok: false, reason: `The ${agent.name} agent is not switched on.` }
       }
-      const t = {
-        id: `t${randomUUID().slice(0, 8)}`,
-        title: clip(title, 60) || clip(g, 60),
-        goal: g,
-        status: 'queued',
-        steps: [],
-        step: 0,
-        note: '',
-        log: [],
-        result: '',
-        error: '',
-        costUsd: null,
-        createdAt: now(),
-        startedAt: null,
-        endedAt: null,
-        waiting: 0,
-        question: null,
-        tools: new Set(),
-        abort: new AbortController(),
-        ...(agent && { agentId: agent.id, agentName: agent.name }),
-      }
-      tasks.set(t.id, t)
-      note(t, 'queued', 'queued')
-      emit(t)
+      const t = enqueue({ title, goal: g, agent, depth })
       pump()
       return { ok: true, task: snapshot(t) }
     },
@@ -562,6 +719,14 @@ export function createTaskManager({
       t.question.settle(clip(text, 2000))
       return { ok: true }
     },
+    /**
+     * Start an agent from inside a run (agent-delegation.mjs). Only the
+     * Coordinator, only its `delegate` list, only to `maxDepth()`, at most
+     * `maxChildren` per run, within the parent's budget.
+     */
+    delegate: (parentId, request) => delegate(tasks.get(parentId), request),
+    /** A child's state, as the run that started it may see it; `wait` (ms) waits for it to end. */
+    child: (parentId, request) => child(tasks.get(parentId), request),
     get: (id) => (tasks.has(id) ? snapshot(tasks.get(id)) : null),
     list: () => [...tasks.values()].map(snapshot),
     cancel(id) {

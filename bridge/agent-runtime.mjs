@@ -20,7 +20,7 @@
  * Nothing here grants anything. A task without an agent id never comes here
  * and runs exactly as before.
  */
-import { READ_ONLY_BUILTINS, WRITE_BUILTINS, mcpServerOf } from './policy.mjs'
+import { DELEGATE_SERVER, READ_ONLY_BUILTINS, WRITE_BUILTINS, mcpServerOf } from './policy.mjs'
 import { parseConnectorTool, CONNECTOR_SERVER } from './connectors/registry.mjs'
 
 /** The worker's own progress and question tools; every task gets them. */
@@ -42,14 +42,17 @@ const partMatches = (re) => (name) => re.test(toolPart(name).toLowerCase())
  * What a worker agent may never do in this version, whatever its file lists.
  * Each rule is a test on the full tool name. A later task may let a
  * definition opt into one of these with the owner's approval; until then they
- * hold for every agent, the Coordinator included (it delegates through the
- * task tools of the voice session, not through its own tool list).
+ * hold for every agent, the Coordinator included: it starts agents through
+ * the delegation tools the runtime adds from its `delegate` list
+ * (agent-delegation.mjs), never through its own tool list.
  */
 export const WORKER_RULES = Object.freeze([
   {
     id: 'start-agents',
     text: 'workers cannot start other agents',
-    test: (n) => n === 'Task' || n === 'Agent' || serverIs('jarvis_tasks')(n),
+    // The Coordinator's delegation tools are never the file's to list: the
+    // runtime adds them from its `delegate` list (agent-delegation.mjs).
+    test: (n) => n === 'Task' || n === 'Agent' || serverIs('jarvis_tasks', DELEGATE_SERVER)(n),
   },
   {
     id: 'talk-to-user',

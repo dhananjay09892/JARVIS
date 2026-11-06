@@ -1,6 +1,7 @@
 import { createSdkMcpServer, tool } from './sdk-server.mjs'
 import { z } from 'zod'
 import { agentOperations, roster, taskBrief as brief } from './agent-ask.mjs'
+import { DELEGATE_SERVER, MAX_WAIT_MS } from './agent-delegation.mjs'
 
 const ORCHESTRATOR_TOOLS = ['spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'start_agent', 'list_agents']
 export const isTaskTool = (name) => ORCHESTRATOR_TOOLS.includes(name)
@@ -9,8 +10,9 @@ const reply = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value
 
 /**
  * The orchestrator's side: hand work to a background agent and ask how it is
- * going. Only the voice conversation gets this server. A sub-agent never does,
- * so there is exactly one level of delegation and no runaway fan-out.
+ * going. Only the voice conversation gets this server. A sub-agent never does;
+ * the one agent that may start others (the Coordinator) gets its own,
+ * narrower delegateServer below, within agents.maxDepth.
  */
 export function taskOperations(manager) {
   return {
@@ -101,6 +103,48 @@ export function progressServer(report, ask) {
           return reply(answer === null
             ? { answered: false, note: 'No answer. Proceed on your best judgement, or stop and say what is missing.' }
             : { answered: true, answer })
+        }),
+    ],
+  })
+}
+
+/**
+ * The Coordinator's side of delegation (agent-delegation.mjs), bound to one
+ * run: start an agent on its list, and check on (or wait for) one it
+ * started. Built only for a run the task manager hands a `delegation` handle,
+ * and the task manager checks every rule again on each start; the policy
+ * engine refuses these tools to every other session.
+ *
+ * @param {{ start: Function, check: Function, agents: () => { id: string, name: string }[] }} delegation
+ */
+export function delegateServer(delegation) {
+  const names = delegation.agents().map((a) => `${a.name} (${a.id})`).join(', ')
+  return createSdkMcpServer({
+    name: DELEGATE_SERVER,
+    version: '1.0.0',
+    alwaysLoad: true,
+    tools: [
+      tool('start_agent',
+        `Hand part of this task to another agent. It starts in the background and returns its id at once. You may start: ${names}. ` +
+        'Write the goal as a complete brief: the agent cannot see your instructions or this conversation. It shares your budget.',
+        {
+          agent: z.string().min(1).max(60).describe('The agent\'s id or name, from the list'),
+          goal: z.string().min(1).max(4000).describe('Everything the agent needs, and what done looks like'),
+          title: z.string().max(60).optional().describe('Short name for the board'),
+        },
+        async (a) => {
+          const r = delegation.start(a)
+          return reply(r.ok ? { started: true, ...brief(r.task) } : { started: false, reason: r.reason })
+        }),
+      tool('check_agent',
+        'The status and, once it has finished, the result of an agent you started. Pass wait_seconds to wait for it to finish (at most 120).',
+        {
+          id: z.string().min(1).max(40),
+          wait_seconds: z.number().int().min(0).max(MAX_WAIT_MS / 1000).optional(),
+        },
+        async ({ id, wait_seconds: wait }) => {
+          const r = await delegation.check({ id, wait: (wait ?? 0) * 1000 })
+          return reply(r.ok ? r.task : { found: false, reason: r.reason })
         }),
     ],
   })

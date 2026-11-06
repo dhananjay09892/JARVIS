@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { answerTask, cancelTask, dismissTask, watchTasks, type TaskView } from '../lib/bridge'
-import { missionAgent } from '../lib/missionAgent'
+import { missionAgent, missionRows } from '../lib/missionAgent'
 
 const LIVE = new Set<TaskView['status']>(['queued', 'running', 'waiting_approval', 'waiting_input'])
 const LABEL: Record<TaskView['status'], string> = {
@@ -48,7 +48,8 @@ export function Missions() {
     (id) => setTasks(({ [id]: _gone, ...rest }) => rest),
   ), [])
 
-  const list = Object.values(tasks).sort((a, b) => b.createdAt - a.createdAt)
+  const list = Object.values(tasks)
+  const rows = missionRows(list)
   const live = list.filter((t) => LIVE.has(t.status)).length
   useEffect(() => {
     if (!live) return
@@ -64,10 +65,10 @@ export function Missions() {
         MISSIONS · {live} ACTIVE{list.length > live ? ` · ${list.length - live} ENDED` : ''}
         <span>{collapsed ? '▸' : '▾'}</span>
       </button>
-      {!collapsed && list.map((t) => {
+      {!collapsed && rows.map(({ task: t, nested }) => {
         const agent = missionAgent(t)
         return (
-          <section key={t.id} className={`mission mission-${t.status}`} aria-label={agent?.aria ?? t.title}>
+          <section key={t.id} className={`mission mission-${t.status}${nested ? ' mission-child' : ''}`} aria-label={`${agent?.aria ?? t.title}${nested ? ', started by another agent' : ''}`}>
             <div className="mission-row" onClick={() => setOpen(open === t.id ? null : t.id)}>
               <b>{t.title}</b>
               {agent && <small className="mission-agent" title={agent.title}>{agent.label}</small>}
