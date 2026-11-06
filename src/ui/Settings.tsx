@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BACKEND, BRIDGE_HTTP_URL } from '../config'
+import { Agents } from './Agents'
 import { Connectors } from './Connectors'
 import { Channels } from './Channels'
 import { OpenAISignIn } from './OpenAISignIn'
@@ -85,6 +86,11 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_CONTEXT_TIME: { default: '1', help: '' },
   JARVIS_CONTEXT_SYSTEM: { default: '0', help: '' },
   JARVIS_CONTEXT_TOKENS: { default: '200', help: '' },
+  JARVIS_AGENTS_PAUSED: { default: '0', help: '' },
+  JARVIS_AGENTS_MAX_CONCURRENT: { default: '3', options: ['1', '2', '3', '4', '5', '6', '7', '8'], help: '' },
+  JARVIS_AGENTS_MAX_DEPTH: { default: '1', options: ['1', '2'], help: '' },
+  JARVIS_AGENTS_REVIEWER: { default: '0', help: '' },
+  JARVIS_AGENTS_BUDGET: { default: '40 calls, 20 min, $1.00', help: '' },
   JARVIS_BRIEFING: { default: '1', help: '' },
   JARVIS_BRIEFING_MAIL: { default: '0', help: '' },
   JARVIS_BRIEFING_TIME: { default: 'off', help: '' },
@@ -426,6 +432,78 @@ export function Settings() {
         </select>
       </label>
       <p className="mem-note">Only what you tick here is added, and it goes to the brain you use.</p>
+    </>
+  )
+  // Settings → Agents (agents phase A3): the limits that apply to every agent;
+  // the roster and each agent's own settings are in <Agents />.
+  const agentsPaused = def(schema, 'JARVIS_AGENTS_PAUSED')
+  const agentsMax = def(schema, 'JARVIS_AGENTS_MAX_CONCURRENT')
+  const agentsDepth = def(schema, 'JARVIS_AGENTS_MAX_DEPTH')
+  const agentsReviewer = def(schema, 'JARVIS_AGENTS_REVIEWER')
+  const agentsBudget = def(schema, 'JARVIS_AGENTS_BUDGET')
+  const agentsMaxValue = s?.JARVIS_AGENTS_MAX_CONCURRENT || agentsMax.default
+  const agentsDepthValue = s?.JARVIS_AGENTS_MAX_DEPTH || agentsDepth.default
+  const agentsBlock = (
+    <>
+      <label title={agentsPaused.help || undefined}>
+        <input
+          type="checkbox"
+          checked={(s?.JARVIS_AGENTS_PAUSED || agentsPaused.default) === '1'}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_AGENTS_PAUSED: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Pause all agents
+      </label>
+      <label title={agentsReviewer.help || undefined}>
+        <input
+          type="checkbox"
+          checked={(s?.JARVIS_AGENTS_REVIEWER || agentsReviewer.default) === '1'}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_AGENTS_REVIEWER: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Check agents’ work before it is reported
+      </label>
+      <label title={agentsMax.help || undefined}>
+        Agents at once{' '}
+        <select
+          value={agentsMaxValue}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_AGENTS_MAX_CONCURRENT: e.target.value })}
+        >
+          {[...new Set([...(agentsMax.options ?? []), agentsMaxValue])].map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label title={agentsDepth.help || undefined}>
+        Coordinator may hand work to other agents{' '}
+        <select
+          value={agentsDepthValue}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_AGENTS_MAX_DEPTH: e.target.value })}
+        >
+          <option value="1">No (agents work alone)</option>
+          <option value="2">Yes, one level</option>
+        </select>
+      </label>
+      <div className="mem-add">
+        <label title={agentsBudget.help || undefined}>
+          Default budget{' '}
+          <input
+            key={s?.JARVIS_AGENTS_BUDGET ?? ''}
+            defaultValue={s?.JARVIS_AGENTS_BUDGET || ''}
+            placeholder={agentsBudget.default}
+            aria-label="Default agent budget"
+            disabled={busy || !s}
+            onBlur={(e) =>
+              s && e.target.value.trim() !== s.JARVIS_AGENTS_BUDGET && patchSetting({ JARVIS_AGENTS_BUDGET: e.target.value.trim() })
+            }
+          />
+        </label>
+      </div>
+      <Agents />
     </>
   )
   const alertsBlock = (
@@ -992,6 +1070,9 @@ export function Settings() {
               Let JARVIS take real actions (run commands, change files, click and type in the browser)
             </label>
             <p className="mem-note">{writes.help} Applies after a restart (the banner above has the button).</p>
+
+            <h3>Agents</h3>
+            {agentsBlock}
 
             <h3>Connectors</h3>
             <Connectors />
