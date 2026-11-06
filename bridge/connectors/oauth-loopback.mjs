@@ -25,10 +25,12 @@ const PUBLIC_HOSTS = new Set(['127.0.0.1', 'localhost'])
 
 /**
  * Listen once for the provider's redirect.
- * @param {{ state: string, timeoutMs: number, bindHost?: string, publicHost?: '127.0.0.1'|'localhost' }} opts
+ * `port` is 0 (any free port) unless the provider only accepts a redirect
+ * address registered with its port (Dropbox, task C31).
+ * @param {{ state: string, timeoutMs: number, bindHost?: string, publicHost?: '127.0.0.1'|'localhost', port?: number }} opts
  * @returns {Promise<{ redirectUri: string, result: Promise<{ code?: string, error?: string }>, close(): void }>}
  */
-export function listenOnce({ state, timeoutMs, bindHost = '127.0.0.1', publicHost = '127.0.0.1' }) {
+export function listenOnce({ state, timeoutMs, bindHost = '127.0.0.1', publicHost = '127.0.0.1', port: wantPort = 0 }) {
   if (!PUBLIC_HOSTS.has(publicHost)) throw new Error('The sign-in listener only answers a loopback name.')
   return new Promise((resolveListen, rejectListen) => {
     let settle
@@ -73,7 +75,7 @@ export function listenOnce({ state, timeoutMs, bindHost = '127.0.0.1', publicHos
     server.on('error', (err) => {
       if (!server.listening) rejectListen(err)
     })
-    server.listen(0, bindHost, () => {
+    server.listen(wantPort, bindHost, () => {
       port = server.address().port
       resolveListen({ redirectUri: `http://${publicHost}:${port}`, result, close: () => finish({ error: 'cancelled' }) })
     })
