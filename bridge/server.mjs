@@ -104,6 +104,8 @@ import { createConnectorWatcher } from './connectors/watch.mjs'
 import { createGoogleClient, GOOGLE_CLIENT_ID } from './connectors/google-oauth.mjs'
 import { outlookConnector } from './connectors/outlook.mjs'
 import { createMicrosoftClient, MICROSOFT_CLIENT_ID } from './connectors/microsoft-oauth.mjs'
+import { dropboxConnector } from './connectors/dropbox.mjs'
+import { createDropboxClient, DROPBOX_CLIENT_ID } from './connectors/dropbox-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { createConnectorOptions } from './connectors/options.mjs'
 import { checkForUpdate } from './update.mjs'
@@ -609,6 +611,16 @@ connectors.registerAll([
     id: 'outlook',
     create: (ctx) => outlookConnector({
       microsoftClient: createMicrosoftClient(connectorCredentialStore.scoped(MICROSOFT_CLIENT_ID)),
+    }).create(ctx),
+  },
+  {
+    // Dropbox (task C31), read-only (files.metadata.read, files.content.read):
+    // OAuth with PKCE and a refresh token against the owner's own Dropbox app
+    // (app key only, kept under the `dropbox` credential id). Plain-text files
+    // only, from api.dropboxapi.com and content.dropboxapi.com only.
+    id: 'dropbox',
+    create: (ctx) => dropboxConnector({
+      dropboxClient: createDropboxClient(connectorCredentialStore.scoped(DROPBOX_CLIENT_ID)),
     }).create(ctx),
   },
   {
