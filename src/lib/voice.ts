@@ -5,6 +5,7 @@ import { startVad, type Vad } from './vad'
 import { caps } from './capabilities'
 import { languageOption, type Language } from './language'
 import { noteSpeechEnd, noteTranscribed } from './trace'
+import { offerSegment, speakerEnabled } from './speaker.ts'
 import { cloudMayListen, makeAudioRouter, type UploadMeta } from './wake/router.ts'
 import type { WakeEngine } from './wake/engine.ts'
 
@@ -563,6 +564,9 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       drop('back asleep before it was sent')
       return
     }
+    // Who is talking, worked out beside the transcription so it adds no wait
+    // (plan 01, Q85). Only while talking to him, and only when turned on.
+    if (mode === 'command' && speakerEnabled()) offerSegment(blob)
     const t0 = performance.now()
     try {
       const language = languageOption(h.language())

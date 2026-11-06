@@ -10,6 +10,7 @@ import { setQuickStart } from '../lib/tts'
 import { createWizardTracker, postSetupEvent } from '../lib/setupMetrics'
 import { languageProfileFrom, setReflexesEnabled, setReflexLanguageProfile } from '../lib/reflex'
 import { setBriefingOfferTime } from '../lib/briefing'
+import { People } from './People'
 import {
   getSettings,
   getSettingsSchema,
@@ -1079,6 +1080,9 @@ export function Settings() {
 
             <h3>Channels</h3>
             <Channels />
+
+            <h3>People</h3>
+            <People on={s.JARVIS_SPEAKER_ID === '1'} onToggle={(on) => patchSetting({ JARVIS_SPEAKER_ID: on ? '1' : '0' })} />
 
             <h3>Diagnostics</h3>
             {metricsToggle}

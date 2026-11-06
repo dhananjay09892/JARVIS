@@ -51,6 +51,8 @@ import {
   type TimerView,
 } from './lib/reflex'
 import { makeReflexMemory } from './lib/reflexNote'
+import { IDLE as ENROL_IDLE, stepEnrol, type EnrolState } from './lib/enrolDialogue.ts'
+import { enrolSampled, setSpeakerEnabled, speakerEnabled, startSampling, stopSampling, type EnrolReply } from './lib/speaker.ts'
 import {
   briefingOfferTimeSet,
   fetchBriefing,
@@ -138,6 +140,8 @@ export default function App() {
   const lastRang = useRef(0)
   /** What reflexes did since the last model turn, told to the model with the next one (Q75). */
   const reflexMemory = useRef(makeReflexMemory())
+  /** Where the spoken "learn my voice" dialogue is (plan 01, Q85). */
+  const enrolState = useRef<EnrolState>(ENROL_IDLE)
   /**
    * The morning briefing being read out (plan 12, Q34), section by section.
    * Kept when he is talked over, so "skip" carries on with the next section;
@@ -377,6 +381,42 @@ export default function App() {
         }
       }
       return
+    }
+
+    // Spoken enrolment (plan 01, Q85): "learn my voice", with consent asked first.
+    // Only when speaker recognition is on; handled here so none of it reaches the model.
+    if (speakerEnabled()) {
+      const r = stepEnrol(enrolState.current, said)
+      if (r.handled) {
+        enrolState.current = r.state
+        if (r.startSample) startSampling()
+        if (r.state.step === 'idle' && !r.enrol) stopSampling()
+        try {
+          let say = r.say
+          if (r.enrol) {
+            s.setPhase('thinking')
+            const res = await enrolSampled(r.enrol.name).catch(() => ({ ok: false, reason: 'failed' }) as EnrolReply)
+            say = res.ok
+              ? `Done. I will know your voice now, ${r.enrol.name}. You can delete it any time in Settings.`
+              : res.reason === 'too-short'
+                ? 'That was too short to learn from. Say "learn my voice" to try again.'
+                : 'I could not learn your voice. Please check Settings and try again.'
+          }
+          s.pushTurn({ id: newId(), role: 'jarvis', text: say })
+          s.setPhase('speaking')
+          spk.say(say)
+          await spk.end()
+        } finally {
+          if (!stale()) {
+            speaker.current = null
+            sfx.duck(false)
+            music.duck(false)
+            s.setPhase('listening')
+            listen(FOLLOW_UP_MS)
+          }
+        }
+        return
+      }
     }
 
     // Quick commands: stop, volume, timers, the time and date, "say that again".
@@ -859,6 +899,8 @@ export default function App() {
     setReflexLanguageProfile(languageProfileFrom(wakeSettings))
     // A set briefing time (plan 12, Q78): only then does a wake ask the bridge.
     setBriefingOfferTime(wakeSettings?.JARVIS_BRIEFING_TIME)
+    // Who is speaking (plan 01, Q85): off unless turned on in Settings.
+    setSpeakerEnabled(wakeSettings?.JARVIS_SPEAKER_ID === '1')
     // Timers from before a reload come back now that sound is allowed.
     timers.current ??= browserTimers(onTimerDone)
 
