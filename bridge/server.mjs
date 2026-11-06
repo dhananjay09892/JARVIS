@@ -1976,6 +1976,12 @@ const handleRequest = async (req, res) => {
     if (!svc) return json(503, { ok: false, reason: 'speaker model not installed' })
     const sub = requestUrl.pathname.slice('/speaker/'.length)
     if (req.method === 'GET' && sub === 'people') return json(200, { ok: true, people: svc.people() })
+    // Delete is a POST so the browser's preflight (GET, POST, PATCH) needs no new method.
+    const forgetMatch = /^people\/([^/]+)\/forget$/.exec(sub)
+    if (req.method === 'POST' && forgetMatch) {
+      const gone = svc.forget(decodeURIComponent(forgetMatch[1]))
+      return json(gone ? 200 : 404, { ok: gone })
+    }
     if (req.method === 'DELETE' && sub.startsWith('people/')) {
       const gone = svc.forget(decodeURIComponent(sub.slice(7)))
       return json(gone ? 200 : 404, { ok: gone })

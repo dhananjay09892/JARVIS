@@ -113,3 +113,10 @@ test('the preface names a known speaker and warns about a guest', () => {
   assert.match(speakerPreface({ name: 'Asha', role: 'owner' }), /Asha \(owner\)/)
   assert.match(speakerPreface({ role: 'guest' }), /guest/)
 })
+
+test('the bridge forgets a person over POST, so the browser preflight needs no new method', async () => {
+  const { readFileSync } = await import('node:fs')
+  const src = readFileSync(new URL('./server.mjs', import.meta.url), 'utf8')
+  assert.match(src, /req\.method === 'POST' && forgetMatch/)
+  assert.match(src, /people\\\/\(\[\^\/\]\+\)\\\/forget/)
+})
