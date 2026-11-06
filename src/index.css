@@ -2110,3 +2110,7 @@ kbd {
 .conn-attention { background: #f5b942; }
 .conn-error { background: #ff5c5c; }
 .conn-disconnected { background: #888; }
+
+/* Settings → Agents (agents phase A3) */
+.agent-roster { list-style: none; margin: 0; padding: 0; }
+.agent-roster .conn-card p { margin: 2px 0; }
