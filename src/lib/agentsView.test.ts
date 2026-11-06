@@ -14,6 +14,7 @@ import {
   costText,
   definitionPatch,
   filterAgents,
+  fromTemplate,
   isAgentId,
   isUnused,
   modeText,
@@ -23,9 +24,11 @@ import {
   reviewChoice,
   successText,
   suggestCopyId,
+  suggestNewId,
   type AgentCard,
   type AgentDetail,
   type AgentStats,
+  type AgentTemplate,
 } from './agentsView.ts'
 // @ts-expect-error plain JS bridge modules, no type declarations
 import { createAgentRegistry, createToolCatalogue } from '../../bridge/agents.mjs'
@@ -266,4 +269,43 @@ test('switches, copies, edits and deletes round-trip through the routes', () => 
   } finally {
     b.done()
   }
+})
+
+// A11: new agents from a template.
+
+test('a template becomes the owner\'s own agent: new id and name, made by the owner, never delegating', () => {
+  const t = {
+    definition: { v: 1, id: 'coordinator', name: 'Coordinator', description: 'd', mode: 'on-demand' as const, delegate: ['writer'], createdBy: 'builtin' as const, requestedBy: 'x', body: 'b' },
+  }
+  const out = fromTemplate(t, ' my-coord ', ' Mine ')
+  assert.equal(out.id, 'my-coord')
+  assert.equal(out.name, 'Mine')
+  assert.equal(out.createdBy, 'user')
+  assert.deepEqual(out.delegate, [])
+  assert.equal('requestedBy' in out, false)
+  assert.equal('v' in out, false)
+  assert.equal(fromTemplate(t, 'x', '  ').name, 'Coordinator')
+})
+
+test('a new id comes from the name and is free', () => {
+  assert.equal(suggestNewId('Daily check', []), 'daily-check')
+  assert.equal(suggestNewId('Daily check', ['daily-check']), 'daily-check-2')
+  assert.equal(suggestNewId('42!!', []), 'my-agent')
+  assert.ok(isAgentId(suggestNewId('A'.repeat(80), [])))
+})
+
+test('every template from the API creates a valid agent of the owner\'s through the routes', async () => {
+  const b = bridge()
+  try {
+    const templates = ((await b.call('GET', '/agents/templates')).body.templates) as AgentTemplate[]
+    assert.ok(templates.length >= 2)
+    for (const t of templates) {
+      const id = suggestNewId(`${t.name} mine`, [])
+      const r = await b.call('POST', '/agents', { definition: fromTemplate(t, id, `${t.name} (mine)`) })
+      assert.equal(r.status, 201, `${t.id}: ${JSON.stringify(r.body)}`)
+      assert.equal(r.body.agent.createdBy, 'user')
+      assert.equal(r.body.agent.active, true)
+      assert.equal(r.body.agent.switchedOn, t.mode === 'on-demand', 'anything that runs unasked starts off')
+    }
+  } finally { b.done() }
 })

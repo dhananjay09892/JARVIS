@@ -105,6 +105,27 @@ export type AgentReply = {
   agent?: AgentCard
 }
 
+/** A starting point for "New agent": a built-in agent or a starter shape. */
+export type AgentTemplate = {
+  id: string
+  name: string
+  description: string
+  mode: AgentMode
+  source: 'builtin' | 'starter'
+  definition: Partial<AgentDefinition> & { body: string }
+}
+
+/** A definition JARVIS drafted from a description, waiting for the owner's approval. */
+export type AgentDraft = {
+  id: string
+  createdAt: number
+  definition: AgentDefinition
+  file: string
+  dropped: { tool: string; reason: string }[]
+  notes: string[]
+  card: { title: string; details: string }
+}
+
 /** Rows shown per page of the roster. */
 export const PAGE_SIZE = 50
 /** Days without a run before the "unused" hint shows. */
@@ -244,4 +265,29 @@ export function replyText(r: AgentReply, fallback = 'That did not work.'): strin
   const head = (r.reason || fallback).slice(0, 200)
   const reasons = Array.isArray(r.reasons) ? r.reasons.filter((x) => typeof x === 'string').slice(0, MAX_REASONS) : []
   return reasons.length ? `${head} ${reasons.map((x) => x.slice(0, 160)).join('; ')}` : head
+}
+
+/**
+ * The owner's own agent from a template: the template's definition under a
+ * new id and name, made by the owner. Never delegates and never carries who
+ * asked; the bridge checks it like any new agent.
+ */
+export function fromTemplate(template: Pick<AgentTemplate, 'definition'>, id: string, name: string): Record<string, unknown> {
+  const { v: _v, requestedBy: _asked, ...rest } = template.definition
+  return {
+    ...rest,
+    id: id.trim(),
+    name: name.trim() || template.definition.name || id.trim(),
+    createdBy: 'user',
+    delegate: [],
+  }
+}
+
+/** An id for a new agent from its name, free of the ones taken. */
+export function suggestNewId(name: string, taken: Iterable<string>): string {
+  const used = new Set(taken)
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^[^a-z]+/, '').slice(0, 34).replace(/-+$/, '') || 'my-agent'
+  if (!used.has(base)) return base
+  for (let n = 2; n < 100; n++) if (!used.has(`${base}-${n}`)) return `${base}-${n}`
+  return base
 }

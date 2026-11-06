@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { agentOperations, roster, taskBrief as brief } from './agent-ask.mjs'
 import { DELEGATE_SERVER, MAX_WAIT_MS } from './agent-delegation.mjs'
 
-const ORCHESTRATOR_TOOLS = ['spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'start_agent', 'list_agents']
+const ORCHESTRATOR_TOOLS = ['spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'draft_agent', 'start_agent', 'list_agents']
 export const isTaskTool = (name) => ORCHESTRATOR_TOOLS.includes(name)
 
 const reply = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }] })
@@ -40,12 +40,26 @@ function startAgentText(agents) {
 }
 
 /**
- * @param {object} manager the task manager (tasks.mjs)
- * @param {{ agents?: { list?: Function, isActive: Function } | null }} [o] the
- *   switched agent registry. Only the voice session builds this server, so
- *   only it can start or list agents.
+ * The draft_agent tool's work: draft, put the approval card up, answer at
+ * once. The card's answer saves (or forgets) the draft later.
+ *
+ * @param {ReturnType<import('./agent-drafts.mjs').createAgentDrafter> | null} drafts
+ * @param {((title: string, details: string) => Promise<boolean>) | null} approve the approval hub
  */
-export function taskServer(manager, { agents = null } = {}) {
+export async function draftAgentTool(drafts, approve, { description } = {}) {
+  if (!drafts || typeof approve !== 'function') return { drafted: false, reason: 'Making agents by description is not available.' }
+  const { settled: _later, ...out } = await drafts.askToCreate({ description, requestedBy: 'owner' }, approve)
+  return out
+}
+
+/**
+ * @param {object} manager the task manager (tasks.mjs)
+ * @param {{ agents?: { list?: Function, isActive: Function } | null, drafts?: object | null, approve?: Function | null }} [o]
+ *   the switched agent registry, the agent drafter (agent-drafts.mjs) and the
+ *   approval hub's request. Only the voice session builds this server, so
+ *   only it can start, list or draft agents.
+ */
+export function taskServer(manager, { agents = null, drafts = null, approve = null } = {}) {
   const ops = taskOperations(manager)
   const agentOps = agentOperations(manager, agents)
   return createSdkMcpServer({
@@ -73,6 +87,12 @@ export function taskServer(manager, { agents = null } = {}) {
         },
         async (a) => reply(agentOps.start(a))),
       tool('list_agents', 'Every named agent, what it is for, and whether it can be asked now.', {}, async () => reply(agentOps.list())),
+      tool('draft_agent',
+        'Draft a new named agent from the owner\'s description, e.g. "make me an agent that watches my GitHub notifications". ' +
+        'An approval card shows what it may use; nothing is saved until the owner approves it. Use it only when the owner asks for a new agent. ' +
+        'Say the answer\'s "say" line; do not read the card out.',
+        { description: z.string().min(1).max(2000).describe('What the agent should do, in the owner\'s words') },
+        async (a) => reply(await draftAgentTool(drafts, approve, a))),
     ],
   })
 }

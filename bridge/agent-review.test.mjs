@@ -131,7 +131,7 @@ test('the reviewer has no tools: no servers, every built-in hidden, every call r
   for (const name of [...WRITE_BUILTINS, ...READ_ONLY_BUILTINS]) assert.ok(hidden.includes(name), `${name} hidden`)
 
   const src = readFileSync(new URL('./server.mjs', import.meta.url), 'utf8')
-  const body = src.slice(src.indexOf('function reviewerTurn('), src.indexOf('const agentReviewer'))
+  const body = src.slice(src.indexOf('function toollessTurn('), src.indexOf('const agentReviewer'))
   assert.match(body, /const allowed = \[\]/)
   assert.match(body, /mcpServers: \{\},/)
   assert.match(body, /hideTools: hiddenTools\(allowed\)/)

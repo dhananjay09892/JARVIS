@@ -1,5 +1,5 @@
 import { BRIDGE_HTTP_URL } from '../config'
-import type { AgentDetail, AgentReply, AgentsList } from './agentsView'
+import type { AgentDetail, AgentDraft, AgentReply, AgentTemplate, AgentsList } from './agentsView'
 
 /**
  * Settings → Agents (agents phase A3): the page's side of
@@ -49,3 +49,31 @@ export const updateAgentDefinition = (id: string, definition: Record<string, unk
   post(at(id, 'update'), { definition })
 export const reloadAgents = () => post('/reload')
 
+
+export async function listTemplates(): Promise<AgentTemplate[]> {
+  const res = await fetch(`${BRIDGE_HTTP_URL}/agents/templates`, { signal: AbortSignal.timeout(5000) })
+  if (!res.ok) throw new Error('Could not read the templates.')
+  return ((await res.json()) as { templates: AgentTemplate[] }).templates
+}
+
+export async function listDrafts(): Promise<AgentDraft[]> {
+  const res = await fetch(`${BRIDGE_HTTP_URL}/agents/drafts`, { signal: AbortSignal.timeout(5000) })
+  if (!res.ok) return []
+  return ((await res.json()) as { drafts: AgentDraft[] }).drafts
+}
+
+export const createAgent = (definition: Record<string, unknown>) => post('', { definition })
+/** JARVIS drafts the agent; nothing is saved until the draft is approved. A draft takes a model turn. */
+export async function draftAgent(description: string): Promise<AgentReply & { draft?: AgentDraft }> {
+  const res = await fetch(`${BRIDGE_HTTP_URL}/agents/drafts`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ description }),
+    signal: AbortSignal.timeout(180_000),
+  })
+  const data = (await res.json().catch(() => ({}))) as AgentReply & { draft?: AgentDraft }
+  if (!res.ok && data.ok !== false) return { ok: false, reason: 'That did not work.' }
+  return data
+}
+export const approveDraft = (draftId: string) => post(`/drafts/${encodeURIComponent(draftId)}/approve`)
+export const discardDraft = (draftId: string) => post(`/drafts/${encodeURIComponent(draftId)}/discard`)
