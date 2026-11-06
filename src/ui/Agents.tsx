@@ -3,17 +3,24 @@ import {
   MODE_LABEL,
   PAGE_SIZE,
   UNUSED_DAYS,
+  approveDraft,
   budgetText,
   connectorsText,
   copyAgent,
   costText,
+  createAgent,
   definitionPatch,
   deleteAgent,
+  discardDraft,
+  draftAgent,
   filterAgents,
+  fromTemplate,
   getAgent,
   isAgentId,
   isUnused,
   listAgents,
+  listDrafts,
+  listTemplates,
   modeText,
   pageOf,
   readBudget,
@@ -23,11 +30,14 @@ import {
   setAgentEnabled,
   successText,
   suggestCopyId,
+  suggestNewId,
   updateAgentDefinition,
   updateAgentFile,
   type AgentCard,
   type AgentDetail,
+  type AgentDraft,
   type AgentEdits,
+  type AgentTemplate,
   type AgentReply,
   type AgentsList,
 } from '../lib/agents'
@@ -38,7 +48,10 @@ import {
  * "unused for 30 days" hint; one agent's detail with how it runs, its tools,
  * connectors, budget and review, its recent runs and cost; copy, delete and
  * edit for the owner's own agents. Built-in agents can be read, copied and
- * switched, never changed.
+ * switched, never changed. A new agent starts from a template (it is then the
+ * owner's own), or from a description: JARVIS drafts it, the draft is shown as
+ * an approval card with every tool and connector spelled out, and it is saved
+ * as agent-made only when the owner approves it.
  *
  * Everything shown is plain text (React escapes it); an agent's instructions
  * and file are shown in a <pre> or a <textarea>, never as HTML. The bridge
@@ -333,6 +346,145 @@ function Detail({
   )
 }
 
+/** A drafted agent waiting for an answer: everything it would get, then approve or discard. */
+function DraftCard({ draft, busy, act }: { draft: AgentDraft; busy: boolean; act: Act }) {
+  const d = draft.definition
+  return (
+    <li className="conn-card" role="group" aria-label={draft.card.title}>
+      <strong>{draft.card.title}</strong>
+      <pre className="mem-note">{draft.card.details}</pre>
+      <details>
+        <summary className="mem-note">Instructions</summary>
+        <pre className="mem-note">{d.body}</pre>
+      </details>
+      <div className="mem-add">
+        <button disabled={busy} onClick={() => void act(() => approveDraft(draft.id), () => `${d.name} saved.`)}>
+          Approve and save
+        </button>
+        <button disabled={busy} onClick={() => void act(() => discardDraft(draft.id), () => 'Draft discarded.')}>
+          Discard
+        </button>
+      </div>
+    </li>
+  )
+}
+
+/** "New agent": from a template, or by describing it. */
+function NewAgent({ roster, busy, act, close }: { roster: AgentCard[]; busy: boolean; act: Act; close: () => void }) {
+  const [how, setHow] = useState<'describe' | 'template'>('describe')
+  const [templates, setTemplates] = useState<AgentTemplate[] | null>(null)
+  const [picked, setPicked] = useState('')
+  const [name, setName] = useState('')
+  const [id, setId] = useState('')
+  const [description, setDescription] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (how !== 'template' || templates) return
+    listTemplates()
+      .then((t) => {
+        setTemplates(t)
+        if (t[0]) {
+          setPicked(t[0].id)
+          setName(t[0].name)
+          setId(suggestNewId(t[0].name, roster.map((r) => r.id)))
+        }
+      })
+      .catch(() => setError('Could not read the templates.'))
+  }, [how, templates, roster])
+
+  const template = templates?.find((t) => t.id === picked) ?? null
+  const pick = (tid: string) => {
+    const t = templates?.find((x) => x.id === tid)
+    setPicked(tid)
+    if (t) {
+      setName(t.name)
+      setId(suggestNewId(t.name, roster.map((r) => r.id)))
+    }
+  }
+  const create = async () => {
+    if (!template) return
+    if (!isAgentId(id.trim())) return setError('Use lowercase letters, digits and dashes for the id, starting with a letter (up to 40).')
+    setError('')
+    const r = await act(() => createAgent(fromTemplate(template, id, name)), () => `${name.trim() || id} created. It is yours to edit.`)
+    if (r?.ok) close()
+  }
+  const describe = async () => {
+    if (!description.trim()) return setError('Say what the agent should do.')
+    setError('')
+    const r = await act(() => draftAgent(description.trim()), () => 'Drafted. Check what it may use below, then approve or discard it.')
+    if (r?.ok) setDescription('')
+  }
+
+  return (
+    <fieldset className="conn-grants">
+      <legend>New agent</legend>
+      <div className="mem-add" role="radiogroup" aria-label="How to make it">
+        <label>
+          <input type="radio" checked={how === 'describe'} onChange={() => setHow('describe')} /> Describe it
+        </label>
+        <label>
+          <input type="radio" checked={how === 'template'} onChange={() => setHow('template')} /> From a template
+        </label>
+      </div>
+      {how === 'describe' ? (
+        <>
+          <p className="mem-note">
+            Say what it should do. JARVIS drafts it with only the tools your permissions allow; nothing is saved until you approve
+            the draft.
+          </p>
+          <textarea
+            aria-label="Describe the agent"
+            placeholder="Make me an agent that watches my GitHub notifications"
+            value={description}
+            rows={3}
+            maxLength={2000}
+            disabled={busy}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <button disabled={busy || !description.trim()} onClick={() => void describe()}>
+            {busy ? 'Working…' : 'Draft it'}
+          </button>
+        </>
+      ) : (
+        <>
+          {templates && (
+            <label>
+              Start from{' '}
+              <select value={picked} disabled={busy} onChange={(e) => pick(e.target.value)}>
+                {templates.map((t) => (
+                  <option key={`${t.source}:${t.id}`} value={t.id}>
+                    {t.name} ({t.source === 'builtin' ? 'built-in' : MODE_LABEL[t.mode] ?? t.mode})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {template && <p className="mem-note">{template.description}</p>}
+          <label>
+            Name <input value={name} maxLength={60} disabled={busy} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label>
+            Id <input value={id} maxLength={40} disabled={busy} onChange={(e) => setId(e.target.value)} />
+          </label>
+          <button disabled={busy || !template} onClick={() => void create()}>
+            Create
+          </button>
+          {template && template.definition.mode !== 'on-demand' && (
+            <p className="mem-note">It runs without being asked, so it starts switched off.</p>
+          )}
+        </>
+      )}
+      {error && (
+        <p className="mem-note" role="alert">
+          {error}
+        </p>
+      )}
+      <button onClick={close}>Close</button>
+    </fieldset>
+  )
+}
+
 export function Agents() {
   const [list, setList] = useState<AgentsList | null>(null)
   const [note, setNote] = useState('')
@@ -341,10 +493,13 @@ export function Agents() {
   const [page, setPage] = useState(0)
   const [open, setOpen] = useState<string | null>(null)
   const [version, setVersion] = useState(0)
+  const [drafts, setDrafts] = useState<AgentDraft[]>([])
+  const [making, setMaking] = useState(false)
 
   const load = useCallback(async () => {
     try {
       setList(await listAgents())
+      setDrafts(await listDrafts().catch(() => []))
     } catch {
       setNote('Could not read the agents.')
     }
@@ -398,7 +553,21 @@ export function Agents() {
         <button disabled={busy} onClick={() => void act(reloadAgents, () => 'Agent files read again.')}>
           Read files again
         </button>
+        <button disabled={busy} aria-pressed={making} onClick={() => setMaking(!making)}>
+          New agent
+        </button>
       </div>
+      {making && <NewAgent roster={list.agents} busy={busy} act={act} close={() => setMaking(false)} />}
+      {drafts.length > 0 && (
+        <section aria-labelledby="agent-drafts">
+          <h5 id="agent-drafts">Waiting for your approval</h5>
+          <ul className="agent-roster">
+            {drafts.map((d) => (
+              <DraftCard key={d.id} draft={d} busy={busy} act={act} />
+            ))}
+          </ul>
+        </section>
+      )}
       {open && <Detail id={open} roster={list.agents} busy={busy} act={act} close={() => setOpen(null)} version={version} />}
       {list.agents.length === 0 && <p className="mem-note">No agents yet.</p>}
       {list.agents.length > 0 && roster.length === 0 && <p className="mem-note">No agent matches.</p>}

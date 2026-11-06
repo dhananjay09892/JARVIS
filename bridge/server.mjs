@@ -33,6 +33,7 @@ import { createTaskManager } from './tasks.mjs'
 import { AGENT_LIVE_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
 import { createAgentRoutes } from './agent-routes.mjs'
+import { createAgentDrafter } from './agent-drafts.mjs'
 import { createAgentScheduler, createScheduleState, scheduleStateFile } from './agent-schedule.mjs'
 import { createAgentTriggers } from './agent-triggers.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
@@ -1637,7 +1638,7 @@ const handleRequest = async (req, res) => {
         return res.end(JSON.stringify({ ok: false, reason: 'Send JSON.' }))
       }
     }
-    const out = agentRoutes.handle({ method: req.method, path: requestUrl.pathname, body })
+    const out = await agentRoutes.handle({ method: req.method, path: requestUrl.pathname, body })
     if (out) {
       res.writeHead(out.status, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
       return res.end(JSON.stringify(out.body))
@@ -2406,15 +2407,17 @@ ${task.goal}`,
 }
 
 /**
- * The reviewer pass for named agents (agent-review.mjs): one tool-less turn
- * on the default brain. It is given no servers, every built-in is hidden, and
+ * One tool-less turn on the default brain, for the reviewer pass on named
+ * agents (agent-review.mjs) and for drafting an agent from the owner's words
+ * (agent-drafts.mjs). It is given no servers, every built-in is hidden, and
  * its guard allows nothing (an empty allow-list) before the taint guard, so it
- * can only read the evidence in its prompt. Its policy is the reviewed agent's
- * view of the one engine, so its audit entries carry that agent's id.
+ * can only read what is in its prompt and write text. For a review its policy
+ * is the reviewed agent's view of the one engine, so its audit entries carry
+ * that agent's id; a draft belongs to no agent yet, so it uses the engine itself.
  */
-function reviewerTurn(agent) {
+function toollessTurn(agent) {
   return ({ prompt, systemPrompt, signal }) => {
-    const policy = basePolicy.forAgent(agent.id)
+    const policy = agent ? basePolicy.forAgent(agent.id) : basePolicy
     const allowed = []
     const budget = null
     const deny = async () => false
@@ -2437,7 +2440,7 @@ function reviewerTurn(agent) {
   }
 }
 
-const agentReviewer = (ctx) => createReviewer({ converse: reviewerTurn(ctx.agent) })(ctx)
+const agentReviewer = (ctx) => createReviewer({ converse: toollessTurn(ctx.agent) })(ctx)
 
 /**
  * The owner's agent settings (Settings → Agents), read live: the cap on
@@ -2509,13 +2512,32 @@ ${task.goal}`,
  * while the kill switch is on. A change refreshes the task manager, so an
  * agent that was switched off or deleted stops at once.
  */
+const agentGate = () => (killSwitch.isFrozen() ? 'JARVIS is frozen by the kill switch, so agents cannot be changed.' : null)
+
+/**
+ * New agents described in words (agent-drafts.mjs): drafted in a tool-less turn,
+ * narrowed to what the policy allows a worker, shown as an approval card and
+ * saved only once approved, as agent-made with who asked.
+ */
+const agentDrafter = createAgentDrafter({
+  registry: agentRegistry,
+  converse: toollessTurn(null),
+  tools: agentTools.catalogue,
+  connectors,
+  decideTool: (name) => basePolicy.decideTool(name),
+  defaultBudget: agentSettings.defaultBudget,
+  gate: agentGate,
+  changed: () => { taskManager.refresh() },
+})
+
 agentRoutes = createAgentRoutes({
   registry: agentRegistry,
   settings: agentSettings,
   saveSettings: updateSettings,
   tasks: taskManager,
-  gate: () => (killSwitch.isFrozen() ? 'JARVIS is frozen by the kill switch, so agents cannot be changed.' : null),
+  gate: agentGate,
   changed: () => { taskManager.refresh() },
+  drafts: agentDrafter,
 })
 
 /**
@@ -2829,7 +2851,7 @@ wss.on('connection', (socket, req) => {
     jarvis_eyes: visionServer(ask),
     // Only the voice session gets this server, so only it can start or list
     // named agents; a worker never does (agent-runtime.mjs WORKER_RULES).
-    jarvis_tasks: taskServer(taskManager, { agents: switchedAgents }),
+    jarvis_tasks: taskServer(taskManager, { agents: switchedAgents, drafts: agentDrafter, approve: auditedApprove(approvalHub.request, audit, 'voice') }),
     // Connector tools (plans/connectors): only granted, active ones; each
     // call is decided by the policy engine and again by the registry.
     ...connectorServerEntry(),

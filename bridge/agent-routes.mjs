@@ -14,6 +14,11 @@
  *   POST /agents/:id/enabled        { enabled, confirm? }  the per-agent switch; turning on an agent
  *                                   that runs unasked (scheduled, triggered, continuous) needs confirm
  *   POST /agents/:id/delete         { confirm: true }  delete a user agent
+ *   GET  /agents/templates          what "New agent" can start from: built-ins and starter shapes
+ *   GET  /agents/drafts             drafts made from a description, waiting for approval
+ *   POST /agents/drafts             { description }  draft an agent from the owner's words (agent-drafts.mjs)
+ *   POST /agents/drafts/:id/approve save the draft as an agent-made agent, approved
+ *   POST /agents/drafts/:id/discard forget the draft
  *
  * Rules this module keeps:
  *   - Built-in agents are read-only: they can be read, copied and switched,
@@ -47,6 +52,7 @@ import {
   checkAgentDefinition, formatAgentFile, parseAgentFile, MAX_FILE_CHARS, REVIEW_SET, UNATTENDED_MODES,
 } from './agent-definition.mjs'
 import { MAX_AGENT_FILES } from './agents.mjs'
+import { RESERVED_IDS, agentTemplates } from './agent-drafts.mjs'
 
 const AGENT_ID = /^[a-z][a-z0-9-]{0,39}$/
 const UNATTENDED = new Set(UNATTENDED_MODES)
@@ -130,6 +136,7 @@ export function agentFileText(def) {
  * @param {{ list: () => object[] }} [o.tasks] the task manager, for run history
  * @param {(write: { action: string, id: string }) => string | null} [o.gate] a reason to refuse a write, or null
  * @param {() => void} [o.changed] told after any change (the bridge refreshes the task manager)
+ * @param {ReturnType<import('./agent-drafts.mjs').createAgentDrafter> | null} [o.drafts] drafting from a description
  * @param {{ log?: Function, warn?: Function }} [o.log]
  */
 export function createAgentRoutes({
@@ -139,6 +146,7 @@ export function createAgentRoutes({
   tasks = { list: () => [] },
   gate = () => null,
   changed = () => {},
+  drafts = null,
   log = console,
 } = {}) {
   if (!registry || typeof registry.get !== 'function') throw new Error('agent routes: registry is required')
@@ -264,7 +272,7 @@ export function createAgentRoutes({
     const { def, text, errors } = readBody(body)
     if (errors) return bad('That definition is not valid.', 400, { reasons: errors })
     if (def.createdBy === 'agent') return bad('Agent-made definitions are saved from their approval card.', 400)
-    if (registry.has(def.id)) return bad(`There is already an agent called ${def.id}.`, 409)
+    if (registry.has(def.id) || RESERVED_IDS.includes(def.id)) return bad(`There is already an agent called ${def.id}.`, 409)
     if (userFileCount() >= MAX_AGENT_FILES) return bad(`You already have ${MAX_AGENT_FILES} agents; delete one first.`, 409)
     const problems = registry.check(def)
     if (problems.length) return bad('That definition cannot be used.', 422, { reasons: problems })
@@ -307,7 +315,7 @@ export function createAgentRoutes({
     if (!isObject(body) || typeof body.id !== 'string' || !AGENT_ID.test(body.id)) {
       return bad('Give the copy an id: lowercase letters, digits and dashes, starting with a letter.', 400)
     }
-    if (registry.has(body.id)) return bad(`There is already an agent called ${body.id}.`, 409)
+    if (registry.has(body.id) || RESERVED_IDS.includes(body.id)) return bad(`There is already an agent called ${body.id}.`, 409)
     if (body.name !== undefined && typeof body.name !== 'string') return bad('The name must be text.', 400)
     if (userFileCount() >= MAX_AGENT_FILES) return bad(`You already have ${MAX_AGENT_FILES} agents; delete one first.`, 409)
     const { requestedBy: _asked, review, ...rest } = source
@@ -373,6 +381,36 @@ export function createAgentRoutes({
     return ok({ id, deleted: true })
   }
 
+  /** `/agents/drafts…`: drafting from a description, and its approval. */
+  async function draftRoute(method, parts, body) {
+    if (!drafts) return bad('Drafting agents is not available.', 503)
+    if (parts.length === 1) {
+      if (method === 'GET') return ok({ drafts: drafts.list() })
+      if (method !== 'POST') return bad('Method not allowed.', 405)
+      if (!isObject(body) || typeof body.description !== 'string' || !body.description.trim()) {
+        return bad('Describe what the agent should do.', 400)
+      }
+      if (userFileCount() >= MAX_AGENT_FILES) return bad(`You already have ${MAX_AGENT_FILES} agents; delete one first.`, 409)
+      // The page is the owner, so the owner asked.
+      const r = await drafts.draft({ description: body.description, requestedBy: 'owner' })
+      return r.ok ? ok({ draft: r.draft }, 201) : bad(r.reason, 422, r.reasons ? { reasons: r.reasons } : {})
+    }
+    if (parts.length !== 3 || method !== 'POST') return bad('Not found.', 404)
+    const [, draftId, action] = parts
+    if (action === 'discard') {
+      const r = drafts.discard(draftId)
+      return r.ok ? ok({ id: draftId, discarded: true }) : bad(r.reason, r.status ?? 404)
+    }
+    if (action !== 'approve') return bad('Not found.', 404)
+    if (userFileCount() >= MAX_AGENT_FILES) return bad(`You already have ${MAX_AGENT_FILES} agents; delete one first.`, 409)
+    const r = drafts.approve(draftId, { by: 'owner' })
+    if (!r.ok) return bad(r.reason, r.status ?? 400, r.reasons ? { reasons: r.reasons } : {})
+    // A saved draft starts from its mode's default switch, like any new agent.
+    forgetSwitch(r.id)
+    notify()
+    return { ...detail(r.id), status: 201 }
+  }
+
   return {
     /**
      * @param {{ method: string, path: string, body?: unknown }} req
@@ -396,6 +434,13 @@ export function createAgentRoutes({
         notify()
         return ok({ summary, refused: registry.refused() })
       }
+      if (parts.length === 1 && parts[0] === 'templates') {
+        if (method !== 'GET') return bad('Method not allowed.', 405)
+        let budget = null
+        try { budget = typeof settings.defaultBudget === 'function' ? settings.defaultBudget() : null } catch { budget = null }
+        return ok({ templates: agentTemplates(registry, budget ?? undefined) })
+      }
+      if (parts[0] === 'drafts') return draftRoute(method, parts, body)
 
       const id = parts[0]
       if (!AGENT_ID.test(id)) return bad('No such agent.', 404)

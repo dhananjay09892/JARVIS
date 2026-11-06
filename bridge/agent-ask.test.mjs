@@ -236,7 +236,7 @@ test('the bridge builds the agent tools once, for the voice session, from the sw
   const server = readFileSync(new URL('./server.mjs', import.meta.url), 'utf8')
   const calls = server.match(/taskServer\(/g) ?? []
   assert.equal(calls.length, 1, 'one jarvis_tasks server, in the voice session')
-  assert.match(server, /jarvis_tasks: taskServer\(taskManager, \{ agents: switchedAgents \}\)/)
+  assert.match(server, /jarvis_tasks: taskServer\(taskManager, \{ agents: switchedAgents[,}]/)
   const tools = readFileSync(new URL('./task-tools.mjs', import.meta.url), 'utf8')
   assert.match(tools, /const ORCHESTRATOR_TOOLS = \[[^\]]*'start_agent', 'list_agents'\]/)
 })
