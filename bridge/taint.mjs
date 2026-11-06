@@ -287,6 +287,7 @@ export function outboundKind(toolName, input, { isEffectful = () => false } = {}
   // A delegated task is briefed in text the model wrote; a link in that brief
   // is one the worker will treat as named, so it is checked here, on the way in.
   if (mcp.server === 'jarvis_tasks') return mcp.tool === 'spawn_task' || mcp.tool === 'start_agent' ? 'scan' : 'none'
+  if (mcp.server === 'jarvis_delegate') return mcp.tool === 'start_agent' ? 'scan' : 'none'
   if (mcp.server.startsWith('jarvis')) return 'scan'
   return isEffectful(mcp.server, mcp.tool) ? 'always' : 'scan'
 }

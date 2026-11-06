@@ -9,3 +9,29 @@ export function missionAgent(task: Pick<TaskView, 'title' | 'agentName'>): Missi
   if (!name) return null
   return { label: name.toUpperCase(), title: `Run by the ${name} agent`, aria: `${task.title}, by ${name}` }
 }
+
+export type MissionRow<T> = { task: T; nested: boolean }
+
+/**
+ * The board's order: newest first, with each task an agent started
+ * (delegation) right under the task that started it, oldest child first.
+ * A child whose parent is no longer on the board stands on its own.
+ */
+export function missionRows<T extends Pick<TaskView, 'id' | 'createdAt' | 'parentId'>>(tasks: T[]): MissionRow<T>[] {
+  const ids = new Set(tasks.map((t) => t.id))
+  const isChild = (t: T) => typeof t.parentId === 'string' && t.parentId !== t.id && ids.has(t.parentId)
+  const children = new Map<string, T[]>()
+  for (const t of tasks) {
+    if (!isChild(t)) continue
+    const list = children.get(t.parentId as string) ?? []
+    list.push(t)
+    children.set(t.parentId as string, list)
+  }
+  const rows: MissionRow<T>[] = []
+  const top = tasks.filter((t) => !isChild(t)).sort((a, b) => b.createdAt - a.createdAt)
+  for (const t of top) {
+    rows.push({ task: t, nested: false })
+    for (const c of (children.get(t.id) ?? []).sort((a, b) => a.createdAt - b.createdAt)) rows.push({ task: c, nested: true })
+  }
+  return rows
+}

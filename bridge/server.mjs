@@ -42,7 +42,8 @@ import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.m
 import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSource, timeSource } from './context-broker.mjs'
 import { createBriefing } from './briefing.mjs'
 import { openTaskStore } from './task-store.mjs'
-import { taskServer, progressServer, isTaskTool } from './task-tools.mjs'
+import { taskServer, progressServer, delegateServer, isTaskTool } from './task-tools.mjs'
+import { DELEGATE_SERVER, DELEGATE_TOOLS } from './agent-delegation.mjs'
 import { openMemory } from './memory.mjs'
 import {
   createSpeakerService, createVoiceprintStore, loadSpeakerEmbedder, pcm16ToFloat, speakerPreface,
@@ -2337,7 +2338,7 @@ const workerBilledPerUse = (b) => (b?.id === 'claude' ? claudeAuth().mode === 'a
  * the same policy engine, with the agent's guard after the gate and its id on
  * every audit entry and approval card.
  */
-function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget }) {
+function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget, delegation = null }) {
   // The one policy engine, as this agent's view: the same decisions, with the
   // agent's id on every audit entry.
   const policy = basePolicy.forAgent(agent.id)
@@ -2356,9 +2357,14 @@ function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget }
   const controller = new AbortController()
   signal.addEventListener('abort', () => controller.abort(), { once: true })
 
-  const { allowed, dropped } = agentToolPlan(agent, { decideTool: policy.decideTool })
-  if (dropped.length) console.log(`[jarvis] agent ${agent.id}: not offered ${dropped.map((d) => `${d.tool} (${d.reason})`).join(', ')}`)
+  const plan = agentToolPlan(agent, { decideTool: policy.decideTool })
+  if (plan.dropped.length) console.log(`[jarvis] agent ${agent.id}: not offered ${plan.dropped.map((d) => `${d.tool} (${d.reason})`).join(', ')}`)
   const all = workerServers({ report, ask, approve, withMemory: agent.memory !== 'none' })
+  // The Coordinator, when the task manager lets this run delegate, also gets
+  // the delegation tools; the policy still has to agree to each of them.
+  const delegating = delegation ? DELEGATE_TOOLS.filter((n) => policy.decideTool(n)) : []
+  if (delegating.length) all[DELEGATE_SERVER] = delegateServer(delegation)
+  const allowed = [...plan.allowed, ...delegating]
   const mcpServers = narrowServers(all, allowed)
   const known = Object.entries(mcpServers).flatMap(([key, server]) => (toolNamesOf(server) ?? []).map((n) => `mcp__${key}__${n}`))
 
@@ -2435,6 +2441,8 @@ const taskManager = createTaskManager({
   defaultBudget: agentSettings.defaultBudget,
   reviewer: agentReviewer,
   reviewDefault: agentSettings.reviewerDefault,
+  // Delegation (agent-delegation.mjs): only the Coordinator, only its list, this deep.
+  maxDepth: agentSettings.maxDepth,
   costCounts: (agent) => {
     const pick = agentBrain(agent, brains)
     return pick.ok && workerBilledPerUse(pick.brain)

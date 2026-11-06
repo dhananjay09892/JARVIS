@@ -223,6 +223,9 @@ export type TaskView = {
   /** Set when the task runs as a named agent. */
   agentId?: string
   agentName?: string
+  /** Set when another agent started this one (delegation): the task that did, and how deep it is (2). */
+  parentId?: string
+  depth?: number
 }
 
 let onTask: ((task: TaskView) => void) | null = null

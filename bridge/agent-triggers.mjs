@@ -46,6 +46,7 @@
  * narrowed by agent-runtime.mjs and decided call by call by policy.mjs.
  */
 import { TOPICS } from './bus.mjs'
+import { DEPTH_CEILING } from './agent-delegation.mjs'
 import { isActive as taskActive } from './tasks.mjs'
 import { wrapUntrusted } from './untrusted.mjs'
 
@@ -57,8 +58,8 @@ export const COOLDOWN_MS = MINUTE
 /** At most this many starts per agent in any rolling hour. */
 export const MAX_RUNS_PER_HOUR = 6
 const HOUR = 60 * MINUTE
-/** The hard ceiling on depth, whatever the setting says. */
-export const DEPTH_CEILING = 2
+/** The hard ceiling on depth, whatever the setting says: the same one delegation keeps. */
+export { DEPTH_CEILING }
 const MAX_EVENT_TEXT = 2000
 const MAX_CHAIN = 500
 const clip = (s, n) => (typeof s === 'string' ? s.trim().slice(0, n) : '')
@@ -189,7 +190,7 @@ export function createAgentTriggers({
 
   /** Spawns the run and remembers it. Returns `{ ok, taskId }` or `{ ok: false, reason }`. */
   function start(agent, goal, depth, now) {
-    const r = safe(() => tasks.spawn({ title: agent.name, goal, agentId: agent.id }), { ok: false, reason: 'the task could not be queued' })
+    const r = safe(() => tasks.spawn({ title: agent.name, goal, agentId: agent.id, ...(depth > 1 && { depth }) }), { ok: false, reason: 'the task could not be queued' })
     if (!r?.ok) return { ok: false, reason: clip(r?.reason, 120) || 'refused' }
     latest.set(agent.id, r.task.id)
     starts.get(agent.id).push(now)
@@ -210,7 +211,9 @@ export function createAgentTriggers({
     if (typeof taskId !== 'string') return { depth: 1, source: null }
     const t = safe(() => tasks.get(taskId), null)
     if (!t?.agentId) return { depth: 1, source: null }
-    return { depth: (depthOf.get(taskId) ?? 1) + 1, source: t.agentId }
+    // A run another agent started (agent-delegation.mjs) carries its own depth.
+    const own = Number.isInteger(t.depth) && t.depth > 1 ? t.depth : 1
+    return { depth: (depthOf.get(taskId) ?? own) + 1, source: t.agentId }
   }
 
   /**
