@@ -44,11 +44,16 @@ const userDef = (over = {}) => ({
 })
 const refusedFor = (reg, file) => reg.refused().find((r) => r.file === file)
 
-test('the built-in folder ships with the app and holds no agents yet', () => {
+test('the built-in folder ships with the app and every file in it loads', () => {
   const files = readdirSync(BUILTIN_AGENTS_DIR).filter((f) => f.endsWith('.md'))
-  assert.deepEqual(files, [])
-  const reg = createAgentRegistry({ userDir: join(tmpdir(), 'jarvis-agents-missing-dir'), log: quiet })
-  assert.deepEqual(reg.load(), { loaded: 0, active: 0, refused: 0 })
+  assert.ok(files.includes('coordinator.md'))
+  // The tools a worker can be given (server.mjs workerCatalogue), as far as built-ins use them.
+  const tools = createToolCatalogue({ servers: { jarvis_task: ['report_progress', 'ask_owner'], jarvis_memory: ['list_memories', 'search_memory'] } })
+  const reg = createAgentRegistry({ userDir: join(tmpdir(), 'jarvis-agents-missing-dir'), tools, log: quiet })
+  const summary = reg.load()
+  assert.deepEqual(reg.refused(), [])
+  assert.deepEqual(summary, { loaded: files.length, active: files.length, refused: 0 })
+  assert.ok(reg.list().every((a) => a.source === 'builtin' && a.readOnly))
 })
 
 test('the user folder and approvals live in the JARVIS data directory', () => {

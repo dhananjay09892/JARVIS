@@ -34,7 +34,8 @@ function startAgentText(agents) {
   const on = roster(agents).filter((a) => a.on).slice(0, 20).map((a) => `${a.name} (${a.id})`)
   return 'Start a named agent on a goal, in the background. Use it when the owner asks an agent by name: ' +
     '"ask the researcher to…", "get the writer to…", "have the coder…". Pass the agent and a complete goal, ' +
-    'or pass the owner\'s own words as request and they are split for you. If the answer says the agent is unknown or off, ' +
+    'or pass the owner\'s own words as request and they are split for you. Words that name no agent go to the one agent that clearly fits ' +
+    'them (the answer says matched); when none clearly does, the answer says so. If the answer says the agent is unknown or off, ' +
     'say so in a sentence; do not start a plain task instead.' +
     (on.length ? ` Agents that can be asked now: ${on.join(', ')}.` : ' No agents are set up yet.')
 }
