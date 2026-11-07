@@ -4,7 +4,8 @@
  * against a temporary data folder with no network and no model.
  *
  *   GET  /agents                    the roster: every loaded agent with its switch, run numbers
- *                                   and last run; refused files with their reasons; the limits
+ *                                   and last run; refused files with their reasons; the limits;
+ *                                   how many agents JARVIS suggested, and how many were kept
  *   GET  /agents/:id                one agent: its whole definition, its file as text, numbers
  *   GET  /agents/:id/runs           its recent runs (newest first) and numbers
  *   POST /agents                    { definition } or { file }  create a user agent
@@ -137,6 +138,7 @@ export function agentFileText(def) {
  * @param {(write: { action: string, id: string }) => string | null} [o.gate] a reason to refuse a write, or null
  * @param {() => void} [o.changed] told after any change (the bridge refreshes the task manager)
  * @param {ReturnType<import('./agent-drafts.mjs').createAgentDrafter> | null} [o.drafts] drafting from a description
+ * @param {{ sync: Function, stats: Function } | null} [o.proposals] JARVIS's own suggestions (agent-proposals.mjs); told when a draft is answered
  * @param {{ log?: Function, warn?: Function }} [o.log]
  */
 export function createAgentRoutes({
@@ -147,6 +149,7 @@ export function createAgentRoutes({
   gate = () => null,
   changed = () => {},
   drafts = null,
+  proposals = null,
   log = console,
 } = {}) {
   if (!registry || typeof registry.get !== 'function') throw new Error('agent routes: registry is required')
@@ -161,6 +164,13 @@ export function createAgentRoutes({
   }
   const notify = () => {
     try { changed() } catch (err) { log?.warn?.('[jarvis] agents: refresh after a change failed:', err?.message ?? err) }
+  }
+  /** A draft was answered: a suggestion it came from is kept or dismissed now, not later. */
+  const answered = () => {
+    try { proposals?.sync() } catch { /* it catches up on its next look */ }
+  }
+  const suggestions = () => {
+    try { return proposals ? proposals.stats() : null } catch { return null }
   }
   const refusedWrite = (action, id) => {
     let why
@@ -399,6 +409,7 @@ export function createAgentRoutes({
     const [, draftId, action] = parts
     if (action === 'discard') {
       const r = drafts.discard(draftId)
+      if (r.ok) answered()
       return r.ok ? ok({ id: draftId, discarded: true }) : bad(r.reason, r.status ?? 404)
     }
     if (action !== 'approve') return bad('Not found.', 404)
@@ -407,6 +418,7 @@ export function createAgentRoutes({
     if (!r.ok) return bad(r.reason, r.status ?? 400, r.reasons ? { reasons: r.reasons } : {})
     // A saved draft starts from its mode's default switch, like any new agent.
     forgetSwitch(r.id)
+    answered()
     notify()
     return { ...detail(r.id), status: 201 }
   }
@@ -423,7 +435,7 @@ export function createAgentRoutes({
       if (parts.length === 0) {
         if (method === 'GET') {
           const all = allTasks()
-          return ok({ agents: registry.list().map((v) => card(v, all)), refused: registry.refused(), limits: limits() })
+          return ok({ agents: registry.list().map((v) => card(v, all)), refused: registry.refused(), limits: limits(), suggestions: suggestions() })
         }
         if (method === 'POST') return create(body)
         return bad('Method not allowed.', 405)

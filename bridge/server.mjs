@@ -34,6 +34,7 @@ import { AGENT_LIVE_SETTINGS, createAgentSettings, switchedRegistry } from './ag
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
 import { createAgentRoutes } from './agent-routes.mjs'
 import { createAgentDrafter } from './agent-drafts.mjs'
+import { createAgentProposer, createProposalState, proposalsStateFile } from './agent-proposals.mjs'
 import { createAgentScheduler, createScheduleState, scheduleStateFile } from './agent-schedule.mjs'
 import { createAgentTriggers } from './agent-triggers.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
@@ -2530,6 +2531,23 @@ const agentDrafter = createAgentDrafter({
   changed: () => { taskManager.refresh() },
 })
 
+/**
+ * Proposals from experience (agent-proposals.mjs): when the owner has asked
+ * for much the same thing three times, JARVIS drafts an agent (or a daily
+ * routine) through the drafter above. It waits on the Agents screen like any
+ * draft and is saved only if approved; a "no" is remembered. At most one a
+ * day; Settings → Agents → "Suggest new agents" turns it off.
+ */
+const agentProposer = createAgentProposer({
+  tasks: taskManager,
+  drafts: agentDrafter,
+  registry: agentRegistry,
+  enabled: agentSettings.proposals,
+  paused: agentSettings.paused,
+  notifier,
+  state: createProposalState({ file: proposalsStateFile() }),
+})
+
 agentRoutes = createAgentRoutes({
   registry: agentRegistry,
   settings: agentSettings,
@@ -2538,6 +2556,7 @@ agentRoutes = createAgentRoutes({
   gate: agentGate,
   changed: () => { taskManager.refresh() },
   drafts: agentDrafter,
+  proposals: agentProposer,
 })
 
 /**

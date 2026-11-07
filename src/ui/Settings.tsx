@@ -91,6 +91,7 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_AGENTS_MAX_CONCURRENT: { default: '3', options: ['1', '2', '3', '4', '5', '6', '7', '8'], help: '' },
   JARVIS_AGENTS_MAX_DEPTH: { default: '1', options: ['1', '2'], help: '' },
   JARVIS_AGENTS_REVIEWER: { default: '0', help: '' },
+  JARVIS_AGENTS_PROPOSALS: { default: '1', help: '' },
   JARVIS_AGENTS_BUDGET: { default: '40 calls, 20 min, $1.00', help: '' },
   JARVIS_BRIEFING: { default: '1', help: '' },
   JARVIS_BRIEFING_MAIL: { default: '0', help: '' },
@@ -442,6 +443,7 @@ export function Settings() {
   const agentsDepth = def(schema, 'JARVIS_AGENTS_MAX_DEPTH')
   const agentsReviewer = def(schema, 'JARVIS_AGENTS_REVIEWER')
   const agentsBudget = def(schema, 'JARVIS_AGENTS_BUDGET')
+  const agentsProposals = def(schema, 'JARVIS_AGENTS_PROPOSALS')
   const agentsMaxValue = s?.JARVIS_AGENTS_MAX_CONCURRENT || agentsMax.default
   const agentsDepthValue = s?.JARVIS_AGENTS_MAX_DEPTH || agentsDepth.default
   const agentsBlock = (
@@ -463,6 +465,15 @@ export function Settings() {
           onChange={(e) => patchSetting({ JARVIS_AGENTS_REVIEWER: e.target.checked ? '1' : '0' })}
         />{' '}
         Check agents’ work before it is reported
+      </label>
+      <label title={agentsProposals.help || undefined}>
+        <input
+          type="checkbox"
+          checked={(s?.JARVIS_AGENTS_PROPOSALS || agentsProposals.default) === '1'}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_AGENTS_PROPOSALS: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Suggest new agents when I ask for the same thing often
       </label>
       <label title={agentsMax.help || undefined}>
         Agents at once{' '}

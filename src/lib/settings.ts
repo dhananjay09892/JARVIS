@@ -65,6 +65,7 @@ export type PublicSettings = {
   JARVIS_AGENTS_BUDGET: string
   /** '1' | '0' — reviewer pass for agents that do not say otherwise. '' means the default (off). */
   JARVIS_AGENTS_REVIEWER: string
+  JARVIS_AGENTS_PROPOSALS: string
   /** '1' | '0' — pause all agents and background tasks. '' means the default (off). */
   JARVIS_AGENTS_PAUSED: string
   /** 'id=on|off,…' or 'none' — per-agent switches. '' means the default (none). */

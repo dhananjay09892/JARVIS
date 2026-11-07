@@ -7,6 +7,7 @@
  *   JARVIS_AGENTS_BUDGET          the budget for an agent whose file sets none
  *   JARVIS_AGENTS_REVIEWER        whether agents get a reviewer pass unless their file says otherwise
  *   JARVIS_AGENTS_PAUSED          "pause all agents"
+ *   JARVIS_AGENTS_PROPOSALS       whether JARVIS suggests new agents from repeated requests (drafts only)
  *   JARVIS_AGENT_SWITCHES         per-agent on/off
  *
  * Every value is read when it is needed, so changes apply live. A bad value
@@ -35,6 +36,7 @@ export const AGENT_SETTINGS = Object.freeze({
   defaultBudget: 'JARVIS_AGENTS_BUDGET',
   reviewer: 'JARVIS_AGENTS_REVIEWER',
   paused: 'JARVIS_AGENTS_PAUSED',
+  proposals: 'JARVIS_AGENTS_PROPOSALS',
   switches: 'JARVIS_AGENT_SWITCHES',
 })
 
@@ -128,6 +130,8 @@ export function createAgentSettings({ read, frozen = () => false } = {}) {
     maxDepth: () => whole(get(AGENT_SETTINGS.maxDepth), DEPTH),
     defaultBudget: () => parseBudget(get(AGENT_SETTINGS.defaultBudget)) ?? { ...DEFAULT_BUDGET },
     reviewerDefault: () => get(AGENT_SETTINGS.reviewer) === '1',
+    /** Suggest agents from repeated requests (agent-proposals.mjs): on unless set to '0'. Drafts only. */
+    proposals: () => get(AGENT_SETTINGS.proposals) !== '0',
 
     /** Why background work is paused now, or null when it may run. */
     paused() {
