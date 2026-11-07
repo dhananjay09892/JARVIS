@@ -445,9 +445,10 @@ export function createAgentDrafter({
     /**
      * Draft a definition from the owner's words. The draft waits for an
      * answer; nothing is written.
-     * @param {{ description: string, requestedBy?: string, signal?: AbortSignal }} o
+     * @param {{ description: string, requestedBy?: string, signal?: AbortSignal, notes?: string[] }} o
+     *   `notes` go on the card first (why it was drafted, when JARVIS proposed it)
      */
-    async draft({ description, requestedBy = 'owner', signal } = {}) {
+    async draft({ description, requestedBy = 'owner', signal, notes = [] } = {}) {
       const words = clip(description, MAX_DESCRIPTION)
       if (!words) return { ok: false, reason: 'Describe what the agent should do.' }
       if (typeof requestedBy !== 'string' || !AGENT_ID.test(requestedBy)) return { ok: false, reason: 'Who asked for the agent is missing.' }
@@ -479,7 +480,7 @@ export function createAgentDrafter({
         definition: shaped.definition,
         file: formatAgentFile(shaped.definition),
         dropped: shaped.dropped,
-        notes: shaped.notes,
+        notes: [...(Array.isArray(notes) ? notes : []).map((n) => clip(n, 200)).filter(Boolean).slice(0, 3), ...shaped.notes],
       }
       pending.set(d.id, d)
       log?.log?.(`[jarvis] agents: drafted ${d.definition.id}, waiting for approval`)

@@ -533,6 +533,17 @@ const DEFS = [
     visibleIn: 'simple',
   },
   {
+    id: 'JARVIS_AGENTS_PROPOSALS',
+    section: 'agents',
+    label: 'Suggest new agents',
+    help: 'When you ask for much the same thing three times, JARVIS drafts an agent (or a daily routine) for it and leaves the draft in Agents for you to approve or discard. Nothing is saved or switched on without you. At most one suggestion a day.',
+    type: 'boolean',
+    default: '1',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'simple',
+  },
+  {
     id: 'JARVIS_AGENT_SWITCHES',
     section: 'agents',
     label: 'Agents switched on or off',
