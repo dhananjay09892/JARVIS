@@ -10,7 +10,8 @@
  * Every file is parsed and checked by agent-definition.mjs, then checked
  * against what is actually installed:
  *
- *   - every tool it lists exists in the live tool catalogue;
+ *   - every tool it lists exists in the live tool catalogue, or is a tool of
+ *     an installed connector (granted or not; the runtime drops ungranted ones);
  *   - every connector it lists is registered, and one listed as `write`
  *     declares the write capability (the policy still decides each call);
  *   - its id is unique, and a user file may not reuse a built-in's id;
@@ -34,6 +35,7 @@ import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseAgentFile, MAX_FILE_CHARS } from './agent-definition.mjs'
 import { READ_ONLY_BUILTINS, WRITE_BUILTINS } from './policy.mjs'
+import { connectorMcpName } from './connectors/registry.mjs'
 import { settingsDir } from './settings.mjs'
 
 /** Where built-in definitions ship. */
@@ -103,6 +105,40 @@ function connectorIndex(connectors) {
     if (isRecord(c) && typeof c.id === 'string') index.set(c.id, isRecord(c.capabilities) ? c.capabilities : {})
   }
   return index
+}
+
+/**
+ * The tool names of every installed connector, granted or not, from the
+ * connector registry's `list()`. The live worker catalogue only holds the
+ * tools the owner has granted right now, so a built-in agent that names a
+ * Drive or Notion read tool would otherwise be refused until that connector
+ * is set up. Accepting the name grants nothing: the runtime still drops a
+ * tool the owner has not granted (agentToolPlan asks the policy, and the
+ * connector rule refuses an ungranted capability).
+ */
+function connectorToolNames(connectors) {
+  let list = []
+  try {
+    list = typeof connectors?.list === 'function' ? connectors.list() : connectors
+  } catch {
+    list = []
+  }
+  const names = new Set()
+  for (const c of Array.isArray(list) ? list : []) {
+    if (!isRecord(c) || typeof c.id !== 'string' || !Array.isArray(c.tools)) continue
+    for (const t of c.tools) {
+      if (isRecord(t) && typeof t.name === 'string' && typeof t.capability === 'string') {
+        names.add(connectorMcpName(c.id, t.capability, t.name))
+      }
+    }
+  }
+  return names
+}
+
+/** A tool check that also knows every installed connector's tools. */
+function withConnectorTools(hasTool, connectors) {
+  const installed = connectorToolNames(connectors)
+  return (n) => hasTool(n) || installed.has(n)
 }
 
 /** The tool catalogue as `has(name)`, from a catalogue, a Set/array or a predicate. */
@@ -198,7 +234,7 @@ export function createAgentRegistry({
   }
 
   function load() {
-    const hasTool = toolCheck(tools)
+    const hasTool = withConnectorTools(toolCheck(tools), connectors)
     const connectorCaps = connectorIndex(connectors)
     const approvals = readApprovals(approvalsFile)
     const next = new Map()
@@ -283,7 +319,7 @@ export function createAgentRegistry({
       const clash = existing && !(existing.source === 'user' && existing.id === replacing) ? existing : undefined
       return [
         ...placementProblems(def, { source: 'user', file: `${def?.id}.md`, existing: clash }),
-        ...installedProblems(def, toolCheck(tools), connectorIndex(connectors)),
+        ...installedProblems(def, withConnectorTools(toolCheck(tools), connectors), connectorIndex(connectors)),
       ]
     },
 

@@ -49,7 +49,13 @@ test('the built-in folder ships with the app and every file in it loads', () => 
   assert.ok(files.includes('coordinator.md'))
   // The tools a worker can be given (server.mjs workerCatalogue), as far as built-ins use them.
   const tools = createToolCatalogue({ servers: { jarvis_task: ['report_progress', 'ask_owner'], jarvis_memory: ['list_memories', 'search_memory'] } })
-  const reg = createAgentRegistry({ userDir: join(tmpdir(), 'jarvis-agents-missing-dir'), tools, log: quiet })
+  // The read connectors they name, installed but not granted (the live catalogue has none of their tools).
+  const connectors = [
+    { id: 'gdrive', capabilities: { read: true }, tools: [{ name: 'search_files', capability: 'read' }, { name: 'read_file', capability: 'read' }] },
+    { id: 'notion', capabilities: { read: true }, tools: [{ name: 'search_pages', capability: 'read' }] },
+    { id: 'obsidian', capabilities: { read: true }, tools: [{ name: 'search_notes', capability: 'read' }, { name: 'read_note', capability: 'read' }] },
+  ]
+  const reg = createAgentRegistry({ userDir: join(tmpdir(), 'jarvis-agents-missing-dir'), tools, connectors, log: quiet })
   const summary = reg.load()
   assert.deepEqual(reg.refused(), [])
   assert.deepEqual(summary, { loaded: files.length, active: files.length, refused: 0 })
@@ -135,6 +141,28 @@ test('unknown connectors, and write on a read-only connector, are refused', () =
     reg.load()
     assert.deepEqual(refusedFor(reg, 'a.md').reasons, ['connectors.spotify: no such connector is installed'])
     assert.deepEqual(refusedFor(reg, 'b.md').reasons, ['connectors.fake: this connector cannot write'])
+  } finally { s.done() }
+})
+
+test('tools of an installed connector count as installed even before they are granted', () => {
+  const s = setup()
+  try {
+    const connectors = [
+      ...CONNECTORS.filter((c) => c.id !== 'notion'),
+      { id: 'notion', capabilities: { read: true, write: true }, tools: [{ name: 'search_pages', capability: 'read' }, { name: 'append_block', capability: 'write' }] },
+    ]
+    s.writeDef(userDef({ id: 'a', tools: ['mcp__jarvis_connectors__notion__read__search_pages'], connectors: { notion: 'read' } }))
+    s.writeDef(userDef({ id: 'b', tools: ['mcp__jarvis_connectors__notion__read__delete_everything'], connectors: { notion: 'read' } }))
+    s.writeDef(userDef({ id: 'c', tools: ['mcp__jarvis_connectors__notion__write__search_pages'], connectors: { notion: 'write' } }))
+    s.writeDef(userDef({ id: 'd', tools: ['mcp__jarvis_connectors__spotify__read__search_songs'] }))
+    const reg = s.make({ connectors })
+    reg.load()
+    assert.equal(reg.has('a'), true, 'a real read tool of an installed connector is accepted')
+    assert.deepEqual(refusedFor(reg, 'b.md').reasons, ['tools.0: no such tool is installed'])
+    assert.deepEqual(refusedFor(reg, 'c.md').reasons, ['tools.0: no such tool is installed'], 'the capability must match too')
+    assert.deepEqual(refusedFor(reg, 'd.md').reasons, ['tools.0: no such tool is installed'])
+    // The same rule applies to edits checked before they are written.
+    assert.deepEqual(reg.check(userDef({ id: 'e', tools: ['mcp__jarvis_connectors__notion__read__search_pages'], connectors: { notion: 'read' } })), [])
   } finally { s.done() }
 })
 

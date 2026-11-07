@@ -45,6 +45,16 @@ const CATALOGUE = createToolCatalogue({
   },
 })
 
+/** The read connectors the shipped built-ins name, as the connector registry lists them. */
+const CONNECTORS = [
+  { id: 'gdrive', capabilities: { read: true }, tools: [{ name: 'search_files', capability: 'read' }, { name: 'read_file', capability: 'read' }] },
+  { id: 'notion', capabilities: { read: true }, tools: [{ name: 'search_pages', capability: 'read' }] },
+  { id: 'obsidian', capabilities: { read: true }, tools: [{ name: 'search_notes', capability: 'read' }, { name: 'read_note', capability: 'read' }] },
+]
+
+/** Starter agents already shipped as built-ins; the rig adds fixtures only for the rest. */
+const SHIPPED = new Set(readdirSync(BUILTIN_AGENTS_DIR).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)))
+
 const userDef = (id, name, description, over = {}) => ({
   id, name, description, tools: ['Read'], memory: 'read', createdBy: 'user', body: `You are the ${name}.`, ...over,
 })
@@ -54,10 +64,13 @@ function rig({ maxDepth = 2, extra = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'jarvis-coordinator-'))
   const userDir = join(root, 'agents')
   mkdirSync(userDir)
-  const defs = [...STARTERS.map(([id, name, d]) => userDef(id, name, d)), userDef('plumber', 'Plumber', 'Fixes pipes.'), ...extra]
+  const defs = [
+    ...STARTERS.filter(([id]) => !SHIPPED.has(id)).map(([id, name, d]) => userDef(id, name, d)),
+    userDef('plumber', 'Plumber', 'Fixes pipes.'), ...extra,
+  ]
   for (const d of defs) writeFileSync(join(userDir, `${d.id}.md`), formatAgentFile(d))
   const registry = createAgentRegistry({
-    userDir, approvalsFile: join(root, 'agent-approvals.json'), tools: CATALOGUE, connectors: [], log: silent,
+    userDir, approvalsFile: join(root, 'agent-approvals.json'), tools: CATALOGUE, connectors: CONNECTORS, log: silent,
   })
   const summary = registry.load()
   const runs = []
