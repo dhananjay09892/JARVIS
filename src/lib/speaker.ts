@@ -8,7 +8,8 @@ import { blobToPcm16, concat, seconds } from './pcm.ts'
  * here is used unless Settings → "Recognise who is speaking" is on.
  */
 
-export type Person = { id: string; name: string; role: string; clips: number }
+export type LanguageChoices = Partial<Record<'primary' | 'secondary' | 'reply' | 'script', string>>
+export type Person = { id: string; name: string; role: string; clips: number; language?: LanguageChoices }
 
 let enabled = false
 export const setSpeakerEnabled = (on: boolean) => {
@@ -107,4 +108,16 @@ export async function listPeople(): Promise<{ ok: boolean; reason?: string; peop
 export async function forgetPerson(id: string): Promise<boolean> {
   const res = await post(`people/${encodeURIComponent(id)}/forget`)
   return res.ok
+}
+
+/** Save one person's own language choices (plan 28, Q76). An empty object goes back to the owner's. */
+export async function setPersonLanguage(id: string, choices: LanguageChoices): Promise<boolean> {
+  try {
+    const res = await fetch(`${BRIDGE_HTTP_URL}/speaker/people/${encodeURIComponent(id)}/language?${new URLSearchParams(choices as Record<string, string>)}`, {
+      method: 'POST',
+    })
+    return res.ok
+  } catch {
+    return false
+  }
 }
