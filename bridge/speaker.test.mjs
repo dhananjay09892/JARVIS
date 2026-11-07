@@ -120,3 +120,27 @@ test('the bridge forgets a person over POST, so the browser preflight needs no n
   assert.match(src, /req\.method === 'POST' && forgetMatch/)
   assert.match(src, /people\\\/\(\[\^\/\]\+\)\\\/forget/)
 })
+
+test('a person\'s language choices are stored with them, validated, clearable and deleted with them', () => withService(async (s, dir) => {
+  const a = await s.enroll({ pcm: clip(1), name: 'Asha', role: 'member', consent: true })
+  const b = await s.enroll({ pcm: clip(2), name: 'Ben', role: 'owner', consent: true })
+  assert.equal(s.languageFor(a.id), null)
+  assert.deepEqual(s.setLanguage(a.id, { primary: 'gu', reply: 'mirror', bogus: 'x' }).language, { primary: 'gu', reply: 'mirror' })
+  assert.deepEqual(s.languageFor(a.id), { primary: 'gu', reply: 'mirror' })
+  assert.equal(s.languageFor(b.id), null) // nobody else's changes
+  assert.equal(s.languageFor('guest'), null)
+  assert.equal(s.setLanguage('nobody', { primary: 'hi' }), null)
+  assert.deepEqual(s.setLanguage(a.id, {}).language, {})
+  assert.equal(s.languageFor(a.id), null)
+  s.setLanguage(b.id, { primary: 'hi' })
+  assert.equal(s.forget(b.id), true)
+  assert.equal(s.languageFor(b.id), null)
+  assert.ok(!readFileSync(join(dir, 'voiceprints.json'), 'utf8').includes('"hi"'))
+}))
+
+test('the turn takes the identified speaker\'s profile, and a guest gets the owner\'s', async () => {
+  const src = readFileSync(new URL('./server.mjs', import.meta.url), 'utf8')
+  assert.match(src, /readPersonProfile\(setting, speakerLanguage\(\)\)/)
+  assert.match(src, /r\.personId !== 'guest' \? speakerService\.languageFor/)
+  assert.match(src, /req\.method === 'POST' && langMatch/)
+})

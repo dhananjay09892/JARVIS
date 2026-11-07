@@ -21,6 +21,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { CAMPP_MODEL_ID, createCamppEmbedder } from './speaker-campp.mjs'
+import { sanitiseProfileOverride } from './language-profile.mjs'
 
 export const SAMPLE_RATE = 16000
 /** Shorter than this and a voice cannot be told from noise. */
@@ -130,6 +131,17 @@ export function createVoiceprintStore({ dir = defaultSpeakerDir(), clock = Date.
       if (data.people.length !== before) save(data)
       return data.people.length !== before
     },
+    /** Set (or with null/empty, clear) a person's own language choices. Returns the person, or null. */
+    setLanguage(id, override) {
+      const data = load()
+      const p = data.people.find((x) => x.id === id)
+      if (!p) return null
+      const clean = sanitiseProfileOverride(override)
+      if (Object.keys(clean).length) p.language = clean
+      else delete p.language
+      save(data)
+      return p
+    },
     clear() { save({ people: [] }) },
   }
 }
@@ -149,7 +161,7 @@ export function createSpeakerService({ store, embedder, thresholds = DEFAULT_THR
     if (v.length !== embedder.dimensions) throw new Error('bad-embedding')
     return v
   }
-  const safe = (p) => ({ id: p.id, name: p.name, role: p.role, clips: p.embeddings.length })
+  const safe = (p) => ({ id: p.id, name: p.name, role: p.role, clips: p.embeddings.length, language: sanitiseProfileOverride(p.language) })
 
   return {
     async enroll({ pcm, name, role = 'member', personId, consent }) {
@@ -187,6 +199,17 @@ export function createSpeakerService({ store, embedder, thresholds = DEFAULT_THR
       return last && clock() - last.at <= carryMs ? { ...last } : null
     },
     people: () => store.list().map(safe),
+    /** A person's own language choices, or null (unknown id, guest, nothing set). */
+    languageFor(personId) {
+      const p = personId ? store.find(personId) : null
+      const l = p ? sanitiseProfileOverride(p.language) : {}
+      return Object.keys(l).length ? l : null
+    },
+    /** Replace a person's language choices; an empty object clears them. Returns the person or null. */
+    setLanguage(personId, override) {
+      const p = store.setLanguage(personId, override)
+      return p ? safe(p) : null
+    },
     forget: (id) => store.remove(id),
     forgetAll: () => { store.clear(); last = null },
   }

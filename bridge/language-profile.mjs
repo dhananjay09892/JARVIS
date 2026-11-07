@@ -64,6 +64,34 @@ export function readLanguageProfile(get = () => undefined) {
 }
 
 /**
+ * A person's own profile (plan 28 phase 2, Q76): only the fields they have
+ * changed from the owner's. Anything not valid is dropped, so a bad stored
+ * value can never reach a turn. Returns a plain object, possibly empty.
+ */
+export function sanitiseProfileOverride(o) {
+  const out = {}
+  if (!o || typeof o !== 'object') return out
+  for (const field of Object.keys(KEYS)) {
+    if (ALLOWED[field].includes(o[field])) out[field] = o[field]
+  }
+  return out
+}
+
+/**
+ * The profile for one turn: the owner's settings with the identified
+ * speaker's own choices laid on top. With no override (typed text, a guest,
+ * speaker ID off, a person who set nothing) this is exactly the owner's.
+ */
+export function readPersonProfile(get = () => undefined, override = null) {
+  const owner = readLanguageProfile(get)
+  const mine = sanitiseProfileOverride(override)
+  if (Object.keys(mine).length === 0) return owner
+  const out = { ...owner, ...mine }
+  if (out.secondary === out.primary) out.secondary = 'none'
+  return Object.freeze(out)
+}
+
+/**
  * The language a message is visibly written in, from its letters: 'gu' when
  * most letters are Gujarati script, 'hi' when most are Devanagari, otherwise
  * null. Latin letters are left undecided on purpose: "kal ka meeting kitne

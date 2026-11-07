@@ -68,7 +68,7 @@ import { probeUrl, renderPage } from './page.mjs'
 import { onSettingsChange, publicSettings, readSettings, restartPending, secretVault, setting, settingsDir, updateSettings } from './settings.mjs'
 import { connectorKeychain, scopedVault } from './secrets.mjs'
 import { settingDefault, settingsSchema } from './settings-registry.mjs'
-import { languagePreface, readLanguageProfile } from './language-profile.mjs'
+import { languagePreface, readPersonProfile, sanitiseProfileOverride } from './language-profile.mjs'
 import { createRestarter } from './restart.mjs'
 import { createClaudeBrain } from './brains/claude.mjs'
 import { createBrainRegistry } from './brains/registry.mjs'
@@ -159,6 +159,15 @@ function getSpeaker() {
 function speakerRecent() {
   if (!speakerOn() || !speakerService || speakerService.people().length === 0) return null
   return speakerService.recent()
+}
+/**
+ * The identified speaker's own language choices (plan 28, Q76), or null: then
+ * the turn uses the owner's profile, as it did before there were profiles per
+ * person. A guest or an unrecognised voice is never given anyone's profile.
+ */
+function speakerLanguage() {
+  const r = speakerRecent()
+  return r && r.personId !== 'guest' ? speakerService.languageFor(r.personId) : null
 }
 function speakerRole() {
   return speakerRecent()?.role ?? 'owner'
@@ -1992,6 +2001,19 @@ const handleRequest = async (req, res) => {
     if (req.method === 'GET' && sub === 'people') return json(200, { ok: true, people: svc.people() })
     // Delete is a POST so the browser's preflight (GET, POST, PATCH) needs no new method.
     const forgetMatch = /^people\/([^/]+)\/forget$/.exec(sub)
+    // A person's own language choices (plan 28, Q76): query parameters primary,
+    // secondary, reply and script; none at all clears them (POST like forget).
+    const langMatch = /^people\/([^/]+)\/language$/.exec(sub)
+    if (req.method === 'POST' && langMatch) {
+      const q = requestUrl.searchParams
+      const override = {}
+      for (const f of ['primary', 'secondary', 'reply', 'script']) if (q.has(f)) override[f] = q.get(f)
+      const bad = [...q.keys()].some((k) => !['primary', 'secondary', 'reply', 'script'].includes(k))
+      const clean = sanitiseProfileOverride(override)
+      if (bad || Object.keys(clean).length !== Object.keys(override).length) return json(400, { ok: false, reason: 'bad-language' })
+      const person = svc.setLanguage(decodeURIComponent(langMatch[1]), clean)
+      return json(person ? 200 : 404, person ? { ok: true, person } : { ok: false })
+    }
     if (req.method === 'POST' && forgetMatch) {
       const gone = svc.forget(decodeURIComponent(forgetMatch[1]))
       return json(gone ? 200 : 404, { ok: gone })
@@ -3065,7 +3087,7 @@ wss.on('connection', (socket, req) => {
       // the page adds rides after it.
       const pagePreface = typeof msg.preface === 'string' ? msg.preface.slice(0, 1000) : ''
       const who = speakerPreface(speakerRecent())
-      const preface = [languagePreface(readLanguageProfile(setting), msg.text), who, pagePreface].filter(Boolean).join('\n')
+      const preface = [languagePreface(readPersonProfile(setting, speakerLanguage()), msg.text), who, pagePreface].filter(Boolean).join('\n')
       // Persisted now, so a refresh right after cannot lose the question. A turn
       // id this conversation has already seen is a retry and is dropped.
       const stored = sm && id ? sm.receive({ id, text: msg.text, preface }) : null

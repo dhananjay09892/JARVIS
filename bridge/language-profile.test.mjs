@@ -106,8 +106,27 @@ test('the reply language follows the saved profile, and a change applies to the 
 
 test('the bridge adds the profile to every turn, and the page no longer forces English there', () => {
   const server = readFileSync(new URL('./server.mjs', import.meta.url), 'utf8')
-  assert.match(server, /languagePreface\(readLanguageProfile\(setting\), msg\.text\)/)
+  assert.match(server, /languagePreface\(readPersonProfile\(setting, speakerLanguage\(\)\), msg\.text\)/)
   const brain = readFileSync(new URL('../src/lib/brain.ts', import.meta.url), 'utf8')
   // The page adds only its own context (what quick commands did, Q75), never a language line.
   assert.match(brain, /if \(usingBridge\) return bridge\.ask\(prompt, handlers, context\)/)
+})
+
+test('a person\'s own choices lay over the owner\'s; unset fields and unknown speakers keep the owner\'s', async () => {
+  const { readPersonProfile, sanitiseProfileOverride } = await import('./language-profile.mjs')
+  const owner = { JARVIS_LANG_PRIMARY: 'en', JARVIS_REPLY_LANGUAGE: 'primary' }
+  const get = (id) => owner[id]
+  assert.deepEqual({ ...readPersonProfile(get, null) }, { ...profile(owner) })
+  assert.deepEqual({ ...readPersonProfile(get, {}) }, { ...profile(owner) })
+  const asha = readPersonProfile(get, { primary: 'gu', script: 'roman', reply: 'klingon', extra: 1 })
+  assert.equal(asha.primary, 'gu')
+  assert.equal(asha.script, 'roman')
+  assert.equal(asha.reply, 'primary') // invalid value dropped, owner's kept
+  assert.deepEqual(sanitiseProfileOverride({ primary: 'hi', nope: 'x', secondary: 'xx' }), { primary: 'hi' })
+  assert.deepEqual(sanitiseProfileOverride('gu'), {})
+  // Same second language as the new main one means none.
+  assert.equal(readPersonProfile((id) => ({ JARVIS_LANG_SECONDARY: 'gu' })[id], { primary: 'gu' }).secondary, 'none')
+  // Two people, two replies in a test.
+  assert.match(languagePreface(readPersonProfile(get, null), 'hello'), /^Reply in English\./)
+  assert.match(languagePreface(readPersonProfile(get, { primary: 'gu' }), 'hello'), /^Reply in Gujarati, written in Gujarati script\./)
 })

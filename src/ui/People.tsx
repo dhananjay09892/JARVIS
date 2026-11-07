@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { forgetPerson, listPeople, recordAndEnrol, setSpeakerEnabled, type Person } from '../lib/speaker.ts'
+import { forgetPerson, listPeople, recordAndEnrol, setPersonLanguage, setSpeakerEnabled, type LanguageChoices, type Person } from '../lib/speaker.ts'
 
 /**
  * Settings → People (plan 01, Q85). The switch for recognising who is speaking,
@@ -9,6 +9,16 @@ import { forgetPerson, listPeople, recordAndEnrol, setSpeakerEnabled, type Perso
  */
 
 const ROLE_LABEL: Record<string, string> = { owner: 'You (owner)', member: 'Household member', child: 'Child' }
+
+const LANG_LABEL: Record<string, string> = { en: 'English', gu: 'Gujarati', hi: 'Hindi' }
+const REPLY_OPTIONS: [string, string][] = [
+  ['', "Same as the owner's"],
+  ['primary', 'Their main language'],
+  ['mirror', 'The language they just used'],
+  ['en', 'Always English'],
+  ['gu', 'Always Gujarati'],
+  ['hi', 'Always Hindi'],
+]
 
 export function People({ on, onToggle }: { on: boolean; onToggle: (on: boolean) => unknown }) {
   const [people, setPeople] = useState<Person[]>([])
@@ -55,6 +65,20 @@ export function People({ on, onToggle }: { on: boolean; onToggle: (on: boolean) 
     }
   }
 
+  /** Change one of a person's own language choices; '' puts that choice back to the owner's. */
+  const setLang = async (p: Person, field: keyof LanguageChoices, value: string) => {
+    const next: LanguageChoices = { ...p.language }
+    if (value) next[field] = value
+    else delete next[field]
+    setBusy(true)
+    try {
+      setNote((await setPersonLanguage(p.id, next)) ? `Saved ${p.name}'s language.` : 'That did not work.')
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const remove = async (p: Person) => {
     setBusy(true)
     try {
@@ -87,6 +111,28 @@ export function People({ on, onToggle }: { on: boolean; onToggle: (on: boolean) 
                   <button type="button" disabled={busy} onClick={() => void remove(p)}>
                     Delete
                   </button>
+                  <br />
+                  <label>
+                    Main language{' '}
+                    <select value={p.language?.primary ?? ''} disabled={busy} onChange={(e) => void setLang(p, 'primary', e.target.value)}>
+                      <option value="">Same as the owner&apos;s</option>
+                      {Object.entries(LANG_LABEL).map(([code, label]) => (
+                        <option key={code} value={code}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>{' '}
+                  <label>
+                    Replies in{' '}
+                    <select value={p.language?.reply ?? ''} disabled={busy} onChange={(e) => void setLang(p, 'reply', e.target.value)}>
+                      {REPLY_OPTIONS.map(([code, label]) => (
+                        <option key={code} value={code}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </li>
               ))}
             </ul>
