@@ -96,6 +96,7 @@ import { notionConnector } from './connectors/notion.mjs'
 import { slackConnector } from './connectors/slack.mjs'
 import { githubNotificationsConnector } from './connectors/github_notifications.mjs'
 import { ouraConnector } from './connectors/oura.mjs'
+import { granolaConnector } from './connectors/granola.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
 import { appleHealthConnector } from './connectors/apple_health.mjs'
 import { appleCalendarConnector } from './connectors/apple_calendar.mjs'
@@ -657,6 +658,12 @@ connectors.registerAll([
     // api.ouraring.com only, stored as health data that stays on this device.
     id: 'oura',
     create: (ctx) => ouraConnector().create(ctx),
+  },
+  {
+    // Granola (task C32): paste a personal API key; reads meeting summaries from
+    // public-api.granola.ai only, read-only, stored as work documents on this device.
+    id: 'granola',
+    create: (ctx) => granolaConnector().create(ctx),
   },
   {
     // Apple Health (task C28): grant access to one export file (export.zip or
