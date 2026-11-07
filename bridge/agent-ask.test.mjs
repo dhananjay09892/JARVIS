@@ -138,7 +138,7 @@ test('missing pieces are asked for, not guessed', () => {
   try {
     assert.equal(r.ops.start({}).reason, 'Say which agent to ask.')
     assert.equal(r.ops.start({ agent: 'researcher' }).reason, 'What should the Researcher agent do?')
-    assert.match(r.ops.start({ request: 'what time is it' }).reason, /do not ask a named agent/)
+    assert.match(r.ops.start({ request: 'what time is it' }).reason, /No agent clearly fits/)
     assert.equal(r.manager.list().length, 0)
   } finally { r.done() }
 })

@@ -13,6 +13,9 @@
  *   - the model passes the owner's own words (`request`), e.g. "ask the
  *     researcher to compare three desks", and `parseAgentRequest` splits
  *     them into the agent and the goal with plain rules and no model call.
+ *     Words that name no agent ("compare three standing desks") go to the
+ *     one agent that clearly fits them (agent-match.mjs), or to none: a
+ *     close call is answered with the candidates, and nothing is queued.
  *
  * Names are matched loosely ("the researcher", "Researcher agent", "inbox
  * triager" for `inbox-triager`) but only ever to an agent in the roster.
@@ -24,6 +27,7 @@
  * decided call by call by policy.mjs. Only Node built-ins are used here, so
  * this can be tested on its own.
  */
+import { matchAgent } from './agent-match.mjs'
 
 const MAX_LISTED = 50
 const MAX_QUERY = 60
@@ -137,6 +141,13 @@ function unknownAnswer(query, entries) {
   return `I don't have an agent called ${who ? `"${who}"` : 'that'}.${have}`
 }
 
+/** The spoken answer when no agent clearly fits words that name none. */
+function noMatchAnswer(candidates) {
+  const names = candidates.map((c) => c.name)
+  if (names.length >= 2) return `I'm not sure which agent fits: it could be the ${names.slice(0, -1).join(', ')} or the ${names.at(-1)}. Say which one to ask.`
+  return 'No agent clearly fits that. Say which agent to ask, or I can start a plain task.'
+}
+
 const offAnswer = (a) => (a.why === 'waiting for your approval'
   ? `The ${a.name} agent is waiting for your approval, so I can't ask it yet.`
   : `The ${a.name} agent is switched off. You can switch it on in Settings, under Agents.`)
@@ -172,15 +183,25 @@ export function agentOperations(manager, agents) {
       let target = null
       let query = typeof agent === 'string' ? agent : ''
       let g = clip(goal, 4000)
+      let matched = false
       if (query.trim()) {
         target = resolveAgent(entries, query)
         if (!g && typeof request === 'string') g = parseAgentRequest(request, target ? [target] : [])?.goal ?? ''
       } else if (typeof request === 'string' && request.trim()) {
         const parsed = parseAgentRequest(request, entries)
-        if (!parsed) return { started: false, reason: 'Those words do not ask a named agent for anything. Say which agent and what it should do.' }
-        target = parsed.agent
-        query = parsed.query
-        if (!g) g = parsed.goal
+        if (parsed) {
+          target = parsed.agent
+          query = parsed.query
+          if (!g) g = parsed.goal
+        } else {
+          // No agent named: pick one by what the words ask for, only when
+          // one agent that is on clearly fits (agent-match.mjs).
+          const m = matchAgent(entries.filter((a) => a.on), request)
+          if (!m.agent) return { started: false, reason: noMatchAnswer(m.candidates) }
+          target = m.agent
+          matched = true
+          if (!g) g = clip(request.replace(/[\s.!?]+$/, ''), 4000)
+        }
       } else {
         return { started: false, reason: 'Say which agent to ask.' }
       }
@@ -189,7 +210,7 @@ export function agentOperations(manager, agents) {
       if (!g) return { started: false, reason: `What should the ${target.name} agent do?` }
       const r = manager.spawn({ title: clip(title, 60) || clip(g, 60), goal: g, agentId: target.id })
       return r.ok
-        ? { started: true, agent: target.name, ...brief(r.task) }
+        ? { started: true, agent: target.name, ...(matched && { matched: true }), ...brief(r.task) }
         : { started: false, agent: target.name, reason: r.reason }
     },
   }
