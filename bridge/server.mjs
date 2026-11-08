@@ -97,6 +97,7 @@ import { slackConnector } from './connectors/slack.mjs'
 import { githubNotificationsConnector } from './connectors/github_notifications.mjs'
 import { ouraConnector } from './connectors/oura.mjs'
 import { granolaConnector } from './connectors/granola.mjs'
+import { hackerNewsConnector } from './connectors/hackernews.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
 import { appleHealthConnector } from './connectors/apple_health.mjs'
 import { appleCalendarConnector } from './connectors/apple_calendar.mjs'
@@ -694,6 +695,12 @@ connectors.registerAll([
     // https only, never a private address, and no account or key.
     id: 'news_rss',
     create: (ctx) => newsRssConnector({ options: () => connectorOptions.get('news_rss') }).create(ctx),
+  },
+  {
+    // Hacker News (task C33): public API, no account or key, read-only; the
+    // only host contacted is hacker-news.firebaseio.com.
+    id: 'hackernews',
+    create: (ctx) => hackerNewsConnector().create(ctx),
   },
   {
     // Google Tasks (task C19), read-only: task lists, due days, notes and
