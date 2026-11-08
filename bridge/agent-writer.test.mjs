@@ -27,6 +27,8 @@ import { agentAuditSink } from './audit.mjs'
 import { BUILTIN_AGENT_CONNECTORS } from './fixtures/agent-connectors.mjs'
 
 const silent = { error() {}, log() {}, warn() {} }
+/** The Reviewer agent as shipped (A19): the review pass takes its instructions from it. */
+const shippedReviewer = () => parseAgentFile(readFileSync(join(BUILTIN_AGENTS_DIR, 'reviewer.md'), 'utf8')).value
 const tick = () => new Promise((r) => setImmediate(r))
 const settle = async (n = 12) => { for (let i = 0; i < n; i++) await tick() }
 
@@ -397,7 +399,7 @@ test('a draft that claims it was sent is sent back by the reviewer, and the hone
     })()
   }
   const registry = { has: () => true, get: () => agent, isActive: () => true }
-  const m = createTaskManager({ runAgent, agents: registry, reviewer: createReviewer({ converse }), log: silent })
+  const m = createTaskManager({ runAgent, agents: registry, reviewer: createReviewer({ converse, definition: shippedReviewer() }), log: silent })
   const { task } = m.spawn({ title: 'Thank-you note', goal: 'draft a thank-you note to Priya', agentId: 'writer' })
   await settle(30)
   const t = m.get(task.id)

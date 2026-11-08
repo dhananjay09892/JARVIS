@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { BUILTIN_AGENTS_DIR } from './agents.mjs'
 import {
   MAX_REVIEW_ATTEMPTS, NO_VERDICT, REVIEWER_REFUSAL, REVIEW_STOPS, createReviewer, evidenceLines, parseVerdict,
   retryGoal, reviewRequest, reviewWanted, reviewerGuard,
@@ -41,6 +43,13 @@ function scriptedAgent(summaries) {
   return { runAgent, runs }
 }
 
+/** The Reviewer agent as shipped: the pass takes its instructions from this file. */
+const shippedReviewer = () => {
+  const parsed = parseAgentFile(readFileSync(join(BUILTIN_AGENTS_DIR, 'reviewer.md'), 'utf8'))
+  assert.ok(parsed.ok, JSON.stringify(parsed.errors))
+  return parsed.value
+}
+
 /** A mocked reviewer brain: one tool-less turn per verdict, in order. */
 function scriptedReviewer(verdicts) {
   const turns = []
@@ -53,7 +62,7 @@ function scriptedReviewer(verdicts) {
       yield { t: 'done', reason: 'complete' }
     })()
   }
-  return { reviewer: createReviewer({ converse }), turns }
+  return { reviewer: createReviewer({ converse, definition: shippedReviewer }), turns }
 }
 
 const pass = { verdict: 'pass', reasons: [] }
@@ -74,6 +83,7 @@ test('a pass finishes the task with the agent result on the first attempt', asyn
   assert.match(turns[0].prompt, /compare three desks/)
   assert.match(turns[0].prompt, /Three desks compared/)
   assert.match(turns[0].prompt, /tool: WebSearch/, 'the reviewer sees the run log as evidence')
+  assert.ok(turns[0].systemPrompt.endsWith(shippedReviewer().body), 'the instructions are the Reviewer file\'s')
   assert.ok(t.log.some((l) => l.kind === 'review' && /passed on attempt 1/.test(l.text)))
   assert.equal(t.costUsd, 0.015, 'the review cost is added to the task')
 })
@@ -246,6 +256,7 @@ test('the review request wraps the result and log as untrusted data; the retry g
 
 test('createReviewer rejects when the reviewer turn does not complete', async () => {
   const reviewer = createReviewer({
+    definition: shippedReviewer,
     converse: () => (async function* () {
       yield { t: 'error', code: 'session_error', message: 'rate limited' }
       yield { t: 'done', reason: 'error' }
