@@ -18,6 +18,7 @@ import { MIN_SCORE, STARTER_HINTS, matchAgent } from './agent-match.mjs'
 import { MEMORY_READ_TOOLS, agentToolPlan, workerRuleFor } from './agent-runtime.mjs'
 import { createPolicy } from './policy.mjs'
 import { createTaskManager } from './tasks.mjs'
+import { BUILTIN_AGENT_CONNECTORS } from './fixtures/agent-connectors.mjs'
 
 const silent = { error() {}, log() {}, warn() {} }
 const tick = () => new Promise((r) => setImmediate(r))
@@ -46,11 +47,7 @@ const CATALOGUE = createToolCatalogue({
 })
 
 /** The read connectors the shipped built-ins name, as the connector registry lists them. */
-const CONNECTORS = [
-  { id: 'gdrive', capabilities: { read: true }, tools: [{ name: 'search_files', capability: 'read' }, { name: 'read_file', capability: 'read' }] },
-  { id: 'notion', capabilities: { read: true }, tools: [{ name: 'search_pages', capability: 'read' }] },
-  { id: 'obsidian', capabilities: { read: true }, tools: [{ name: 'search_notes', capability: 'read' }, { name: 'read_note', capability: 'read' }] },
-]
+const CONNECTORS = BUILTIN_AGENT_CONNECTORS
 
 /** Starter agents already shipped as built-ins; the rig adds fixtures only for the rest. */
 const SHIPPED = new Set(readdirSync(BUILTIN_AGENTS_DIR).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)))
