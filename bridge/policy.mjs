@@ -28,6 +28,21 @@ export const DELEGATE_TOOL_NAMES = Object.freeze(['start_agent', 'check_agent'])
 export const DELEGATOR_ID = 'coordinator'
 
 /**
+ * The Coder's server (coder.mjs): files, git and tests in a worktree of its
+ * own. Only these tools run on it. Opening a pull request is the one action
+ * on it that leaves the machine, so only the built-in Coder may ask for it,
+ * only with general writes on, and coder.mjs shows an approval card each time.
+ * agent-coder.test.mjs pins that the id matches the shipped file.
+ */
+export const CODER_SERVER = 'jarvis_coder'
+export const CODER_PR_TOOL = 'open_pull_request'
+export const CODER_TOOL_NAMES = Object.freeze([
+  'open_worktree', 'list_files', 'read_file', 'write_file', 'delete_file',
+  'git_status', 'git_diff', 'git_commit', 'run_tests', CODER_PR_TOOL,
+])
+export const CODER_ID = 'coder'
+
+/**
  * Both spellings of every renamed built-in are listed on purpose. The SDK
  * presents several tools to the model under newer names — Task is Agent,
  * BashOutput is TaskOutput, KillShell is TaskStop, and the MCP resource tools
@@ -383,6 +398,15 @@ function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool,
     if (server === 'jarvis_development') {
       return fixed(['run_command', 'push_branch'].includes(tool), 'own-server-list')
     }
+    // The Coder's worktree tools. Files, git and tests stay in its own
+    // worktree, and the tests ask the owner each time; a pull request is
+    // publishing, so it is the built-in Coder's alone and waits for writes.
+    if (server === CODER_SERVER) {
+      if (!CODER_TOOL_NAMES.includes(tool)) return fixed(false, 'own-server-list')
+      if (tool !== CODER_PR_TOOL) return fixed(true, 'own-server-list')
+      if (agentId !== CODER_ID) return fixed(false, 'coder-pull-request-only')
+      return writes('coder-pull-request')
+    }
     // Saved memories are local data. These tools can neither act nor approve.
     if (server === 'jarvis_memory') return fixed(isMemoryTool(tool) === true, 'own-server-list')
     // Recipes can only be changed through an approval card, and their action
@@ -528,6 +552,8 @@ export const RULE_REASONS = Object.freeze({
   'malformed-name': 'The tool name is missing or malformed.',
   'subagent': 'Starting a sub-agent needs general writes.',
   'delegate-coordinator-only': 'Only the Coordinator may start other agents.',
+  'coder-pull-request-only': 'Only the Coder may open a pull request.',
+  'coder-pull-request': 'Opening a pull request publishes code, so it needs general writes and approval each time.',
   'read-only-builtin': 'A built-in tool that only reads.',
   'write-builtin': 'A built-in tool that writes or runs commands needs general writes.',
   'own-display': "JARVIS's own display and interface controls.",

@@ -57,8 +57,9 @@ import { agentAuditSink, auditSink, auditedApprove, openAudit } from './audit.mj
 import { createSessionMemory } from './conversation.mjs'
 import { memoryServer, isMemoryTool } from './memory-tools.mjs'
 import { developmentServer } from './development.mjs'
+import { CODER_SERVER, coderServer, createCoderWorkspace } from './coder.mjs'
 import { approvalQueue } from './approvals.mjs'
-import { createPolicy, writesEnabled, isVetoed } from './policy.mjs'
+import { createPolicy, writesEnabled, isVetoed, mcpServerOf } from './policy.mjs'
 import { createSeenUrls, createTaintTracker, guardOutbound, proxiedMediaIn } from './taint.mjs'
 import { UNTRUSTED_PROMPT, createPostToolUse, withoutUntrusted } from './untrusted.mjs'
 import { freemem, homedir, tmpdir, totalmem, uptime } from 'node:os'
@@ -2367,12 +2368,14 @@ try {
  * copy (agent-runtime.mjs narrowServers); a plain task gets them all, as
  * before. Memory is only there for an agent whose definition may read it.
  */
-function workerServers({ report, ask, approve, withMemory = false }) {
+function workerServers({ report, ask, approve, withMemory = false, coder = null }) {
   return {
     ...MCP_SERVERS,
     jarvis_task: progressServer(report, ask),
     jarvis_workspace: workspaceServer(approve),
     jarvis_development: developmentServer(approve),
+    // The Coder's own worktree tools (coder.mjs); only a run whose file lists them keeps them.
+    [CODER_SERVER]: coderServer(coder),
     ...connectorServerEntry(),
     ...(withMemory && memory && { jarvis_memory: memoryServer(memory, { conversation: () => null, project: () => '' }) }),
   }
@@ -2447,7 +2450,11 @@ function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget, 
 
   const plan = agentToolPlan(agent, { decideTool: policy.decideTool })
   if (plan.dropped.length) console.log(`[jarvis] agent ${agent.id}: not offered ${plan.dropped.map((d) => `${d.tool} (${d.reason})`).join(', ')}`)
-  const all = workerServers({ report, ask, approve, withMemory: agent.memory !== 'none' })
+  // A worktree of this task's own, made only if the agent's file lists the Coder's tools.
+  const coder = plan.allowed.some((n) => mcpServerOf(n) === CODER_SERVER)
+    ? createCoderWorkspace({ taskId: task.id, approve })
+    : null
+  const all = workerServers({ report, ask, approve, withMemory: agent.memory !== 'none', coder })
   // The Coordinator, when the task manager lets this run delegate, also gets
   // the delegation tools; the policy still has to agree to each of them.
   const delegating = delegation ? DELEGATE_TOOLS.filter((n) => policy.decideTool(n)) : []
