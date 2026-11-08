@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { forgetPerson, listPeople, recordAndEnrol, setPersonLanguage, setSpeakerEnabled, type LanguageChoices, type Person } from '../lib/speaker.ts'
+import {
+  forgetPerson, listPeople, listSpeakerModels, recordAndEnrol, setPersonLanguage, setSpeakerEnabled, switchSpeakerModel,
+  type LanguageChoices, type Person, type SpeakerModel,
+} from '../lib/speaker.ts'
 
 /**
  * Settings → People (plan 01, Q85). The switch for recognising who is speaking,
@@ -27,6 +30,7 @@ export function People({ on, onToggle }: { on: boolean; onToggle: (on: boolean) 
   const [name, setName] = useState('')
   const [role, setRole] = useState('member')
   const [consent, setConsent] = useState(false)
+  const [models, setModels] = useState<SpeakerModel[]>([])
 
   const load = useCallback(async () => {
     setSpeakerEnabled(on)
@@ -35,6 +39,7 @@ export function People({ on, onToggle }: { on: boolean; onToggle: (on: boolean) 
       return
     }
     try {
+      setModels((await listSpeakerModels()).models)
       const r = await listPeople()
       if (r.ok) setPeople(r.people)
       else setNote(r.reason === 'speaker model not installed' ? 'The voice model is not installed yet; it downloads the first time it is needed.' : '')
@@ -79,6 +84,30 @@ export function People({ on, onToggle }: { on: boolean; onToggle: (on: boolean) 
     }
   }
 
+  /** Change the speaker model. Everyone's voiceprint is deleted, so ask first. */
+  const switchModel = async (m: SpeakerModel) => {
+    if (m.selected || !m.available) return
+    const ok = window.confirm(
+      `Switch to ${m.label}? It is a ${m.sizeMb} MB download (${m.licence}). Voiceprints made with the current model cannot be used with it, so every voiceprint is deleted and everyone has to teach JARVIS their voice again.`,
+    )
+    if (!ok) return
+    setBusy(true)
+    setNote(`Downloading ${m.label}...`)
+    try {
+      const r = await switchSpeakerModel(m.id)
+      setNote(
+        r.ok
+          ? `Now using ${m.label}. Please add each person's voice again.`
+          : r.reason === 'model-unavailable'
+            ? 'The model could not be downloaded. Nothing was changed.'
+            : 'That did not work. Nothing was changed.',
+      )
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const remove = async (p: Person) => {
     setBusy(true)
     try {
@@ -101,6 +130,23 @@ export function People({ on, onToggle }: { on: boolean; onToggle: (on: boolean) 
       </p>
       {on && (
         <>
+          {models.length > 1 && (
+            <p>
+              <label>
+                Speaker model{' '}
+                <select value={models.find((m) => m.selected)?.id ?? ''} disabled={busy} onChange={(e) => void switchModel(models.find((m) => m.id === e.target.value)!)}>
+                  {models.map((m) => (
+                    <option key={m.id} value={m.id} disabled={!m.available}>
+                      {m.label} · {m.sizeMb} MB · {m.licence}
+                      {m.available ? '' : ' (not available yet)'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <br />
+              <span className="mem-note">Switching downloads the new model the first time and deletes every voiceprint: everyone enrols again.</span>
+            </p>
+          )}
           {people.length === 0 ? (
             <p className="mem-note">Nobody yet. Add yourself below, or say &ldquo;learn my voice&rdquo;.</p>
           ) : (

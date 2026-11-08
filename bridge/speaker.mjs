@@ -20,7 +20,8 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, chmodSy
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { CAMPP_MODEL_ID, createCamppEmbedder } from './speaker-campp.mjs'
+import { CAMPP_MODEL_ID } from './speaker-campp.mjs'
+import { embedderFor } from './speaker-models.mjs'
 import { sanitiseProfileOverride } from './language-profile.mjs'
 
 export const SAMPLE_RATE = 16000
@@ -50,13 +51,14 @@ export function assertEmbedder(e) {
 export const DEFAULT_MODEL_ID = CAMPP_MODEL_ID
 
 /**
- * The embedder for `modelId`, or null for a model we do not know. The model
- * file is fetched and loaded on the first embed(), not here, so building the
- * service costs nothing; a failed fetch surfaces as code 'model-unavailable'.
+ * The embedder for `modelId` (see bridge/speaker-models.mjs), or null for a
+ * model we do not know. The model file is fetched and loaded on the first
+ * embed(), not here, so building the service costs nothing; a failed fetch
+ * surfaces as code 'model-unavailable'.
  */
 export function loadSpeakerEmbedder(modelId = DEFAULT_MODEL_ID, { dir = defaultSpeakerDir(), ...opts } = {}) {
-  if (modelId !== CAMPP_MODEL_ID) return null
-  return createCamppEmbedder({ dir: join(dir, 'models'), modelPath: process.env.JARVIS_SPEAKER_MODEL_PATH || undefined, ...opts })
+  const modelPath = modelId === DEFAULT_MODEL_ID ? process.env.JARVIS_SPEAKER_MODEL_PATH || undefined : undefined
+  return embedderFor(modelId, { dir, modelPath, ...opts })
 }
 
 export function cosine(a, b) {

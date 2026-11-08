@@ -56,7 +56,9 @@ License 1.1, loaded from Google Fonts.
 The optional speaker-recognition feature uses the **WeSpeaker CAM++** model trained on VoxCeleb
 (WeSpeaker, Apache-2.0 code; model under CC BY 4.0), as exported to ONNX by the
 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) project, run with `onnxruntime-node` (MIT).
-The model is downloaded on first use, not bundled. Test clips are made with the CMU Flite voices.
+If you choose one of the alternative models in Settings, that is **WeSpeaker ResNet34** (same licences) or
+**3D-Speaker CAM++** ([3D-Speaker](https://github.com/modelscope/3D-Speaker), Apache-2.0), also trained on VoxCeleb.
+Models are downloaded on first use, not bundled. Test clips are made with the CMU Flite voices.
 
 ## Services
 

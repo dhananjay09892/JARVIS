@@ -48,8 +48,9 @@ import { taskServer, progressServer, delegateServer, isTaskTool } from './task-t
 import { DELEGATE_SERVER, DELEGATE_TOOLS } from './agent-delegation.mjs'
 import { openMemory } from './memory.mjs'
 import {
-  createSpeakerService, createVoiceprintStore, loadSpeakerEmbedder, pcm16ToFloat, speakerPreface,
+  createSpeakerService, createVoiceprintStore, defaultSpeakerDir, loadSpeakerEmbedder, pcm16ToFloat, speakerPreface,
 } from './speaker.mjs'
+import { createSpeakerModels } from './speaker-models.mjs'
 import { openTraces } from './traces.mjs'
 import { createSetupMetrics, setupMetricsOn } from './setup-metrics.mjs'
 import { agentAuditSink, auditSink, auditedApprove, openAudit } from './audit.mjs'
@@ -142,14 +143,25 @@ if (process.env.JARVIS_MEMORY !== 'off') {
  * disabled feature never touches the disk.
  */
 let speakerService = null
+let speakerModels = null
 function speakerOn() {
   return setting('JARVIS_SPEAKER_ID') === '1'
 }
+function getSpeakerModels() {
+  if (!speakerModels) {
+    const dir = defaultSpeakerDir()
+    const store = createVoiceprintStore({ dir })
+    // loadSpeakerEmbedder also honours a local copy of the default model (offline installs, tests).
+    speakerModels = { store, models: createSpeakerModels({ dir, store, makeEmbedder: (id) => loadSpeakerEmbedder(id, { dir }) }) }
+  }
+  return speakerModels
+}
 function getSpeaker() {
   if (!speakerService) {
-    const embedder = loadSpeakerEmbedder()
+    const { store, models } = getSpeakerModels()
+    const embedder = models.embedder()
     if (!embedder) return null
-    speakerService = createSpeakerService({ store: createVoiceprintStore(), embedder })
+    speakerService = createSpeakerService({ store, embedder })
   }
   return speakerService
 }
@@ -2007,6 +2019,26 @@ const handleRequest = async (req, res) => {
     if (!svc) return json(503, { ok: false, reason: 'speaker model not installed' })
     const sub = requestUrl.pathname.slice('/speaker/'.length)
     if (req.method === 'GET' && sub === 'people') return json(200, { ok: true, people: svc.people() })
+    // Which speaker model is in use, and switching it (Q82). Switching deletes every voiceprint,
+    // so it needs confirm=1; the new model is fetched first and a failed fetch changes nothing.
+    if (req.method === 'GET' && sub === 'models') {
+      const { models } = getSpeakerModels()
+      return json(200, { ok: true, selected: models.current(), models: models.list() })
+    }
+    if (req.method === 'POST' && sub === 'model') {
+      if (requestUrl.searchParams.get('confirm') !== '1') return json(400, { ok: false, reason: 'confirm-required' })
+      const { models } = getSpeakerModels()
+      try {
+        const { embedder, changed } = await models.switchTo(requestUrl.searchParams.get('id') ?? '')
+        if (changed) speakerService = createSpeakerService({ store: getSpeakerModels().store, embedder })
+        return json(200, { ok: true, changed, selected: models.current() })
+      } catch (err) {
+        if (err?.code === 'model-unavailable') return json(503, { ok: false, reason: 'model-unavailable' })
+        if (err?.code === 'not-available') return json(409, { ok: false, reason: 'not-available' })
+        if (err?.code === 'unknown-model') return json(400, { ok: false, reason: 'unknown-model' })
+        return json(500, { ok: false, reason: 'failed' })
+      }
+    }
     // Delete is a POST so the browser's preflight (GET, POST, PATCH) needs no new method.
     const forgetMatch = /^people\/([^/]+)\/forget$/.exec(sub)
     // A person's own language choices (plan 28, Q76): query parameters primary,
