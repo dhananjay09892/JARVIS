@@ -38,7 +38,7 @@ import { createAgentProposer, createProposalState, proposalsStateFile } from './
 import { createAgentScheduler, createScheduleState, scheduleStateFile } from './agent-schedule.mjs'
 import { createAgentTriggers } from './agent-triggers.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
-import { createReviewer } from './agent-review.mjs'
+import { REVIEWER_ID, createReviewer } from './agent-review.mjs'
 import { createBus } from './bus.mjs'
 import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.mjs'
 import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSource, timeSource } from './context-broker.mjs'
@@ -2444,9 +2444,10 @@ ${task.goal}`,
  * can only read what is in its prompt and write text. For a review its policy
  * is the reviewed agent's view of the one engine, so its audit entries carry
  * that agent's id; a draft belongs to no agent yet, so it uses the engine itself.
+ * `model` is the caller's own pick (the Reviewer file's model), else the brain's default.
  */
 function toollessTurn(agent) {
-  return ({ prompt, systemPrompt, signal }) => {
+  return ({ prompt, systemPrompt, model, signal }) => {
     const policy = agent ? basePolicy.forAgent(agent.id) : basePolicy
     const allowed = []
     const budget = null
@@ -2461,7 +2462,7 @@ function toollessTurn(agent) {
       mcpServers: {},
       hideTools: hiddenTools(allowed),
       systemPrompt,
-      model: modelFor(brain),
+      model: model ?? modelFor(brain),
       effort: currentEffort(),
       policy,
       guard: agentGuard({ allowed, budget, next: taintGuard(taint, deny) }),
@@ -2470,7 +2471,16 @@ function toollessTurn(agent) {
   }
 }
 
-const agentReviewer = (ctx) => createReviewer({ converse: toollessTurn(ctx.agent) })(ctx)
+/**
+ * The reviewer pass, with its instructions from the Reviewer agent's file
+ * (read at each review, so a reload applies). The owner's on/off switch for the
+ * Reviewer covers starting it as an agent; whether results are reviewed is the
+ * review setting and each agent's own `review:` line.
+ */
+const agentReviewer = (ctx) => createReviewer({
+  converse: toollessTurn(ctx.agent),
+  definition: () => agentRegistry.get(REVIEWER_ID),
+})(ctx)
 
 /**
  * The owner's agent settings (Settings → Agents), read live: the cap on

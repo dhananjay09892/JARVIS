@@ -27,6 +27,8 @@ import { UNTRUSTED_NOTICE, createPostToolUse } from './untrusted.mjs'
 import { agentAuditSink } from './audit.mjs'
 
 const silent = { error() {}, log() {}, warn() {} }
+/** The Reviewer agent as shipped (A19): the review pass takes its instructions from it. */
+const shippedReviewer = () => parseAgentFile(readFileSync(join(BUILTIN_AGENTS_DIR, 'reviewer.md'), 'utf8')).value
 const tick = () => new Promise((r) => setImmediate(r))
 const settle = async (n = 12) => { for (let i = 0; i < n; i++) await tick() }
 
@@ -358,7 +360,7 @@ test('an uncited report is sent back by the reviewer and the cited retry is acce
     })()
   }
   const registry = { has: () => true, get: () => agent, isActive: () => true }
-  const m = createTaskManager({ runAgent, agents: registry, reviewer: createReviewer({ converse }), log: silent })
+  const m = createTaskManager({ runAgent, agents: registry, reviewer: createReviewer({ converse, definition: shippedReviewer() }), log: silent })
   const { task } = m.spawn({ title: 'Desks', goal: 'compare three standing desks under 400 pounds', agentId: 'researcher' })
   await settle(30)
   const t = m.get(task.id)
