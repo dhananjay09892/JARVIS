@@ -236,7 +236,9 @@ export function resultIsExternal(toolName) {
  * Local: no data leaves the machine through these, whatever their arguments.
  * Workspace writes, shell commands and pushes, deletions and workflow changes
  * already show the owner an approval card of their own; the HUD only draws
- * (its images are policed by the media proxy instead); memory is local.
+ * (its images are policed by the media proxy instead); memory is local. The
+ * Coder's tools (coder.mjs) work in its own worktree; its test runs and its
+ * pull request each show their own card.
  */
 const LOCAL_BUILTINS = new Set([
   'Read', 'Glob', 'Grep', 'TodoWrite', 'ToolSearch', 'WebSearch',
@@ -246,7 +248,7 @@ const LOCAL_BUILTINS = new Set([
 ])
 const LOCAL_SERVERS = new Set([
   'jarvis_ui', 'jarvis_memory', 'jarvis_workspace', 'jarvis_development',
-  'jarvis_workflows', 'jarvis_eyes', 'jarvis_apps', 'jarvis_task',
+  'jarvis_workflows', 'jarvis_eyes', 'jarvis_apps', 'jarvis_task', 'jarvis_coder',
 ])
 
 /** Browser tools that move data into a page, or move the browser somewhere. */

@@ -15,6 +15,7 @@ import {
 } from './agents.mjs'
 import { formatAgentFile } from './agent-definition.mjs'
 import { BUILTIN_AGENT_CONNECTORS } from './fixtures/agent-connectors.mjs'
+import { CODER_SERVER, CODER_TOOL_NAMES } from './policy.mjs'
 
 const FIXTURE_BUILTINS = fileURLToPath(new URL('../shared/fixtures/agents/registry/builtin/', import.meta.url))
 const quiet = { warn() {} }
@@ -49,7 +50,7 @@ test('the built-in folder ships with the app and every file in it loads', () => 
   const files = readdirSync(BUILTIN_AGENTS_DIR).filter((f) => f.endsWith('.md'))
   assert.ok(files.includes('coordinator.md'))
   // The tools a worker can be given (server.mjs workerCatalogue), as far as built-ins use them.
-  const tools = createToolCatalogue({ servers: { jarvis_task: ['report_progress', 'ask_owner'], jarvis_memory: ['list_memories', 'search_memory'] } })
+  const tools = createToolCatalogue({ servers: { jarvis_task: ['report_progress', 'ask_owner'], jarvis_memory: ['list_memories', 'search_memory'], [CODER_SERVER]: [...CODER_TOOL_NAMES] } })
   // The read connectors they name, installed but not granted (the live catalogue has none of their tools).
   const connectors = BUILTIN_AGENT_CONNECTORS
   const reg = createAgentRegistry({ userDir: join(tmpdir(), 'jarvis-agents-missing-dir'), tools, connectors, log: quiet })
