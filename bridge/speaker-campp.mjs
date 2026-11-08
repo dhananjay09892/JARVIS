@@ -146,6 +146,7 @@ function readVerified(path, sha256) {
  */
 export async function ensureModel({ dir, url = CAMPP_URL, sha256 = CAMPP_SHA256, file = CAMPP_FILE, fetchImpl = fetch } = {}) {
   const path = join(dir, file)
+  if (!sha256) throw Object.assign(new Error('speaker model unavailable: its checksum is not pinned yet'), { code: 'model-unavailable' })
   if (readVerified(path, sha256)) return path
   try {
     const res = await fetchImpl(url, { redirect: 'follow' })
@@ -162,34 +163,50 @@ export async function ensureModel({ dir, url = CAMPP_URL, sha256 = CAMPP_SHA256,
   }
 }
 
+/** The default model, as a spec the generic embedder can run. */
+export const CAMPP_SPEC = Object.freeze({
+  id: CAMPP_MODEL_ID, dimensions: CAMPP_DIMENSIONS, file: CAMPP_FILE, url: CAMPP_URL, sha256: CAMPP_SHA256,
+})
+
 /**
- * The CAM++ embedder. `modelPath` (tests, offline installs) skips the download.
+ * An embedder for any model that takes the same 80-dim Kaldi fbank features
+ * (WeSpeaker and 3D-Speaker exports do). `spec` is { id, dimensions, file,
+ * url, sha256 }. `modelPath` (tests, offline installs) skips the download.
  * `ort` is injectable; by default onnxruntime-node is imported on first use.
+ * warm() loads the model now, so a switch can find out it fails before
+ * anything is deleted.
  */
-export function createCamppEmbedder({ dir, modelPath, ort, fetchImpl } = {}) {
+export function createOnnxEmbedder(spec, { dir, modelPath, ort, fetchImpl } = {}) {
   let session = null
   let loading = null
   const open = async () => {
     const runtime = ort ?? (await import('onnxruntime-node'))
-    const path = modelPath ?? (await ensureModel({ dir, fetchImpl }))
+    const path = modelPath ?? (await ensureModel({ dir, url: spec.url, sha256: spec.sha256, file: spec.file, fetchImpl }))
     try {
       return { runtime, session: await runtime.InferenceSession.create(path) }
     } catch (err) {
       throw Object.assign(new Error(`speaker model unavailable: ${err.message}`), { code: 'model-unavailable' })
     }
   }
+  const ready = async () => {
+    loading ??= open().catch((err) => { loading = null; throw err })
+    session ??= await loading
+    return session
+  }
   return {
-    id: CAMPP_MODEL_ID,
-    dimensions: CAMPP_DIMENSIONS,
+    id: spec.id,
+    dimensions: spec.dimensions,
+    async warm() { await ready() },
     async embed(pcm) {
-      loading ??= open().catch((err) => { loading = null; throw err })
-      session ??= await loading
+      const { runtime, session: s } = await ready()
       const { data, frames } = fbank(pcm)
       if (frames < 1) throw Object.assign(new Error('too-short'), { code: 'too-short' })
-      const { runtime, session: s } = session
       const input = new runtime.Tensor('float32', data, [1, frames, NMEL])
       const out = await s.run({ [s.inputNames[0]]: input })
       return Float32Array.from(out[s.outputNames[0]].data)
     },
   }
 }
+
+/** The CAM++ embedder (the default model). */
+export const createCamppEmbedder = (opts = {}) => createOnnxEmbedder(CAMPP_SPEC, opts)

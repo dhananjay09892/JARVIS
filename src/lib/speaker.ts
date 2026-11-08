@@ -121,3 +121,27 @@ export async function setPersonLanguage(id: string, choices: LanguageChoices): P
     return false
   }
 }
+
+// -- speaker model (Q82) ----------------------------------------------------------
+
+export type SpeakerModel = { id: string; label: string; sizeMb: number; licence: string; available: boolean; selected: boolean }
+
+export async function listSpeakerModels(): Promise<{ ok: boolean; models: SpeakerModel[] }> {
+  try {
+    const res = await fetch(`${BRIDGE_HTTP_URL}/speaker/models`)
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; models?: SpeakerModel[] }
+    return { ok: Boolean(j.ok), models: j.models ?? [] }
+  } catch {
+    return { ok: false, models: [] }
+  }
+}
+
+/** Switch model. Deletes every voiceprint, so the caller must have asked first. */
+export async function switchSpeakerModel(id: string): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    const res = await post(`model?${new URLSearchParams({ id, confirm: '1' })}`)
+    return (await res.json().catch(() => ({ ok: false, reason: 'failed' }))) as { ok: boolean; reason?: string }
+  } catch {
+    return { ok: false, reason: 'failed' }
+  }
+}
