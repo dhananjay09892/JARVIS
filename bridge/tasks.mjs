@@ -66,6 +66,7 @@ import {
   DELEGATION_REFUSALS, DELEGATION_STOPS, MAX_CHILDREN, MAX_WAIT_MS, DEPTH_CEILING, budgetSpent, mayDelegate, remainingBudget, shareBudget,
 } from './agent-delegation.mjs'
 import { resolveAgent } from './agent-ask.mjs'
+import { isDraftAgent, readDraft } from './agent-draft-result.mjs'
 
 export const MAX_CONCURRENT = 3
 /** The cap is a setting from 1 to 8 (agent-settings.mjs); anything else falls back to the default. */
@@ -98,6 +99,7 @@ function snapshot(t) {
     startedAt: t.startedAt,
     endedAt: t.endedAt,
     ...(t.agentId && { agentId: t.agentId, agentName: t.agentName }),
+    ...(t.draft && { draft: { ...t.draft } }),
     ...(t.depth > 1 && { depth: t.depth }),
     ...(t.parentId && { parentId: t.parentId }),
   }
@@ -245,6 +247,16 @@ export function createTaskManager({
     }
     pump()
     return { stopped, paused: reason !== null }
+  }
+
+  /**
+   * What a finished run leaves on its task: the result, and for an agent
+   * whose output is a draft, the draft read from it (agent-draft-result.mjs)
+   * so the board can show and copy it. Reading a draft sends nothing.
+   */
+  function doneFields(agent, result) {
+    const draft = isDraftAgent(agent) ? readDraft(result) : null
+    return draft ? { result, draft } : { result }
   }
 
   function finish(t, status, fields = {}) {
@@ -543,13 +555,13 @@ export function createTaskManager({
     for (let attempt = 1; ; attempt++) {
       const result = await attemptOnce(t, agent, limits, retry)
       if (result === null || !isActive(t)) return
-      if (!reviewed) { finish(t, 'done', { result }); return }
+      if (!reviewed) { finish(t, 'done', doneFields(agent, result)); return }
       if (typeof t.costUsd === 'number') t.costBase = t.costUsd
       const verdict = await reviewOnce(t, agent, result, attempt)
       if (!verdict) return
       if (verdict.pass) {
         note(t, 'review', `passed on attempt ${attempt}`)
-        finish(t, 'done', { result })
+        finish(t, 'done', doneFields(agent, result))
         return
       }
       note(t, 'review', `not accepted: ${verdict.reasons[0] ?? 'no reason given'}`)
