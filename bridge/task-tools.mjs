@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { agentOperations, roster, taskBrief as brief } from './agent-ask.mjs'
 import { DELEGATE_SERVER, MAX_WAIT_MS } from './agent-delegation.mjs'
 
-const ORCHESTRATOR_TOOLS = ['spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'draft_agent', 'start_agent', 'list_agents']
+const ORCHESTRATOR_TOOLS = ['spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'draft_agent', 'start_team', 'start_agent', 'list_agents']
 export const isTaskTool = (name) => ORCHESTRATOR_TOOLS.includes(name)
 
 const reply = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }] })
@@ -87,7 +87,18 @@ export function taskServer(manager, { agents = null, drafts = null, approve = nu
           request: z.string().max(4000).optional().describe('The owner\'s own words, e.g. "ask the researcher to compare three desks"'),
         },
         async (a) => reply(agentOps.start(a))),
-      tool('list_agents', 'Every named agent, what it is for, and whether it can be asked now.', {}, async () => reply(agentOps.list())),
+      tool('list_agents', 'Every named agent, what it is for, and whether it can be asked now; and the teams.', {}, async () => reply(agentOps.list())),
+      tool('start_team',
+        'Start a team of agents on a goal, in the background, when the owner asks for a team: "get the research team on…" ' +
+        '(Researcher, Writer, then a Reviewer check) or "have the dev team…" (two Coders, then a Reviewer check). ' +
+        'Pass the team and a complete goal, or the owner\'s own words as request. If the answer says the team cannot run, say why in a sentence.',
+        {
+          team: z.string().max(40).optional().describe('research or dev'),
+          goal: z.string().max(4000).optional().describe('Everything the team needs; it cannot see this conversation'),
+          title: z.string().max(60).optional().describe('Short name for the board'),
+          request: z.string().max(4000).optional().describe('The owner\'s own words, e.g. "get the research team on standing desks"'),
+        },
+        async (a) => reply(agentOps.startTeam(a))),
       tool('draft_agent',
         'Draft a new named agent from the owner\'s description, e.g. "make me an agent that watches my GitHub notifications". ' +
         'An approval card shows what it may use; nothing is saved until the owner approves it. Use it only when the owner asks for a new agent. ' +
