@@ -112,6 +112,8 @@ import { outlookConnector } from './connectors/outlook.mjs'
 import { createMicrosoftClient, MICROSOFT_CLIENT_ID } from './connectors/microsoft-oauth.mjs'
 import { dropboxConnector } from './connectors/dropbox.mjs'
 import { createDropboxClient, DROPBOX_CLIENT_ID } from './connectors/dropbox-oauth.mjs'
+import { spotifyConnector } from './connectors/spotify.mjs'
+import { createSpotifyClient, SPOTIFY_CLIENT_ID } from './connectors/spotify-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { createConnectorOptions } from './connectors/options.mjs'
 import { checkForUpdate } from './update.mjs'
@@ -647,6 +649,16 @@ connectors.registerAll([
     id: 'dropbox',
     create: (ctx) => dropboxConnector({
       dropboxClient: createDropboxClient(connectorCredentialStore.scoped(DROPBOX_CLIENT_ID)),
+    }).create(ctx),
+  },
+  {
+    // Spotify (task C34), read-only (user-read-recently-played): OAuth with
+    // PKCE and a refresh token against the owner's own Spotify app (client ID
+    // only, kept under the `spotify` credential id). accounts.spotify.com and
+    // api.spotify.com only.
+    id: 'spotify',
+    create: (ctx) => spotifyConnector({
+      spotifyClient: createSpotifyClient(connectorCredentialStore.scoped(SPOTIFY_CLIENT_ID)),
     }).create(ctx),
   },
   {
