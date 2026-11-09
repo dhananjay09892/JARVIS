@@ -22,12 +22,17 @@
  * An unknown, switched-off or unapproved agent gets an answer that can be
  * spoken as it is, and nothing is queued.
  *
+ * A team ("get the research team on…") is started the same way, through
+ * `startTeam` or the owner's words to `start`: the task manager's
+ * `spawnTeam` checks the team could run and answers in words if not.
+ *
  * Starting an agent grants nothing: the task manager re-checks the agent,
  * and what it may do is still its definition, narrowed by the runtime and
  * decided call by call by policy.mjs. Only Node built-ins are used here, so
  * this can be tested on its own.
  */
 import { matchAgent } from './agent-match.mjs'
+import { TEAM_STOPS, parseTeamRequest, teamList, teamPreset } from './agent-teams.mjs'
 
 const MAX_LISTED = 50
 const MAX_QUERY = 60
@@ -155,6 +160,7 @@ const offAnswer = (a) => (a.why === 'waiting for your approval'
 const brief = (t) => ({
   id: t.id, title: t.title, status: t.status, percent: t.percent, note: t.note, error: t.error || undefined,
   ...(t.agentName && { agent: t.agentName }),
+  ...(t.team && { team: t.team.name }),
 })
 
 /**
@@ -164,14 +170,37 @@ const brief = (t) => ({
  * @param {{ list?: Function, isActive: Function } | null} agents the switched registry
  */
 export function agentOperations(manager, agents) {
-  return {
+  const ops = {
     /** Every agent, with whether it can be asked now. */
     list() {
       const entries = roster(agents)
       return {
         agents: entries.slice(0, MAX_LISTED),
         ...(entries.length > MAX_LISTED && { more: entries.length - MAX_LISTED }),
+        teams: teamList(),
       }
+    },
+
+    /**
+     * Start a team preset on a goal: `team` and `goal`, or the owner's own
+     * words as `request` ("get the research team on…").
+     */
+    startTeam({ team, goal, title, request } = {}) {
+      let preset = null
+      let query = typeof team === 'string' ? team : ''
+      let g = clip(goal, 4000)
+      const parsed = typeof request === 'string' ? parseTeamRequest(request) : null
+      if (query.trim()) preset = teamPreset(query)
+      else if (parsed) { preset = parsed.preset; query = parsed.query }
+      else return { started: false, reason: 'Say which team to ask: the research team or the dev team.' }
+      if (!preset) return { started: false, reason: TEAM_STOPS.unknown(query) }
+      if (!g && parsed) g = parsed.goal
+      if (!g) return { started: false, reason: `What should the ${preset.name} do?` }
+      if (typeof manager.spawnTeam !== 'function') return { started: false, reason: 'Teams are not available.' }
+      const r = manager.spawnTeam({ team: preset.id, goal: g, title: clip(title, 60) || undefined })
+      return r.ok
+        ? { started: true, team: preset.name, ...brief(r.task) }
+        : { started: false, team: preset.name, reason: r.reason }
     },
 
     /**
@@ -188,6 +217,8 @@ export function agentOperations(manager, agents) {
         target = resolveAgent(entries, query)
         if (!g && typeof request === 'string') g = parseAgentRequest(request, target ? [target] : [])?.goal ?? ''
       } else if (typeof request === 'string' && request.trim()) {
+        // "get the research team on…" names a team, not an agent.
+        if (parseTeamRequest(request)?.preset) return ops.startTeam({ request, goal, title })
         const parsed = parseAgentRequest(request, entries)
         if (parsed) {
           target = parsed.agent
@@ -214,6 +245,7 @@ export function agentOperations(manager, agents) {
         : { started: false, agent: target.name, reason: r.reason }
     },
   }
+  return ops
 }
 
 export { brief as taskBrief }

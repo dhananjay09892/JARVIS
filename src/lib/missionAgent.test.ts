@@ -14,6 +14,13 @@ test('a plain task, or a blank name, gets no tag', () => {
   assert.equal(missionAgent({ title: 'Tidy downloads', agentName: '   ' }), null)
 })
 
+// Agents phase A4 (A13): a team run is tagged with the team, not the Coordinator.
+test('a team run is tagged with the team name', () => {
+  assert.deepEqual(missionAgent({ title: 'Standing desks', agentName: 'Coordinator', team: { id: 'research', name: 'Research team' } }), {
+    label: 'RESEARCH TEAM', title: 'Run by the Research team', aria: 'Standing desks, by the Research team',
+  })
+})
+
 // Agents phase A4 (A12): a task another agent started sits under the task that started it.
 test('children are nested under their parent, oldest first; parents stay newest first', () => {
   const tasks = [

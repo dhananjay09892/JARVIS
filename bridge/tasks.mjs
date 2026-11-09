@@ -56,17 +56,27 @@
  * parent has left; it ends when its parent ends. Everything is checked here,
  * on every start, whatever the session asked for.
  *
+ * A team preset (agent-teams.mjs) is a Coordinator task that runs no session
+ * of its own: `spawnTeam` checks up front that the team could run, and the
+ * run starts each member in turn through the same `delegate()`, so every
+ * delegation rule above holds for every member; the Reviewer's verdict
+ * decides how the team's task ends.
+ *
  * Only background tasks live here. The voice session is not a task, so the
  * cap and the pause never hold it back.
  */
 import { randomUUID } from 'node:crypto'
 import { BUDGET_STOPS, AGENT_REFUSALS } from './agent-runtime.mjs'
-import { MAX_REVIEW_ATTEMPTS, REVIEW_STOPS, parseVerdict, retryGoal, reviewWanted } from './agent-review.mjs'
+import { MAX_REVIEW_ATTEMPTS, REVIEW_STOPS, automaticChecks, parseVerdict, retryGoal, reviewWanted } from './agent-review.mjs'
 import {
-  DELEGATION_REFUSALS, DELEGATION_STOPS, MAX_CHILDREN, MAX_WAIT_MS, DEPTH_CEILING, budgetSpent, mayDelegate, remainingBudget, shareBudget,
+  DELEGATION_REFUSALS, DELEGATION_STOPS, DELEGATOR_ID as DELEGATOR, MAX_CHILDREN, MAX_WAIT_MS, DEPTH_CEILING, budgetSpent, mayDelegate,
+  remainingBudget, shareBudget,
 } from './agent-delegation.mjs'
 import { resolveAgent } from './agent-ask.mjs'
 import { isDraftAgent, readDraft } from './agent-draft-result.mjs'
+import {
+  TEAM_STOPS, memberGoal, memberRecord, memberTitle, reviewGoal, teamAgents, teamOutcome, teamPlan, teamPreset, teamResult, teamSize,
+} from './agent-teams.mjs'
 
 export const MAX_CONCURRENT = 3
 /** The cap is a setting from 1 to 8 (agent-settings.mjs); anything else falls back to the default. */
@@ -102,6 +112,7 @@ function snapshot(t) {
     ...(t.draft && { draft: { ...t.draft } }),
     ...(t.depth > 1 && { depth: t.depth }),
     ...(t.parentId && { parentId: t.parentId }),
+    ...(t.team && { team: { id: t.team, name: teamPreset(t.team)?.name ?? t.team } }),
   }
 }
 
@@ -185,6 +196,7 @@ export function createTaskManager({
         ...(typeof s.agentId === 'string' && s.agentId && { agentId: s.agentId, agentName: clip(s.agentName, 60) || s.agentId }),
         depth: Number.isInteger(s.depth) && s.depth > 1 ? s.depth : 1,
         ...(typeof s.parentId === 'string' && s.parentId && { parentId: s.parentId }),
+        ...(teamPreset(s.team?.id) && { team: teamPreset(s.team.id).id }),
         children: 0, childCostUsd: 0, waiters: new Set(),
       }
       if (ACTIVE.has(t.status)) {
@@ -548,6 +560,7 @@ export function createTaskManager({
       t.timer = setTimeout(() => stopper(t)(BUDGET_STOPS.minutes(limits.maxMinutes)), limits.maxMinutes * 60_000)
       t.timer.unref?.()
     }
+    if (t.team) { await runTeam(t); return }
     // Only a named agent is reviewed, and only when its file or the owner's
     // default asks for it. The budget covers every attempt together.
     const reviewed = Boolean(agent) && typeof reviewer === 'function' && reviewWanted(agent, reviewDefaultNow())
@@ -576,7 +589,7 @@ export function createTaskManager({
   }
 
   /** A new task in the queue; started as soon as the cap allows. */
-  function enqueue({ title, goal, agent = null, depth = 1, parentId = null }) {
+  function enqueue({ title, goal, agent = null, depth = 1, parentId = null, team = null }) {
     const g = goal
     const t = {
       id: `t${randomUUID().slice(0, 8)}`,
@@ -601,6 +614,7 @@ export function createTaskManager({
       // A schedule or an event may start a run below another (agent-triggers.mjs).
       depth: Number.isInteger(depth) && depth > 1 ? Math.min(depth, DEPTH_CEILING) : 1,
       ...(parentId && { parentId }),
+      ...(team && { team }),
       children: 0, childCostUsd: 0, waiters: new Set(),
     }
     tasks.set(t.id, t)
@@ -683,6 +697,98 @@ export function createTaskManager({
     }
   }
 
+  /** Resolves once task `c` has ended, or the run waiting on it has. */
+  function untilEnded(parent, c) {
+    if (!isActive(c) || !isActive(parent)) return Promise.resolve()
+    return new Promise((resolve) => {
+      const done = () => { c.waiters.delete(done); parent.waiters.delete(done); resolve() }
+      c.waiters.add(done)
+      parent.waiters.add(done)
+    })
+  }
+
+  /** Start one member of a team run and wait for it to end. Returns the ended task, or null when the run has ended. */
+  async function runMember(t, { agent, goal, title }) {
+    const r = delegate(t, { agent, goal, title })
+    if (!r.ok) {
+      let name = agent
+      try { name = agents?.get(agent)?.name || agent } catch { name = agent }
+      finish(t, 'failed', { error: TEAM_STOPS.couldNotStart(name, r.reason) })
+      return null
+    }
+    const c = tasks.get(r.task.id)
+    await untilEnded(t, c)
+    if (!isActive(t)) return null
+    if (c.status !== 'done') {
+      finish(t, 'failed', { error: TEAM_STOPS.memberFailed(c.agentName, c.status, c.error) })
+      return null
+    }
+    return c
+  }
+
+  /**
+   * A team run (agent-teams.mjs): each member in order through delegate(),
+   * then the Reviewer, whose verdict decides how the task ends.
+   */
+  async function runTeam(t) {
+    const preset = teamPreset(t.team)
+    if (!preset) { finish(t, 'failed', { error: TEAM_STOPS.unknown(t.team) }); return }
+    t.steps = teamPlan(preset)
+    const members = []
+    for (let i = 0; i < preset.steps.length; i++) {
+      if (!isActive(t)) return
+      t.step = i + 1
+      t.note = `${preset.steps[i].label}`
+      note(t, 'step', t.steps[i])
+      emit(t)
+      const c = await runMember(t, {
+        agent: preset.steps[i].agent,
+        goal: memberGoal(preset, i, { goal: t.goal, members }),
+        title: memberTitle(preset, i, t.title),
+      })
+      if (!c) return
+      members.push(memberRecord(snapshot(c)))
+    }
+    if (!isActive(t)) return
+    t.step = preset.steps.length + 1
+    t.note = 'Review'
+    note(t, 'step', 'Review')
+    emit(t)
+    const result = teamResult(preset, members)
+    let last = null
+    try { last = agents?.get(preset.steps.at(-1).agent) ?? null } catch { last = null }
+    const auto = last ? automaticChecks(last, result) : { checks: null }
+    const c = await runMember(t, {
+      agent: preset.reviewer,
+      goal: reviewGoal(preset, { title: t.title, goal: t.goal, members, result, checks: auto.checks, ...(auto.clean && { clean: auto.clean }) }),
+      title: memberTitle(preset, preset.steps.length, t.title),
+    })
+    if (!c) return
+    const outcome = teamOutcome(c.result, result)
+    note(t, 'review', outcome.verdict.pass ? 'the Reviewer accepted the result' : `not accepted: ${outcome.verdict.reasons[0] ?? 'no reason given'}`)
+    finish(t, outcome.status, outcome.fields)
+  }
+
+  /**
+   * Why a team could not run now, or null. Checked when it is asked for;
+   * every member is checked again by delegate() as it starts.
+   */
+  function teamRefusal(preset, coord) {
+    const may = mayDelegate(coord, { depth: 1, maxDepth })
+    if (!may.ok) return may.reason
+    if (cap() < 2) return DELEGATION_REFUSALS.cap
+    if (teamSize(preset) > maxChildrenNow()) return TEAM_STOPS.children(preset, maxChildrenNow())
+    const listed = new Set(allowList(coord).map((a) => a.id))
+    for (const id of teamAgents(preset)) {
+      let name = id
+      let on = false
+      try { name = agents.get(id)?.name || id; on = agents.has(id) && agents.isActive(id) === true } catch { on = false }
+      if (!listed.has(id)) return TEAM_STOPS.notListed(preset, name)
+      if (!on) return TEAM_STOPS.missing(preset, name)
+    }
+    return null
+  }
+
   /** The delegation handle for a run that may delegate, as `runAgent` gets it; nothing otherwise. */
   function delegationFor(t, agent) {
     if (!mayDelegate(agent, { depth: t.depth, maxDepth }).ok) return null
@@ -721,6 +827,27 @@ export function createTaskManager({
         if (!on) return { ok: false, reason: `The ${agent.name} agent is not switched on.` }
       }
       const t = enqueue({ title, goal: g, agent, depth })
+      pump()
+      return { ok: true, task: snapshot(t) }
+    },
+    /**
+     * Start a team preset (agent-teams.mjs) on a goal: a Coordinator task
+     * whose members run in order, then the Reviewer. Refused with a reason
+     * the voice session can say when the team could not run now.
+     */
+    spawnTeam({ team, title, goal }) {
+      const preset = teamPreset(team)
+      if (!preset) return { ok: false, reason: TEAM_STOPS.unknown(team) }
+      const g = clip(goal, 4000)
+      if (!g) return { ok: false, reason: `What should the ${preset.name} do?` }
+      const held = pauseReason()
+      if (held) return { ok: false, reason: held }
+      let coord = null
+      try { coord = agents?.has(DELEGATOR) && agents.isActive(DELEGATOR) === true ? agents.get(DELEGATOR) : null } catch { coord = null }
+      if (!coord) return { ok: false, reason: `The ${preset.name} needs the Coordinator agent, which is not switched on.` }
+      const why = teamRefusal(preset, coord)
+      if (why) return { ok: false, reason: why }
+      const t = enqueue({ title: clip(title, 60) || clip(`${preset.name}: ${g}`, 60), goal: g, agent: coord, team: preset.id })
       pump()
       return { ok: true, task: snapshot(t) }
     },

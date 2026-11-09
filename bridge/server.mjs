@@ -1089,6 +1089,9 @@ Tasks:
   owner asks one by name: "ask the researcher to…", "get the writer to…". If it
   says the agent is unknown or switched off, say so in a sentence and offer a
   plain task; never start one silently instead. list_agents says who there is.
+- Teams are started with start_team: "get the research team on…" (Researcher,
+  Writer, then the Reviewer) or "have the dev team…" (two Coders, then the
+  Reviewer). If it says the team cannot run, say why in a sentence.
 
 Using tools:
 - You have real tools on this machine. Use them rather than guessing.
