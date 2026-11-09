@@ -233,6 +233,14 @@ export type TaskView = {
     body: string
     notes?: string
   }
+  /** Set when an alert agent (the Inbox Triager) finished with a triage: its lists and draft replies, never sent. */
+  triage?: {
+    summary: string
+    urgent: string[]
+    soon: string[]
+    later: string[]
+    drafts: NonNullable<TaskView['draft']>[]
+  }
   /** Set when another agent started this one (delegation): the task that did, and how deep it is (2). */
   parentId?: string
   depth?: number

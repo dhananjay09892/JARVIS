@@ -67,6 +67,7 @@ import {
 } from './agent-delegation.mjs'
 import { resolveAgent } from './agent-ask.mjs'
 import { isDraftAgent, readDraft } from './agent-draft-result.mjs'
+import { isAlertAgent, readTriage } from './agent-triage-result.mjs'
 
 export const MAX_CONCURRENT = 3
 /** The cap is a setting from 1 to 8 (agent-settings.mjs); anything else falls back to the default. */
@@ -79,6 +80,9 @@ const clip = (s, n) => (typeof s === 'string' ? s.trim().slice(0, n) : '')
 const ACTIVE = new Set(['queued', 'running', 'waiting_approval', 'waiting_input'])
 export const ANSWER_TTL_MS = 30 * 60 * 1000
 export const isActive = (task) => ACTIVE.has(task.status)
+
+/** A copy of a triage, so a view never shares its lists with the task. */
+const copyTriage = (t) => ({ ...t, urgent: [...t.urgent], soon: [...t.soon], later: [...t.later], drafts: t.drafts.map((d) => ({ ...d })) })
 
 /** What the browser and the orchestrator see: no signals, no internals. */
 function snapshot(t) {
@@ -100,6 +104,7 @@ function snapshot(t) {
     endedAt: t.endedAt,
     ...(t.agentId && { agentId: t.agentId, agentName: t.agentName }),
     ...(t.draft && { draft: { ...t.draft } }),
+    ...(t.triage && { triage: copyTriage(t.triage) }),
     ...(t.depth > 1 && { depth: t.depth }),
     ...(t.parentId && { parentId: t.parentId }),
   }
@@ -252,11 +257,14 @@ export function createTaskManager({
   /**
    * What a finished run leaves on its task: the result, and for an agent
    * whose output is a draft, the draft read from it (agent-draft-result.mjs)
-   * so the board can show and copy it. Reading a draft sends nothing.
+   * so the board can show and copy it; for an alert agent in the triage
+   * shape (agent-triage-result.mjs), the triage, so its end can be raised by
+   * what it found. Reading either sends nothing.
    */
   function doneFields(agent, result) {
     const draft = isDraftAgent(agent) ? readDraft(result) : null
-    return draft ? { result, draft } : { result }
+    const triage = isAlertAgent(agent) ? readTriage(result) : null
+    return { result, ...(draft && { draft }), ...(triage && { triage }) }
   }
 
   function finish(t, status, fields = {}) {

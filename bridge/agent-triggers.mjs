@@ -48,6 +48,7 @@
 import { TOPICS } from './bus.mjs'
 import { DEPTH_CEILING } from './agent-delegation.mjs'
 import { isActive as taskActive } from './tasks.mjs'
+import { triageAlert } from './agent-triage-result.mjs'
 import { wrapUntrusted } from './untrusted.mjs'
 
 const MINUTE = 60_000
@@ -100,6 +101,8 @@ export function triggerNotification(task, at) {
   if (!task || (task.status !== 'done' && task.status !== 'failed' && task.status !== 'interrupted')) return null
   const name = clip(task.agentName, 60) || 'An agent'
   const ok = task.status === 'done'
+  // An alert agent's triage decides how loudly it is raised (agent-triage-result.mjs).
+  const triage = ok ? triageAlert(task, name) : null
   return {
     v: 1,
     id: `agent-run-${task.id}`,
@@ -110,6 +113,7 @@ export function triggerNotification(task, at) {
     privacy: 'private',
     title: ok ? `${name} finished` : `${name} could not finish`,
     body: clip(ok ? task.result : task.error, 300),
+    ...triage,
   }
 }
 
