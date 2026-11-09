@@ -238,7 +238,8 @@ export function resultIsExternal(toolName) {
  * already show the owner an approval card of their own; the HUD only draws
  * (its images are policed by the media proxy instead); memory is local. The
  * Coder's tools (coder.mjs) work in its own worktree; its test runs and its
- * pull request each show their own card.
+ * pull request each show their own card. The briefing tool (briefing-agent.mjs)
+ * only reads what the bridge already holds.
  */
 const LOCAL_BUILTINS = new Set([
   'Read', 'Glob', 'Grep', 'TodoWrite', 'ToolSearch', 'WebSearch',
@@ -248,7 +249,7 @@ const LOCAL_BUILTINS = new Set([
 ])
 const LOCAL_SERVERS = new Set([
   'jarvis_ui', 'jarvis_memory', 'jarvis_workspace', 'jarvis_development',
-  'jarvis_workflows', 'jarvis_eyes', 'jarvis_apps', 'jarvis_task', 'jarvis_coder',
+  'jarvis_workflows', 'jarvis_eyes', 'jarvis_apps', 'jarvis_task', 'jarvis_coder', 'jarvis_briefing',
 ])
 
 /** Browser tools that move data into a page, or move the browser somewhere. */

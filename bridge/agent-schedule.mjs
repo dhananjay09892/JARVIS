@@ -230,10 +230,16 @@ export function runNotification(task, at) {
  * @param {{ submit: Function } | null} [o.notifier] the notification policy engine
  * @param {ReturnType<typeof createScheduleState>} [o.state]
  * @param {() => number} [o.clock]
+ * @param {(agent: object) => string | null} [o.scheduleOf] the schedule an
+ *   agent runs on: its file's, unless the bridge takes it from a setting (the
+ *   Morning Briefing follows the briefing time). null means "no time set":
+ *   it does not run, and nothing is made up once a time is set.
+ * @param {(task: object, at: number) => object | null} [o.notificationFor]
+ *   the alert for a run that ended (runNotification unless an agent has its own)
  */
 export function createAgentScheduler({
   agents, tasks, paused = () => null, notifier = null, state = createScheduleState(),
-  clock = () => Date.now(), log = console,
+  clock = () => Date.now(), log = console, scheduleOf = (agent) => agent.schedule, notificationFor = runNotification,
 } = {}) {
   if (!agents || !tasks) throw new TypeError('The agent scheduler needs the agent registry and the task manager.')
   /** agent id → task id of its latest scheduled run */
@@ -243,6 +249,8 @@ export function createAgentScheduler({
   /** agent id → schedule string already reported as not understood */
   const reported = new Map()
   const cronCache = new Map()
+  /** agent ids seen with no time set, so setting one does not make up runs from before */
+  const unscheduled = new Set()
 
   const cronOf = (expr) => {
     if (!cronCache.has(expr)) cronCache.set(expr, parseCron(expr))
@@ -264,7 +272,8 @@ export function createAgentScheduler({
     const t = frame?.type === 'task' ? frame.task : null
     if (!t || !watching.has(t.id) || taskActive(t)) return
     watching.delete(t.id)
-    const n = runNotification(t, clock())
+    let n = null
+    try { n = notificationFor(t, clock()) } catch (err) { log.error?.('[jarvis] scheduled agent alert could not be built:', err?.message ?? err) }
     if (n && notifier) {
       try { notifier.submit(n) } catch (err) { log.error?.('[jarvis] scheduled agent alert failed:', err?.message ?? err) }
     }
@@ -297,14 +306,18 @@ export function createAgentScheduler({
       const id = view.id
       const agent = safe(() => agents.get(id), null)
       if (!agent || agent.mode !== 'scheduled') continue
-      const cron = cronOf(agent.schedule)
+      const expr = safe(() => scheduleOf(agent), agent.schedule)
+      // No time set: nothing is due. Once one is, counting starts from then.
+      if (expr === null || expr === undefined) { unscheduled.add(id); continue }
+      const cron = cronOf(expr)
       if (!cron) {
-        if (reported.get(id) !== agent.schedule) {
-          reported.set(id, agent.schedule)
+        if (reported.get(id) !== expr) {
+          reported.set(id, expr)
           log.warn?.(`[jarvis] agent ${id} will not run: ${SCHEDULE_SKIPS.badSchedule}`)
         }
         continue
       }
+      if (unscheduled.delete(id)) { updates.push([id, floorMinute(now)]); continue }
       const last = state.get(id)
       // First sight: start counting from now; nothing before is made up.
       if (last === undefined) { updates.push([id, floorMinute(now)]); continue }
