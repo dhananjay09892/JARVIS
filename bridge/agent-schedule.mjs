@@ -33,7 +33,9 @@
  * When a scheduled run ends, the result goes out as a `Notification`
  * (shared/contracts.ts) through the notification policy (notify-policy.mjs),
  * which decides whether to say it, show it or hold it. A run the owner
- * cancelled raises nothing.
+ * cancelled raises nothing. An alert agent that hands back a triage (the
+ * Inbox Triager) is raised as `important` when it found something urgent and
+ * as `info` (kept for the briefing) when it did not (agent-triage-result.mjs).
  *
  * Nothing here grants anything: what the run may do is still its definition,
  * narrowed by agent-runtime.mjs and decided call by call by policy.mjs.
@@ -42,6 +44,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import { settingsDir } from './settings.mjs'
 import { isActive as taskActive } from './tasks.mjs'
+import { triageAlert } from './agent-triage-result.mjs'
 
 const MINUTE = 60_000
 /** Missed runs older than this are not made up. */
@@ -209,6 +212,8 @@ export function runNotification(task, at) {
   if (!task || (task.status !== 'done' && task.status !== 'failed' && task.status !== 'interrupted')) return null
   const name = clip(task.agentName, 60) || 'An agent'
   const ok = task.status === 'done'
+  // An alert agent's triage decides how loudly it is raised (agent-triage-result.mjs).
+  const triage = ok ? triageAlert(task, name) : null
   return {
     v: 1,
     id: `agent-run-${task.id}`,
@@ -219,6 +224,7 @@ export function runNotification(task, at) {
     privacy: 'private',
     title: ok ? `${name} finished its scheduled run` : `${name} could not finish its scheduled run`,
     body: clip(ok ? task.result : task.error, 300),
+    ...triage,
   }
 }
 

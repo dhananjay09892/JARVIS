@@ -19,4 +19,5 @@ export const BUILTIN_AGENT_CONNECTORS = Object.freeze([
   read('slack', 'list_channels', 'read_recent_messages'),
   read('gcontacts', 'find_contact'),
   read('gcalendar', 'list_events', 'check_free_busy'),
+  read('documents', 'search_documents', 'read_document'),
 ])
