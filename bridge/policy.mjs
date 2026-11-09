@@ -43,6 +43,14 @@ export const CODER_TOOL_NAMES = Object.freeze([
 export const CODER_ID = 'coder'
 
 /**
+ * The morning briefing's server (briefing-agent.mjs): one tool that reads the
+ * briefing the bridge already builds by plain rules from synced connector
+ * documents. It sends nothing and changes nothing, not even "briefing given".
+ */
+export const BRIEFING_SERVER = 'jarvis_briefing'
+export const BRIEFING_TOOL_NAMES = Object.freeze(['get_morning_briefing'])
+
+/**
  * Both spellings of every renamed built-in are listed on purpose. The SDK
  * presents several tools to the model under newer names — Task is Agent,
  * BashOutput is TaskOutput, KillShell is TaskStop, and the MCP resource tools
@@ -407,6 +415,8 @@ function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool,
       if (agentId !== CODER_ID) return fixed(false, 'coder-pull-request-only')
       return writes('coder-pull-request')
     }
+    // The morning briefing, read as the page would hear it; nothing is sent or marked.
+    if (server === BRIEFING_SERVER) return fixed(BRIEFING_TOOL_NAMES.includes(tool), 'own-server-list')
     // Saved memories are local data. These tools can neither act nor approve.
     if (server === 'jarvis_memory') return fixed(isMemoryTool(tool) === true, 'own-server-list')
     // Recipes can only be changed through an approval card, and their action

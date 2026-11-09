@@ -70,6 +70,8 @@ const MAX_CALENDAR_DOCS = 500
 const MAX_MAIL_DOCS = 200
 const MAX_TITLE = 80
 
+const OFF_REASON = 'The morning briefing is switched off in Settings.'
+
 const CALENDAR_CONNECTORS = ['gcalendar']
 const MAIL_CONNECTORS = ['gmail', 'gmail_imap', 'imap', 'outlook']
 
@@ -495,6 +497,32 @@ export function createBriefing({
     return found
   }
 
+  /** The briefing at `t` from the sources as they are now, or null when they cannot be read. Changes nothing. */
+  const build = (t, { short, locale, lang, script }) => {
+    const since = Math.max(t - WINDOW_MS, lastBriefing)
+    let input
+    try {
+      input = {
+        now: t,
+        short: Boolean(short),
+        mailDetail: mailDetail() === true,
+        locale: safeLocale(locale),
+        lang: langOf(lang),
+        script: scriptOf(script),
+        weather: docsOf(['weather'], { limit: 5 }),
+        calendar: docsOf(CALENDAR_CONNECTORS, { limit: MAX_CALENDAR_DOCS }),
+        mail: docsOf(MAIL_CONNECTORS, { since, limit: MAX_MAIL_DOCS, classes: ['messages'] }),
+        overnight: events.filter((e) => Number.isFinite(e.at) && e.at >= since),
+        held: notifier ? notifier.held().filter((h) => h.heldAt >= since) : [],
+      }
+    } catch (err) {
+      counts.errors++
+      log.error?.('[jarvis] briefing could not read its sources:', err?.message ?? String(err))
+      return null
+    }
+    return composeMorningBriefing(input)
+  }
+
   return {
     /**
      * The morning briefing now, in `lang` ('en' | 'hi' | 'gu') and `script`
@@ -504,37 +532,29 @@ export function createBriefing({
     morning({ short = false, locale, lang, script } = {}) {
       if (enabled() === false) {
         counts.off++
-        return { ok: false, off: true, reason: 'The morning briefing is switched off in Settings.' }
+        return { ok: false, off: true, reason: OFF_REASON }
       }
       const t = now()
-      const since = Math.max(t - WINDOW_MS, lastBriefing)
-      let input
-      try {
-        input = {
-          now: t,
-          short: Boolean(short),
-          mailDetail: mailDetail() === true,
-          locale: safeLocale(locale),
-          lang: langOf(lang),
-          script: scriptOf(script),
-          weather: docsOf(['weather'], { limit: 5 }),
-          calendar: docsOf(CALENDAR_CONNECTORS, { limit: MAX_CALENDAR_DOCS }),
-          mail: docsOf(MAIL_CONNECTORS, { since, limit: MAX_MAIL_DOCS, classes: ['messages'] }),
-          overnight: events.filter((e) => Number.isFinite(e.at) && e.at >= since),
-          held: notifier ? notifier.held().filter((h) => h.heldAt >= since) : [],
-        }
-      } catch (err) {
-        counts.errors++
-        log.error?.('[jarvis] briefing could not read its sources:', err?.message ?? String(err))
-        return { ok: false, reason: 'I could not put the briefing together.' }
-      }
-      const out = composeMorningBriefing(input)
+      const out = build(t, { short, locale, lang, script })
+      if (!out) return { ok: false, reason: 'I could not put the briefing together.' }
       lastBriefing = t
       counts.given++
       if (short) counts.short++
       if (out.empty) counts.empty++
       langCounts[out.lang]++
       for (const s of out.sections) sectionCounts[s.id] = (sectionCounts[s.id] ?? 0) + 1
+      return { ok: true, ...out }
+    },
+    /**
+     * The same briefing `morning()` would give right now, without marking it
+     * given: the window, the offer and the counts are left as they are, so
+     * the owner still gets it when they ask or are offered it. For the
+     * Morning Briefing agent (briefing-agent.mjs), which prepares it ahead.
+     */
+    preview({ short = false, locale, lang, script } = {}) {
+      if (enabled() === false) return { ok: false, off: true, reason: OFF_REASON }
+      const out = build(now(), { short, locale, lang, script })
+      if (!out) return { ok: false, reason: 'I could not put the briefing together.' }
       return { ok: true, ...out }
     },
     /**

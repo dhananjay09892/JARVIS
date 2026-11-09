@@ -35,7 +35,7 @@ import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
 import { createAgentRoutes } from './agent-routes.mjs'
 import { createAgentDrafter } from './agent-drafts.mjs'
 import { createAgentProposer, createProposalState, proposalsStateFile } from './agent-proposals.mjs'
-import { createAgentScheduler, createScheduleState, scheduleStateFile } from './agent-schedule.mjs'
+import { createAgentScheduler, createScheduleState, runNotification, scheduleStateFile } from './agent-schedule.mjs'
 import { createAgentTriggers } from './agent-triggers.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
 import { REVIEWER_ID, createReviewer } from './agent-review.mjs'
@@ -43,6 +43,7 @@ import { createBus } from './bus.mjs'
 import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.mjs'
 import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSource, timeSource } from './context-broker.mjs'
 import { createBriefing } from './briefing.mjs'
+import { BRIEFING_SERVER, briefingLanguage, briefingSchedule, createBriefingRuns } from './briefing-agent.mjs'
 import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, delegateServer, isTaskTool } from './task-tools.mjs'
 import { DELEGATE_SERVER, DELEGATE_TOOLS } from './agent-delegation.mjs'
@@ -552,6 +553,26 @@ const briefing = createBriefing({
   time: () => setting('JARVIS_BRIEFING_TIME') || 'off',
   quietHours: () => setting('JARVIS_QUIET_HOURS') || DEFAULT_QUIET_HOURS,
 })
+/**
+ * The Morning Briefing agent's one tool (briefing-agent.mjs): the same
+ * briefing, unmarked, in the owner's reply language; kept per task so the
+ * end of a scheduled run raises the briefing itself.
+ */
+const briefingRuns = createBriefingRuns({
+  briefing,
+  language: () => briefingLanguage(readPersonProfile(setting)),
+})
+/** The briefing tool's SDK server for one task (or, with no task, for the catalogue). */
+function briefingServer(taskId) {
+  const spec = briefingRuns.serverSpec(taskId)
+  return createSdkMcpServer({
+    name: spec.name,
+    version: '1.0.0',
+    alwaysLoad: true,
+    instructions: spec.instructions,
+    tools: spec.tools.map((t) => sdkTool(t.name, t.description, {}, t.handler)),
+  })
+}
 let documentPrefs = null
 try {
   documentPrefs = createDocumentPrefs({ store: connectorStore, initial: savedDocumentPrefs, persist: connectorGrantsFile.saveDocuments })
@@ -2383,7 +2404,7 @@ try {
  * copy (agent-runtime.mjs narrowServers); a plain task gets them all, as
  * before. Memory is only there for an agent whose definition may read it.
  */
-function workerServers({ report, ask, approve, withMemory = false, coder = null }) {
+function workerServers({ report, ask, approve, withMemory = false, coder = null, taskId = null }) {
   return {
     ...MCP_SERVERS,
     jarvis_task: progressServer(report, ask),
@@ -2391,6 +2412,8 @@ function workerServers({ report, ask, approve, withMemory = false, coder = null 
     jarvis_development: developmentServer(approve),
     // The Coder's own worktree tools (coder.mjs); only a run whose file lists them keeps them.
     [CODER_SERVER]: coderServer(coder),
+    // The morning briefing, read-only (briefing-agent.mjs); kept against this task's id.
+    [BRIEFING_SERVER]: briefingServer(taskId),
     ...connectorServerEntry(),
     ...(withMemory && memory && { jarvis_memory: memoryServer(memory, { conversation: () => null, project: () => '' }) }),
   }
@@ -2469,7 +2492,7 @@ function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget, 
   const coder = plan.allowed.some((n) => mcpServerOf(n) === CODER_SERVER)
     ? createCoderWorkspace({ taskId: task.id, approve })
     : null
-  const all = workerServers({ report, ask, approve, withMemory: agent.memory !== 'none', coder })
+  const all = workerServers({ report, ask, approve, withMemory: agent.memory !== 'none', coder, taskId: task.id })
   // The Coordinator, when the task manager lets this run delegate, also gets
   // the delegation tools; the policy still has to agree to each of them.
   const delegating = delegation ? DELEGATE_TOOLS.filter((n) => policy.decideTool(n)) : []
@@ -2671,6 +2694,13 @@ const agentScheduler = createAgentScheduler({
   paused: agentSettings.paused,
   notifier,
   state: createScheduleState({ file: scheduleStateFile() }),
+  // The Morning Briefing follows the briefing time and switch (Settings → Alerts),
+  // and its alert is the briefing it was handed, not the model's words.
+  scheduleOf: (agent) => briefingSchedule(agent, {
+    enabled: setting('JARVIS_BRIEFING') !== '0',
+    time: setting('JARVIS_BRIEFING_TIME') || 'off',
+  }),
+  notificationFor: (task, at) => briefingRuns.notification(task, at) ?? runNotification(task, at),
 })
 /**
  * Triggered and continuous agents (agent-triggers.mjs): on the same ticker,
