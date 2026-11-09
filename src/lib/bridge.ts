@@ -244,6 +244,8 @@ export type TaskView = {
   /** Set when another agent started this one (delegation): the task that did, and how deep it is (2). */
   parentId?: string
   depth?: number
+  /** Set when the task is a team run (a Coordinator task whose children are the team's members). */
+  team?: { id: string; name: string }
 }
 
 let onTask: ((task: TaskView) => void) | null = null

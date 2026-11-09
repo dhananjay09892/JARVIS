@@ -4,7 +4,10 @@ import type { TaskView } from './bridge'
 export type MissionAgent = { label: string; title: string; aria: string }
 
 /** The board's tag for a task run by a named agent, or null for a plain task. */
-export function missionAgent(task: Pick<TaskView, 'title' | 'agentName'>): MissionAgent | null {
+export function missionAgent(task: Pick<TaskView, 'title' | 'agentName' | 'team'>): MissionAgent | null {
+  // A team run is tagged with the team, not the Coordinator that runs it.
+  const team = typeof task.team?.name === 'string' ? task.team.name.trim().slice(0, 60) : ''
+  if (team) return { label: team.toUpperCase(), title: `Run by the ${team}`, aria: `${task.title}, by the ${team}` }
   const name = typeof task.agentName === 'string' ? task.agentName.trim().slice(0, 60) : ''
   if (!name) return null
   return { label: name.toUpperCase(), title: `Run by the ${name} agent`, aria: `${task.title}, by ${name}` }

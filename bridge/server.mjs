@@ -112,6 +112,8 @@ import { outlookConnector } from './connectors/outlook.mjs'
 import { createMicrosoftClient, MICROSOFT_CLIENT_ID } from './connectors/microsoft-oauth.mjs'
 import { dropboxConnector } from './connectors/dropbox.mjs'
 import { createDropboxClient, DROPBOX_CLIENT_ID } from './connectors/dropbox-oauth.mjs'
+import { spotifyConnector } from './connectors/spotify.mjs'
+import { createSpotifyClient, SPOTIFY_CLIENT_ID } from './connectors/spotify-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { createConnectorOptions } from './connectors/options.mjs'
 import { checkForUpdate } from './update.mjs'
@@ -650,6 +652,16 @@ connectors.registerAll([
     }).create(ctx),
   },
   {
+    // Spotify (task C34), read-only (user-read-recently-played): OAuth with
+    // PKCE and a refresh token against the owner's own Spotify app (client ID
+    // only, kept under the `spotify` credential id). accounts.spotify.com and
+    // api.spotify.com only.
+    id: 'spotify',
+    create: (ctx) => spotifyConnector({
+      spotifyClient: createSpotifyClient(connectorCredentialStore.scoped(SPOTIFY_CLIENT_ID)),
+    }).create(ctx),
+  },
+  {
     // Notion (task C11): paste an internal integration's secret; reads only
     // the pages shared with it, from api.notion.com only.
     id: 'notion',
@@ -1089,6 +1101,9 @@ Tasks:
   owner asks one by name: "ask the researcher to…", "get the writer to…". If it
   says the agent is unknown or switched off, say so in a sentence and offer a
   plain task; never start one silently instead. list_agents says who there is.
+- Teams are started with start_team: "get the research team on…" (Researcher,
+  Writer, then the Reviewer) or "have the dev team…" (two Coders, then the
+  Reviewer). If it says the team cannot run, say why in a sentence.
 
 Using tools:
 - You have real tools on this machine. Use them rather than guessing.
