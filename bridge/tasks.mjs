@@ -75,6 +75,7 @@ import {
 import { resolveAgent } from './agent-ask.mjs'
 import { isDraftAgent, readDraft } from './agent-draft-result.mjs'
 import { isAlertAgent, readTriage } from './agent-triage-result.mjs'
+import { isMemoryReviewAgent, readMemoryReview } from './agent-memory-review.mjs'
 import {
   TEAM_STOPS, memberGoal, memberRecord, memberTitle, reviewGoal, teamAgents, teamOutcome, teamPlan, teamPreset, teamResult, teamSize,
 } from './agent-teams.mjs'
@@ -93,6 +94,8 @@ export const isActive = (task) => ACTIVE.has(task.status)
 
 /** A copy of a triage, so a view never shares its lists with the task. */
 const copyTriage = (t) => ({ ...t, urgent: [...t.urgent], soon: [...t.soon], later: [...t.later], drafts: t.drafts.map((d) => ({ ...d })) })
+/** A copy of a memory review, for the same reason. */
+const copyReview = (r) => ({ ...r, keep: [...r.keep], merge: r.merge.map((m) => ({ ...m, ids: [...m.ids] })), check: r.check.map((c) => ({ ...c })) })
 
 /** What the browser and the orchestrator see: no signals, no internals. */
 function snapshot(t) {
@@ -115,6 +118,7 @@ function snapshot(t) {
     ...(t.agentId && { agentId: t.agentId, agentName: t.agentName }),
     ...(t.draft && { draft: { ...t.draft } }),
     ...(t.triage && { triage: copyTriage(t.triage) }),
+    ...(t.memoryReview && { memoryReview: copyReview(t.memoryReview) }),
     ...(t.depth > 1 && { depth: t.depth }),
     ...(t.parentId && { parentId: t.parentId }),
     ...(t.team && { team: { id: t.team, name: teamPreset(t.team)?.name ?? t.team } }),
@@ -271,12 +275,15 @@ export function createTaskManager({
    * whose output is a draft, the draft read from it (agent-draft-result.mjs)
    * so the board can show and copy it; for an alert agent in the triage
    * shape (agent-triage-result.mjs), the triage, so its end can be raised by
-   * what it found. Reading either sends nothing.
+   * what it found; for a memory-reading report agent in the review shape
+   * (agent-memory-review.mjs, the Memory Curator), its memory proposals.
+   * Reading any of them sends, saves or changes nothing.
    */
   function doneFields(agent, result) {
     const draft = isDraftAgent(agent) ? readDraft(result) : null
     const triage = isAlertAgent(agent) ? readTriage(result) : null
-    return { result, ...(draft && { draft }), ...(triage && { triage }) }
+    const memoryReview = isMemoryReviewAgent(agent) ? readMemoryReview(result) : null
+    return { result, ...(draft && { draft }), ...(triage && { triage }), ...(memoryReview && { memoryReview }) }
   }
 
   function finish(t, status, fields = {}) {
