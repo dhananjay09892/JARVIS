@@ -9,7 +9,7 @@
  *     run. Like every scheduled agent it is off until switched on.
  *   - What: one read-only tool, `get_morning_briefing`, which returns the
  *     briefing exactly as `briefing.morning()` would build it now (weather,
- *     calendar, mail, overnight jobs and held alerts from the synced
+ *     calendar, tasks due, mail, news, overnight jobs and held alerts from the synced
  *     connector documents, by plain rules), in the owner's reply language and
  *     script. It uses `preview()`, so the briefing is not marked given: the
  *     owner is still offered it and can still ask for it.
@@ -136,7 +136,7 @@ export function createBriefingRuns({ briefing, language = () => ({ lang: 'en', s
         instructions: 'get_morning_briefing returns the morning briefing as JARVIS would say it now. It only reads; it sends nothing.',
         tools: [{
           name: BRIEFING_TOOL,
-          description: 'The morning briefing as JARVIS would say it right now: weather, today\'s calendar, new mail, overnight jobs and held alerts, from the connectors that are set up, in the owner\'s language. Read-only. Call it once.',
+          description: 'The morning briefing as JARVIS would say it right now: weather, today\'s calendar, tasks due today, new mail, news headlines, overnight jobs and held alerts, from the connectors that are set up, in the owner\'s language. Read-only. Call it once.',
           handler: async () => call(taskId),
         }],
       }

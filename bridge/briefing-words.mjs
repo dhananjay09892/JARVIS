@@ -6,8 +6,8 @@
  * asks (JARVIS_TEXT_SCRIPT). The English book is the exact wording the
  * briefing had before (Q34).
  *
- * What stays as it came: calendar titles, mail senders, workflow names and
- * place names are the owner's own text and are never translated. Numbers stay
+ * What stays as it came: calendar titles, task titles, news headlines, mail
+ * senders, workflow names and place names are the owner's own text and are never translated. Numbers stay
  * as digits, which every voice reads in either script. Weather conditions are
  * translated when they are one of the weather connector's (C16) plain WMO
  * descriptions, and otherwise said as they came.
@@ -115,6 +115,11 @@ const ENGLISH = {
   calendarNone: 'Nothing else on your calendar today.',
   calendarOne: (item) => `One thing on your calendar today: ${item}.`,
   calendarMany: (n, items) => `You have ${n} things on your calendar today: ${enList(items)}.`,
+  tasksNone: 'Nothing due on your task list today.',
+  tasksOne: (item) => `One task due today: ${item}.`,
+  tasksMany: (n, items) => `You have ${n} tasks due today: ${enList(items)}.`,
+  tasksOverdue: (n) => `${plural(n, 'task')} overdue.`,
+  news: (items) => `In the news: ${enList(items)}.`,
   mailNone: 'No new email.',
   mail(count, important, senders) {
     let s = plural(count, 'new email')
@@ -176,6 +181,11 @@ const HINDI = {
   calendarNone: 'आज कैलेंडर पर और कुछ नहीं है।',
   calendarOne: (item) => `आज कैलेंडर पर एक चीज़ है: ${item}।`,
   calendarMany: (n, items) => `आज कैलेंडर पर ${n} चीज़ें हैं: ${hiList(items)}।`,
+  tasksNone: 'आज कोई टास्क बाकी नहीं है।',
+  tasksOne: (item) => `आज एक टास्क करना है: ${item}।`,
+  tasksMany: (n, items) => `आज ${n} टास्क करने हैं: ${hiList(items)}।`,
+  tasksOverdue: (n) => `${n} टास्क की तारीख़ निकल चुकी है।`,
+  news: (items) => `आज की ख़बरें: ${hiList(items)}।`,
   mailNone: 'कोई नया ईमेल नहीं।',
   mail(count, important, senders) {
     let s = `${count} ${count === 1 ? 'नया' : 'नए'} ईमेल`
@@ -233,6 +243,11 @@ const HINDI_ROMAN = {
   calendarNone: 'Aaj calendar par aur kuch nahi hai.',
   calendarOne: (item) => `Aaj calendar par ek cheez hai: ${item}.`,
   calendarMany: (n, items) => `Aaj calendar par ${n} cheezein hain: ${hiListR(items)}.`,
+  tasksNone: 'Aaj koi task baaki nahi hai.',
+  tasksOne: (item) => `Aaj ek task karna hai: ${item}.`,
+  tasksMany: (n, items) => `Aaj ${n} task karne hain: ${hiListR(items)}.`,
+  tasksOverdue: (n) => `${n} task ki taareekh nikal chuki hai.`,
+  news: (items) => `Aaj ki khabrein: ${hiListR(items)}.`,
   mailNone: 'Koi naya email nahi.',
   mail(count, important, senders) {
     let s = `${count} ${count === 1 ? 'naya' : 'naye'} email`
@@ -294,6 +309,11 @@ const GUJARATI = {
   calendarNone: 'આજે કૅલેન્ડરમાં બીજું કંઈ નથી.',
   calendarOne: (item) => `આજે કૅલેન્ડરમાં એક વસ્તુ છે: ${item}.`,
   calendarMany: (n, items) => `આજે કૅલેન્ડરમાં ${n} વસ્તુઓ છે: ${guList(items)}.`,
+  tasksNone: 'આજે કોઈ ટાસ્ક બાકી નથી.',
+  tasksOne: (item) => `આજે એક ટાસ્ક કરવાનું છે: ${item}.`,
+  tasksMany: (n, items) => `આજે ${n} ટાસ્ક કરવાના છે: ${guList(items)}.`,
+  tasksOverdue: (n) => `${n} ટાસ્કની તારીખ વીતી ગઈ છે.`,
+  news: (items) => `આજના સમાચાર: ${guList(items)}.`,
   mailNone: 'કોઈ નવો ઈમેલ નથી.',
   mail(count, important, senders) {
     let s = `${count} ${count === 1 ? 'નવો' : 'નવા'} ઈમેલ`
@@ -350,6 +370,11 @@ const GUJARATI_ROMAN = {
   calendarNone: 'Aaje calendar ma biju kai nathi.',
   calendarOne: (item) => `Aaje calendar ma ek vastu che: ${item}.`,
   calendarMany: (n, items) => `Aaje calendar ma ${n} vastuo che: ${guListR(items)}.`,
+  tasksNone: 'Aaje koi task baaki nathi.',
+  tasksOne: (item) => `Aaje ek task karvanu che: ${item}.`,
+  tasksMany: (n, items) => `Aaje ${n} task karvana che: ${guListR(items)}.`,
+  tasksOverdue: (n) => `${n} task ni tarikh viti gai che.`,
+  news: (items) => `Aajna samachar: ${guListR(items)}.`,
   mailNone: 'Koi navo email nathi.',
   mail(count, important, senders) {
     let s = `${count} ${count === 1 ? 'navo' : 'nava'} email`
