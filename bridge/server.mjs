@@ -115,6 +115,8 @@ import { dropboxConnector } from './connectors/dropbox.mjs'
 import { createDropboxClient, DROPBOX_CLIENT_ID } from './connectors/dropbox-oauth.mjs'
 import { spotifyConnector } from './connectors/spotify.mjs'
 import { createSpotifyClient, SPOTIFY_CLIENT_ID } from './connectors/spotify-oauth.mjs'
+import { stravaConnector } from './connectors/strava.mjs'
+import { createStravaClient, STRAVA_CLIENT_ID } from './connectors/strava-oauth.mjs'
 import { createDocumentPrefs, normaliseDocumentPrefs } from './connectors/prefs.mjs'
 import { createConnectorOptions } from './connectors/options.mjs'
 import { checkForUpdate } from './update.mjs'
@@ -680,6 +682,16 @@ connectors.registerAll([
     id: 'spotify',
     create: (ctx) => spotifyConnector({
       spotifyClient: createSpotifyClient(connectorCredentialStore.scoped(SPOTIFY_CLIENT_ID)),
+    }).create(ctx),
+  },
+  {
+    // Strava (task C35), read-only (activity:read): OAuth with a refresh token
+    // against the owner's own Strava API application (client ID and secret
+    // kept under the `strava` credential id). Stored as health data.
+    // www.strava.com only.
+    id: 'strava',
+    create: (ctx) => stravaConnector({
+      stravaClient: createStravaClient(connectorCredentialStore.scoped(STRAVA_CLIENT_ID)),
     }).create(ctx),
   },
   {
