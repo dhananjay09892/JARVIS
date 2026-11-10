@@ -9,18 +9,23 @@
  *    4 new emails, 1 marked important.
  *    Overnight: the nightly backup workflow failed. 2 background tasks finished."
  *
- * The briefing is a list of short sections (greeting, weather, calendar, mail,
- * overnight, held). The page speaks them one at a time, so "skip" moves to
+ * The briefing is a list of short sections (greeting, weather, calendar,
+ * tasks, mail, news, overnight, held). The page speaks them one at a time, so "skip" moves to
  * the next section and "stop" or "skip the briefing" ends it (src/lib/reflex.ts).
  *
  * Where each section comes from:
  *   weather    the weather connector's two documents (C16) in the local store
  *   calendar   Google Calendar documents (C07) whose start is today, local time;
  *              cancelled entries and ones you declined are left out
+ *   tasks      Google Tasks (C19) documents still to do whose due day is today,
+ *              local time, plus a count of open ones whose due day has passed
  *   mail       Gmail (C06) or Gmail over IMAP (C09) documents that arrived in
  *              the window; sent mail and drafts left out. Counts only unless
  *              Settings → Alerts → "Say who mail is from" is on, because the
  *              briefing is spoken aloud and anyone in the room hears it
+ *   news       News / RSS (C25) headlines that arrived in the window, newest
+ *              first, a few at most. Headlines are a stranger's text: clipped
+ *              and spoken, never followed
  *   overnight  `workflow.finished` and `task.finished` on the event bus (Q32),
  *              kept in memory here. Private task titles are never spoken,
  *              only counted
@@ -59,7 +64,7 @@ import { decide, parseQuietHours, DEFAULT_QUIET_HOURS } from './notify-policy.mj
 
 export { safeLocale }
 
-export const SECTIONS = Object.freeze(['greeting', 'weather', 'calendar', 'mail', 'overnight', 'held', 'nothing'])
+export const SECTIONS = Object.freeze(['greeting', 'weather', 'calendar', 'tasks', 'mail', 'news', 'overnight', 'held', 'nothing'])
 
 /** How far back "overnight" reaches when there was no briefing since. */
 export const WINDOW_MS = 18 * 3600_000
@@ -68,12 +73,16 @@ const MAX_EVENTS = 50
 /** Calendar documents read per briefing (newest change first). */
 const MAX_CALENDAR_DOCS = 500
 const MAX_MAIL_DOCS = 200
+const MAX_TASK_DOCS = 500
+const MAX_NEWS_DOCS = 50
 const MAX_TITLE = 80
 
 const OFF_REASON = 'The morning briefing is switched off in Settings.'
 
 const CALENDAR_CONNECTORS = ['gcalendar']
 const MAIL_CONNECTORS = ['gmail', 'gmail_imap', 'imap', 'outlook']
+const TASK_CONNECTORS = ['google_tasks']
+const NEWS_CONNECTORS = ['news_rss']
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
@@ -280,6 +289,77 @@ function calendarSection(events, { short, locale, t }) {
 }
 
 // ---------------------------------------------------------------------------
+// Tasks (C19 documents)
+// ---------------------------------------------------------------------------
+
+/**
+ * Open tasks due today, by title, and how many open ones are overdue:
+ * `{ due: string[], overdue: number }`. Google keeps a due day without a
+ * time (`meta.due`, YYYY-MM-DD), so it is compared with today's local date.
+ * Completed tasks and ones without a due day are left out.
+ */
+export function readTasks(docs, { now }) {
+  const today = localDate(now)
+  const seen = new Set()
+  const due = []
+  let overdue = 0
+  for (const d of docs ?? []) {
+    if (!isObject(d) || !isObject(d.meta)) continue
+    const m = d.meta
+    if (m.status === 'completed' || typeof m.due !== 'string' || !DATE_ONLY.test(m.due)) continue
+    const key = String(d.id ?? '')
+    if (key && seen.has(key)) continue
+    if (key) seen.add(key)
+    if (m.due === today) due.push(clip(d.title) || 'an untitled task')
+    else if (m.due < today) overdue++
+  }
+  return { due: due.sort((a, b) => a.localeCompare(b)), overdue }
+}
+
+function tasksSection(tasks, { short, t }) {
+  const parts = []
+  if (tasks.due.length) {
+    const shown = tasks.due.slice(0, short ? 2 : 5)
+    const more = tasks.due.length - shown.length
+    parts.push(tasks.due.length === 1 ? t.tasksOne(shown[0]) : t.tasksMany(tasks.due.length, more ? [...shown, t.moreItems(more)] : shown))
+  }
+  if (tasks.overdue) parts.push(t.tasksOverdue(tasks.overdue))
+  if (!parts.length) return short ? '' : t.tasksNone
+  return parts.join(' ')
+}
+
+// ---------------------------------------------------------------------------
+// News (C25 documents)
+// ---------------------------------------------------------------------------
+
+const MAX_HEADLINE = 100
+
+/**
+ * Headlines that arrived in the window, newest first, each once: string[].
+ * Feed text is untrusted: it is only clipped here, and only ever spoken.
+ */
+export function readNews(docs) {
+  const list = (docs ?? []).filter(isObject)
+  const time = (d) => (Number.isFinite(d.updatedAt) ? d.updatedAt : 0)
+  const seen = new Set()
+  const out = []
+  for (const d of [...list].sort((a, b) => time(b) - time(a))) {
+    const title = clip(d.title, MAX_HEADLINE)
+    if (!title || title === '(untitled)') continue
+    const key = title.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(title)
+  }
+  return out
+}
+
+function newsSection(headlines, { short, t }) {
+  if (!headlines.length) return ''
+  return t.news(headlines.slice(0, short ? 1 : 3))
+}
+
+// ---------------------------------------------------------------------------
 // Mail (C06 / C09 documents)
 // ---------------------------------------------------------------------------
 
@@ -364,7 +444,9 @@ const scriptOf = (script) => (script === 'roman' ? 'roman' : 'native')
  *   now          timestamp (ms); local time decides "today"
  *   weather      weather connector documents, or null when not set up
  *   calendar     calendar documents, or null when no calendar is set up
+ *   tasks        task documents, or null when no task list is set up
  *   mail         mail documents from the window, or null when no mail is set up
+ *   news         news documents from the window, or null when no feeds are set up
  *   overnight    `{ kind: 'workflow'|'task', name|title, status, sensitivity? }[]`
  *   held         notifier.held() entries raised in the window
  *   short        "quick briefing": fewer items, no mail senders
@@ -386,7 +468,9 @@ export function composeMorningBriefing(input) {
   const w = input.weather ? readWeather(input.weather, { now }) : null
   if (w) add('weather', weatherSection(w, { short, t }))
   if (Array.isArray(input.calendar)) add('calendar', calendarSection(todaysEvents(input.calendar, { now }), { short, locale, t }))
+  if (Array.isArray(input.tasks)) add('tasks', tasksSection(readTasks(input.tasks, { now }), { short, t }))
   if (Array.isArray(input.mail)) add('mail', mailSection(readMail(input.mail), { short, detail: mailDetail, t }))
+  if (Array.isArray(input.news)) add('news', newsSection(readNews(input.news), { short, t }))
   add('overnight', overnightSection(Array.isArray(input.overnight) ? input.overnight : [], { short, t }))
   add('held', heldSection(Array.isArray(input.held) ? input.held : [], { short, t }))
 
@@ -511,7 +595,9 @@ export function createBriefing({
         script: scriptOf(script),
         weather: docsOf(['weather'], { limit: 5 }),
         calendar: docsOf(CALENDAR_CONNECTORS, { limit: MAX_CALENDAR_DOCS }),
+        tasks: docsOf(TASK_CONNECTORS, { limit: MAX_TASK_DOCS, classes: ['personal', 'work'] }),
         mail: docsOf(MAIL_CONNECTORS, { since, limit: MAX_MAIL_DOCS, classes: ['messages'] }),
+        news: docsOf(NEWS_CONNECTORS, { since, limit: MAX_NEWS_DOCS, classes: ['public'] }),
         overnight: events.filter((e) => Number.isFinite(e.at) && e.at >= since),
         held: notifier ? notifier.held().filter((h) => h.heldAt >= since) : [],
       }

@@ -6,7 +6,7 @@
  * model.
  */
 
-export type BriefingSectionId = 'greeting' | 'weather' | 'calendar' | 'mail' | 'overnight' | 'held' | 'nothing'
+export type BriefingSectionId = 'greeting' | 'weather' | 'calendar' | 'tasks' | 'mail' | 'news' | 'overnight' | 'held' | 'nothing'
 
 export type BriefingSection = { id: BriefingSectionId; say: string }
 
