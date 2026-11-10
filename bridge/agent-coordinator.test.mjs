@@ -18,6 +18,7 @@ import { MIN_SCORE, STARTER_HINTS, matchAgent } from './agent-match.mjs'
 import { MEMORY_READ_TOOLS, agentToolPlan, workerRuleFor } from './agent-runtime.mjs'
 import { BRIEFING_SERVER, BRIEFING_TOOL_NAMES, CODER_SERVER, CODER_TOOL_NAMES, createPolicy } from './policy.mjs'
 import { createTaskManager } from './tasks.mjs'
+import { AGENT_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { BUILTIN_AGENT_CONNECTORS } from './fixtures/agent-connectors.mjs'
 
 const silent = { error() {}, log() {}, warn() {} }
@@ -59,7 +60,7 @@ const userDef = (id, name, description, over = {}) => ({
 })
 
 /** The shipped built-ins, plus fixture starter agents and one agent not on the list, in a temp data folder. */
-function rig({ maxDepth = 2, extra = [] } = {}) {
+function rig({ maxDepth = 2, extra = [], switches = null } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'jarvis-coordinator-'))
   const userDir = join(root, 'agents')
   mkdirSync(userDir)
@@ -73,8 +74,10 @@ function rig({ maxDepth = 2, extra = [] } = {}) {
   })
   const summary = registry.load()
   const runs = []
+  // With `switches`, the owner's on/off switches apply as in the bridge (scheduled agents start off).
+  const agents = switches === null ? registry : switchedRegistry(registry, createAgentSettings({ read: (id) => (id === AGENT_SETTINGS.switches ? switches : undefined) }))
   const manager = createTaskManager({
-    agents: registry, log: silent, maxDepth: () => maxDepth,
+    agents, log: silent, maxDepth: () => maxDepth,
     runAgent: (ctx) => {
       runs.push(ctx)
       return (async function* hang() {
@@ -184,11 +187,10 @@ test('an agent off its list is refused, even one that is installed and on', asyn
   } finally { r.done() }
 })
 
-test('a starter agent that is not installed yet is refused in words, not by a crash', async () => {
-  const r = rig()
+test('a starter agent that is switched off is refused in words, not by a crash', async () => {
+  // The Memory Curator is scheduled, so it is off until the owner switches it on.
+  const r = rig({ switches: '' })
   try {
-    rmSync(join(r.registry.userDir, 'memory-curator.md'))
-    r.registry.reload()
     r.manager.spawn({ goal: 'tidy my memories', agentId: COORDINATOR_ID })
     await tick()
     const out = r.runs[0].delegation.start({ agent: 'memory-curator', goal: 'tidy my memories' })

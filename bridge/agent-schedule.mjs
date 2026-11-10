@@ -45,6 +45,7 @@ import { join } from 'node:path'
 import { settingsDir } from './settings.mjs'
 import { isActive as taskActive } from './tasks.mjs'
 import { triageAlert } from './agent-triage-result.mjs'
+import { memoryReviewAlert } from './agent-memory-review.mjs'
 
 const MINUTE = 60_000
 /** Missed runs older than this are not made up. */
@@ -212,8 +213,9 @@ export function runNotification(task, at) {
   if (!task || (task.status !== 'done' && task.status !== 'failed' && task.status !== 'interrupted')) return null
   const name = clip(task.agentName, 60) || 'An agent'
   const ok = task.status === 'done'
-  // An alert agent's triage decides how loudly it is raised (agent-triage-result.mjs).
-  const triage = ok ? triageAlert(task, name) : null
+  // An alert agent's triage decides how loudly it is raised (agent-triage-result.mjs);
+  // a memory review is kept for the briefing (agent-memory-review.mjs).
+  const triage = ok ? (triageAlert(task, name) ?? memoryReviewAlert(task, name)) : null
   return {
     v: 1,
     id: `agent-run-${task.id}`,

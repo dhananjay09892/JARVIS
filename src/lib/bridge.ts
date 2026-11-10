@@ -241,6 +241,13 @@ export type TaskView = {
     later: string[]
     drafts: NonNullable<TaskView['draft']>[]
   }
+  /** Set when a memory-reading agent (the Memory Curator) finished with a review: proposals only, nothing was changed. */
+  memoryReview?: {
+    summary: string
+    keep: string[]
+    merge: { ids: number[]; text: string }[]
+    check: { id: number; text: string }[]
+  }
   /** Set when another agent started this one (delegation): the task that did, and how deep it is (2). */
   parentId?: string
   depth?: number
