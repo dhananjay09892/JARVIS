@@ -105,6 +105,7 @@ import { hackerNewsConnector } from './connectors/hackernews.mjs'
 import { obsidianConnector } from './connectors/obsidian.mjs'
 import { appleHealthConnector } from './connectors/apple_health.mjs'
 import { appleCalendarConnector } from './connectors/apple_calendar.mjs'
+import { appleContactsConnector } from './connectors/apple_contacts.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { newsRssConnector, NEWS_RSS_OPTIONS } from './connectors/news_rss.mjs'
 import { googleTasksConnector } from './connectors/google_tasks.mjs'
@@ -757,6 +758,12 @@ connectors.registerAll([
     // database after Full Disk Access is granted; unavailable on other systems.
     id: 'apple_calendar',
     create: (ctx) => appleCalendarConnector().create(ctx),
+  },
+  {
+    // Apple Contacts (task C36): macOS only; reads a private copy of the Contacts
+    // databases (local and synced accounts) after Full Disk Access is granted.
+    id: 'apple_contacts',
+    create: (ctx) => appleContactsConnector().create(ctx),
   },
   {
     // Obsidian (task C13): grant access to one vault folder; reads its notes
