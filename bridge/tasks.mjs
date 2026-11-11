@@ -64,6 +64,18 @@
  *
  * Only background tasks live here. The voice session is not a task, so the
  * cap and the pause never hold it back.
+ *
+ * Pause and resume (plan 13, phase 1): `pause(id)` stops a task's session and
+ * keeps the task, its plan, log and what it has spent; `resume(id)` queues it
+ * again and its new session starts from the goal plus what the board recorded
+ * (mission-control.mjs resumeBrief). Every run of a task carries a number, and
+ * anything a stopped run does late (a progress report, an approval answer, the
+ * end of its stream) is ignored once a newer run exists. A resumed task keeps
+ * spending the budget it had: tool calls, active minutes and cost carry over.
+ * A task the bridge was running when it stopped comes back paused, not lost;
+ * a task started by another agent, or a team run, comes back interrupted, as
+ * these cannot be paused on their own. Paused tasks are never pruned and do
+ * not count against the cap.
  */
 import { randomUUID } from 'node:crypto'
 import { BUDGET_STOPS, AGENT_REFUSALS } from './agent-runtime.mjs'
@@ -73,6 +85,7 @@ import {
   remainingBudget, shareBudget,
 } from './agent-delegation.mjs'
 import { resolveAgent } from './agent-ask.mjs'
+import { resumeBrief } from './mission-control.mjs'
 import { isDraftAgent, readDraft } from './agent-draft-result.mjs'
 import { isAlertAgent, readTriage } from './agent-triage-result.mjs'
 import { isMemoryReviewAgent, readMemoryReview } from './agent-memory-review.mjs'
@@ -92,6 +105,17 @@ const clip = (s, n) => (typeof s === 'string' ? s.trim().slice(0, n) : '')
 const ACTIVE = new Set(['queued', 'running', 'waiting_approval', 'waiting_input'])
 export const ANSWER_TTL_MS = 30 * 60 * 1000
 export const isActive = (task) => ACTIVE.has(task.status)
+/** Not ended: live, or paused and waiting to be resumed. */
+export const isOpen = (task) => ACTIVE.has(task.status) || task.status === 'paused'
+export const PAUSE_REFUSALS = Object.freeze({
+  missing: 'No such task.',
+  ended: 'That task has already ended.',
+  already: 'That task is already paused.',
+  child: 'Another agent started that task. Pause the task that started it.',
+  team: 'A team run cannot be paused. Cancel it instead.',
+  notPaused: 'That task is not paused.',
+})
+export const RESTART_PAUSED = 'Paused: JARVIS restarted while this was running. Resume it to carry on.'
 
 /** A copy of a triage, so a view never shares its lists with the task. */
 const copyTriage = (t) => ({ ...t, urgent: [...t.urgent], soon: [...t.soon], later: [...t.later], drafts: t.drafts.map((d) => ({ ...d })) })
@@ -124,8 +148,14 @@ function snapshot(t) {
     ...(t.depth > 1 && { depth: t.depth }),
     ...(t.parentId && { parentId: t.parentId }),
     ...(t.team && { team: { id: t.team, name: teamPreset(t.team)?.name ?? t.team } }),
+    ...(t.resumed > 0 && { resumed: t.resumed }),
+    // What the task has used so far, so a resume (or a restart) keeps its budget.
+    ...((t.calls > 0 || t.usedMs > 0 || t.runFrom) && { usage: { toolCalls: t.calls ?? 0, activeMs: activeMs(t) } }),
   }
 }
+
+/** Milliseconds the task has spent running, across every run. */
+const activeMs = (t) => (t.usedMs ?? 0) + (t.runFrom ? Math.max(0, Date.now() - t.runFrom) : 0)
 
 /**
  * @param {object} o
@@ -209,8 +239,19 @@ export function createTaskManager({
         ...(typeof s.parentId === 'string' && s.parentId && { parentId: s.parentId }),
         ...(teamPreset(s.team?.id) && { team: teamPreset(s.team.id).id }),
         children: 0, childCostUsd: 0, waiters: new Set(),
+        calls: Number.isInteger(s.usage?.toolCalls) && s.usage.toolCalls > 0 ? s.usage.toolCalls : 0,
+        usedMs: typeof s.usage?.activeMs === 'number' && s.usage.activeMs > 0 ? s.usage.activeMs : 0,
+        runFrom: null,
+        resumed: Number.isInteger(s.resumed) && s.resumed > 0 ? s.resumed : 0,
       }
-      if (ACTIVE.has(t.status)) {
+      if (ACTIVE.has(t.status) && !t.parentId && !t.team) {
+        // Its agent is gone with the old process, but the task is not: it
+        // waits, paused, for the owner to resume it. Nothing restarts on its own.
+        t.status = 'paused'
+        t.note = RESTART_PAUSED
+        note(t, 'paused', RESTART_PAUSED)
+        emit(t)
+      } else if (ACTIVE.has(t.status)) {
         t.status = 'interrupted'
         t.error = 'Interrupted: JARVIS restarted while this was running.'
         t.endedAt = now()
@@ -227,7 +268,7 @@ export function createTaskManager({
   }
 
   function prune() {
-    const finished = [...tasks.values()].filter((t) => !isActive(t))
+    const finished = [...tasks.values()].filter((t) => !isOpen(t))
     for (const t of finished.slice(0, Math.max(0, finished.length - MAX_KEPT))) forget(t.id)
   }
 
@@ -294,8 +335,9 @@ export function createTaskManager({
   }
 
   function finish(t, status, fields = {}) {
-    if (!isActive(t)) return
+    if (!isOpen(t)) return
     if (t.timer) { clearTimeout(t.timer); t.timer = null }
+    if (t.runFrom) { t.usedMs = activeMs(t); t.runFrom = null }
     // Release a parked question first, while the task still counts as active.
     t.question?.settle(null)
     Object.assign(t, fields, { status, endedAt: now() })
@@ -320,8 +362,8 @@ export function createTaskManager({
   }
 
   /** The progress callback handed to the agent's report_progress tool. */
-  const reporter = (t) => (p) => {
-    if (!isActive(t)) return { ok: false, reason: 'This task has ended.' }
+  const reporter = (t, run) => (p) => {
+    if (!isActive(t) || t.run !== run) return { ok: false, reason: 'This task has ended.' }
     if (Array.isArray(p.plan) && p.plan.length) {
       t.steps = p.plan.map((s) => clip(s, 80)).filter(Boolean).slice(0, MAX_STEPS)
       t.step = 1
@@ -340,8 +382,8 @@ export function createTaskManager({
   }
 
   /** Wraps an approval so the card names the task and the task shows it is waiting. */
-  const approver = (t, approve) => async (title, details) => {
-    if (!isActive(t)) return false
+  const approver = (t, approve, run) => async (title, details) => {
+    if (!isActive(t) || t.run !== run) return false
     t.waiting += 1
     t.status = 'waiting_approval'
     note(t, 'approval', title)
@@ -350,16 +392,19 @@ export function createTaskManager({
       const who = t.agentName ? ` (${t.agentName})` : ''
       return await approve(`Task "${t.title}"${who}: ${title}`, details)
     } finally {
-      t.waiting -= 1
-      if (t.status === 'waiting_approval' && t.waiting === 0) t.status = t.question ? 'waiting_input' : 'running'
-      emit(t)
+      // A card answered after its run was paused belongs to no run now.
+      if (t.run === run) {
+        t.waiting -= 1
+        if (t.status === 'waiting_approval' && t.waiting === 0) t.status = t.question ? 'waiting_input' : 'running'
+        emit(t)
+      }
     }
   }
 
   /** Lets the agent put one question to the owner and wait for the typed answer. */
-  const asker = (t) => (text) => {
+  const asker = (t, run) => (text) => {
     const q = clip(text, 500)
-    if (!isActive(t) || t.question || !q) return Promise.resolve(null)
+    if (!isActive(t) || t.run !== run || t.question || !q) return Promise.resolve(null)
     return new Promise((resolve) => {
       const timer = setTimeout(() => t.question?.settle(null), ANSWER_TTL_MS)
       timer.unref?.()
@@ -392,21 +437,21 @@ export function createTaskManager({
    * End a run at a budget limit: abort its session and fail it with the reason.
    * Like cancel, but honest that the work stopped short rather than finished.
    */
-  const stopper = (t) => (reason) => {
-    if (!isActive(t)) return
+  const stopper = (t, run = t.run) => (reason) => {
+    if (!isActive(t) || t.run !== run) return
     t.abort.abort()
     finish(t, 'failed', { error: reason })
   }
 
   /** The budget the session's guard spends from; null without one. */
-  function budgetFor(t, limits) {
+  function budgetFor(t, limits, run) {
     if (!Number.isInteger(limits?.maxToolCalls)) return null
     return {
       /** One tool call is about to run. Returns null to let it, or the refusal. */
       toolCall() {
-        if (!isActive(t)) return AGENT_REFUSALS.budget
+        if (!isActive(t) || t.run !== run) return AGENT_REFUSALS.budget
         if (t.calls >= limits.maxToolCalls) {
-          stopper(t)(BUDGET_STOPS.toolCalls(limits.maxToolCalls))
+          stopper(t, run)(BUDGET_STOPS.toolCalls(limits.maxToolCalls))
           return AGENT_REFUSALS.budget
         }
         // A child spends from its parent's tool calls as it goes, so the
@@ -414,7 +459,7 @@ export function createTaskManager({
         const parent = t.parentId ? tasks.get(t.parentId) : null
         if (parent && Number.isInteger(parent.limits?.maxToolCalls)) {
           if (!isActive(parent) || parent.calls >= parent.limits.maxToolCalls) {
-            stopper(t)(DELEGATION_STOPS.parentBudget)
+            stopper(t, run)(DELEGATION_STOPS.parentBudget)
             return AGENT_REFUSALS.budget
           }
           parent.calls += 1
@@ -442,15 +487,22 @@ export function createTaskManager({
    * or stopped at a budget).
    */
   async function attemptOnce(t, agent, limits, retry) {
+    // This run only: once the task is paused (and perhaps resumed as a newer
+    // run), nothing this run does late may end or change the task.
+    const run = t.run
+    const signal = t.abort.signal
+    const live = () => isActive(t) && t.run === run
+    const end = (status, fields) => { if (live()) finish(t, status, fields) }
     try {
       const task = snapshot(t)
+      const goal = retry?.goal ?? (t.resumed > 0 ? resumeBrief(task) : null)
       const stream = runAgent({
-        task: retry ? { ...task, goal: retry.goal } : task,
-        signal: t.abort.signal,
-        report: reporter(t),
-        ask: asker(t),
-        wrapApprove: (approve) => approver(t, approve),
-        ...(agent && { agent, budget: budgetFor(t, limits), stop: stopper(t) }),
+        task: goal ? { ...task, goal } : task,
+        signal,
+        report: reporter(t, run),
+        ask: asker(t, run),
+        wrapApprove: (approve) => approver(t, approve, run),
+        ...(agent && { agent, budget: budgetFor(t, limits, run), stop: stopper(t, run) }),
         ...(agent && { depth: t.depth }),
         ...(agent && delegationFor(t, agent)),
         ...(retry && { retry: { attempt: retry.attempt, reasons: [...retry.reasons] } }),
@@ -461,7 +513,7 @@ export function createTaskManager({
       let reply = ''
       let failure = null
       for await (const e of stream) {
-        if (!isActive(t)) break
+        if (!live()) break
         switch (e?.t) {
           case 'text':
             reply += e.delta
@@ -480,30 +532,30 @@ export function createTaskManager({
             if (typeof limits?.maxCostUsd === 'number' && typeof t.costUsd === 'number' && t.costUsd > limits.maxCostUsd) {
               let billed = false
               try { billed = costCounts(agent) === true } catch { billed = false }
-              if (billed) stopper(t)(BUDGET_STOPS.cost(limits.maxCostUsd))
+              if (billed) stopper(t, run)(BUDGET_STOPS.cost(limits.maxCostUsd))
             }
             break
           case 'error':
             failure = e
             break
           case 'done':
-            if (e.reason === 'complete') return isActive(t) ? clip(reply, 1200) : null
-            if (e.reason === 'cancelled' || t.abort.signal.aborted) finish(t, 'cancelled', { error: 'Cancelled.' })
+            if (e.reason === 'complete') return live() ? clip(reply, 1200) : null
+            if (e.reason === 'cancelled' || signal.aborted) end('cancelled', { error: 'Cancelled.' })
             else {
-              log.error?.('[jarvis] task failed:', failure?.message ?? failure?.code ?? e.reason)
-              finish(t, 'failed', { error: failureText(failure) })
+              if (live()) log.error?.('[jarvis] task failed:', failure?.message ?? failure?.code ?? e.reason)
+              end('failed', { error: failureText(failure) })
             }
             return null
         }
       }
       // A stream that ends with no result and no cancel is a failure, not a success.
-      if (isActive(t)) finish(t, 'failed', { error: 'The agent ended without a result.' })
+      end('failed', { error: 'The agent ended without a result.' })
       return null
     } catch (err) {
-      if (t.abort.signal.aborted) finish(t, 'cancelled', { error: 'Cancelled.' })
-      else {
+      if (signal.aborted) end('cancelled', { error: 'Cancelled.' })
+      else if (live()) {
         log.error?.('[jarvis] task failed:', err)
-        finish(t, 'failed', { error: clip(String(err?.message ?? err), 300) })
+        end('failed', { error: clip(String(err?.message ?? err), 300) })
       }
       return null
     }
@@ -515,6 +567,8 @@ export function createTaskManager({
    * The reviewer is handed the owner's original goal and a copy of the log.
    */
   async function reviewOnce(t, agent, result, attempt) {
+    const run = t.run
+    const live = () => isActive(t) && t.run === run
     note(t, 'review', `reviewing attempt ${attempt}`)
     emit(t)
     let verdict
@@ -528,13 +582,13 @@ export function createTaskManager({
         signal: t.abort.signal,
       })
     } catch (err) {
-      if (!isActive(t)) return null
+      if (!live()) return null
       if (t.abort.signal.aborted) { finish(t, 'cancelled', { error: 'Cancelled.' }); return null }
       log.error?.('[jarvis] review failed:', err?.message ?? err)
       finish(t, 'failed', { result, error: REVIEW_STOPS.unavailable(clip(String(err?.message ?? ''), 120)) })
       return null
     }
-    if (!isActive(t)) return null
+    if (!live()) return null
     if (!verdict || typeof verdict.pass !== 'boolean') verdict = parseVerdict('')
     if (typeof verdict.costUsd === 'number') { spend(t, verdict.costUsd); t.costBase = t.costUsd }
     const reasons = Array.isArray(verdict.reasons) ? verdict.reasons.filter((r) => typeof r === 'string' && r.trim()).map((r) => clip(r, 300)) : []
@@ -542,6 +596,8 @@ export function createTaskManager({
   }
 
   async function start(t) {
+    t.run = (t.run ?? 0) + 1
+    const run = t.run
     let agent = null
     if (t.agentId) {
       // Checked again at start: the agent may have been switched off or
@@ -573,13 +629,16 @@ export function createTaskManager({
     }
     t.limits = limits
     t.status = 'running'
-    t.startedAt = now()
-    t.calls = 0
-    t.costBase = 0
-    note(t, 'start', agent ? `started as ${agent.name}` : 'started')
+    // A resumed task keeps when it first started and what it has already used.
+    t.startedAt = t.startedAt ?? now()
+    t.runFrom = Date.now()
+    t.calls = Number.isInteger(t.calls) ? t.calls : 0
+    t.costBase = typeof t.costUsd === 'number' ? t.costUsd : 0
+    note(t, 'start', `${t.resumed > 0 ? 'resumed' : 'started'}${agent ? ` as ${agent.name}` : ''}`)
     emit(t)
     if (limits && typeof limits.maxMinutes === 'number' && limits.maxMinutes > 0) {
-      t.timer = setTimeout(() => stopper(t)(BUDGET_STOPS.minutes(limits.maxMinutes)), limits.maxMinutes * 60_000)
+      const left = Math.max(0, limits.maxMinutes * 60_000 - (t.usedMs ?? 0))
+      t.timer = setTimeout(() => stopper(t, run)(BUDGET_STOPS.minutes(limits.maxMinutes)), left)
       t.timer.unref?.()
     }
     if (t.team) { await runTeam(t); return }
@@ -589,11 +648,11 @@ export function createTaskManager({
     let retry = null
     for (let attempt = 1; ; attempt++) {
       const result = await attemptOnce(t, agent, limits, retry)
-      if (result === null || !isActive(t)) return
+      if (result === null || !isActive(t) || t.run !== run) return
       if (!reviewed) { finish(t, 'done', doneFields(agent, result)); return }
       if (typeof t.costUsd === 'number') t.costBase = t.costUsd
       const verdict = await reviewOnce(t, agent, result, attempt)
-      if (!verdict) return
+      if (!verdict || t.run !== run) return
       if (verdict.pass) {
         note(t, 'review', `passed on attempt ${attempt}`)
         finish(t, 'done', doneFields(agent, result))
@@ -638,6 +697,7 @@ export function createTaskManager({
       ...(parentId && { parentId }),
       ...(team && { team }),
       children: 0, childCostUsd: 0, waiters: new Set(),
+      calls: 0, usedMs: 0, runFrom: null, run: 0, resumed: 0,
     }
     tasks.set(t.id, t)
     note(t, 'queued', 'queued')
@@ -830,7 +890,7 @@ export function createTaskManager({
     dismiss(id) {
       const t = tasks.get(id)
       if (!t) return { ok: false, reason: 'No such task.' }
-      if (isActive(t)) return { ok: false, reason: 'Cancel it first.' }
+      if (isOpen(t)) return { ok: false, reason: 'Cancel it first.' }
       forget(id)
       for (const send of listeners) send({ type: 'task_removed', id })
       return { ok: true }
@@ -893,10 +953,66 @@ export function createTaskManager({
     cancel(id) {
       const t = tasks.get(id)
       if (!t) return { ok: false, reason: 'No such task.' }
-      if (!isActive(t)) return { ok: false, reason: 'That task has already ended.' }
+      if (!isOpen(t)) return { ok: false, reason: 'That task has already ended.' }
       t.abort.abort()
       finish(t, 'cancelled', { error: 'Cancelled.' })
       return { ok: true }
+    },
+    /**
+     * Stop a task's session but keep the task to resume later. Its children
+     * end (a child never outlives the run that started it); its plan, log and
+     * what it has spent stay. Refused for a task another agent started and
+     * for a team run.
+     */
+    pause(id) {
+      const t = tasks.get(id)
+      if (!t) return { ok: false, reason: PAUSE_REFUSALS.missing }
+      if (t.status === 'paused') return { ok: false, reason: PAUSE_REFUSALS.already }
+      if (!isActive(t)) return { ok: false, reason: PAUSE_REFUSALS.ended }
+      if (t.parentId) return { ok: false, reason: PAUSE_REFUSALS.child }
+      if (t.team) return { ok: false, reason: PAUSE_REFUSALS.team }
+      // Release a parked question while the task still counts as live.
+      t.question?.settle(null)
+      if (t.timer) { clearTimeout(t.timer); t.timer = null }
+      if (t.runFrom) { t.usedMs = activeMs(t); t.runFrom = null }
+      t.status = 'paused'
+      t.note = 'Paused by the owner.'
+      t.abort.abort()
+      note(t, 'paused', 'paused by the owner')
+      emit(t)
+      for (const wake of t.waiters) wake()
+      t.waiters.clear()
+      for (const c of [...tasks.values()]) {
+        if (c.parentId !== t.id || !isActive(c)) continue
+        c.abort.abort()
+        finish(c, 'cancelled', { error: DELEGATION_STOPS.parentEnded })
+      }
+      pump()
+      return { ok: true, task: snapshot(t) }
+    },
+    /**
+     * Queue a paused task again. Its new session starts from the goal and
+     * what the board recorded, within what is left of its budget. Refused
+     * while background work is paused or when its agent is no longer on.
+     */
+    resume(id) {
+      const t = tasks.get(id)
+      if (!t) return { ok: false, reason: PAUSE_REFUSALS.missing }
+      if (t.status !== 'paused') return { ok: false, reason: isActive(t) ? PAUSE_REFUSALS.notPaused : PAUSE_REFUSALS.ended }
+      const held = pauseReason()
+      if (held) return { ok: false, reason: held }
+      if (!agentStillActive(t)) return { ok: false, reason: `The ${t.agentName} agent is not switched on.` }
+      t.status = 'queued'
+      t.abort = new AbortController()
+      t.tools = new Set()
+      t.waiting = 0
+      t.question = null
+      t.note = ''
+      t.resumed = (t.resumed ?? 0) + 1
+      note(t, 'resumed', 'resumed by the owner')
+      emit(t)
+      pump()
+      return { ok: true, task: snapshot(t) }
     },
     cancelAll() {
       for (const t of tasks.values()) if (isActive(t)) { t.abort.abort(); finish(t, 'cancelled', { error: 'Cancelled.' }) }

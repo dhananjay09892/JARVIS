@@ -237,16 +237,20 @@ test('every way a task ends publishes one valid task.finished event', async () =
   assert.equal(events.length, 3)
 })
 
-test('a task cut off by a restart is published as interrupted', async () => {
+test('a restart pauses a top-level task (nothing finished) and interrupts one another agent started', async () => {
   const { bus, events } = taskBus()
-  const saved = [{
-    id: 'told', title: 'Long job', goal: 'g', status: 'running', steps: [], note: '', log: [], result: '', error: '',
-    costUsd: null, createdAt: 1, startedAt: 2, endedAt: null,
-  }]
+  const base = { goal: 'g', status: 'running', steps: [], note: '', log: [], result: '', error: '', costUsd: null, createdAt: 1, startedAt: 2, endedAt: null }
+  const saved = [
+    { ...base, id: 'told', title: 'Long job' },
+    { ...base, id: 'kid', title: 'Child job', parentId: 'told', depth: 2 },
+  ]
   const store = { load: () => saved, save() {}, remove() {} }
-  createTaskManager({ runAgent: fakeAgent().runAgent, store, bus, now: () => 10, log: silent })
+  const m = createTaskManager({ runAgent: fakeAgent().runAgent, store, bus, now: () => 10, log: silent })
   await tick()
+  assert.equal(m.get('told').status, 'paused')
+  assert.equal(m.get('kid').status, 'interrupted')
   assert.equal(events.length, 1)
+  assert.equal(events[0].payload.taskId, 'kid')
   assert.equal(events[0].payload.status, 'interrupted')
   assert.equal(events[0].payload.endedAt, 10)
   assert.match(events[0].payload.summary, /restarted/)

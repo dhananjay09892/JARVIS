@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { answerTask, cancelTask, dismissTask, watchTasks, type TaskView } from '../lib/bridge'
+import { answerTask, cancelTask, dismissTask, pauseTask, resumeTask, watchTasks, type TaskView } from '../lib/bridge'
 import { missionAgent, missionRows } from '../lib/missionAgent'
 
 const LIVE = new Set<TaskView['status']>(['queued', 'running', 'waiting_approval', 'waiting_input'])
@@ -8,6 +8,7 @@ const LABEL: Record<TaskView['status'], string> = {
   running: 'RUNNING',
   waiting_approval: 'NEEDS APPROVAL',
   waiting_input: 'NEEDS YOU',
+  paused: 'PAUSED',
   done: 'DONE',
   failed: 'FAILED',
   cancelled: 'CANCELLED',
@@ -36,7 +37,10 @@ function Question({ task }: { task: TaskView }) {
   )
 }
 
-/** Mission Board: every background task, live, with a way to stop it. */
+/** A task the owner may pause: live, and not started by another agent or run as a team. */
+const pausable = (t: TaskView) => LIVE.has(t.status) && !t.parentId && !t.team
+
+/** Mission Board: every background task, live, with a way to pause, resume or stop it. */
 export function Missions() {
   const [tasks, setTasks] = useState<Record<string, TaskView>>({})
   const [open, setOpen] = useState<string | null>(null)
@@ -51,6 +55,7 @@ export function Missions() {
   const list = Object.values(tasks)
   const rows = missionRows(list)
   const live = list.filter((t) => LIVE.has(t.status)).length
+  const paused = list.filter((t) => t.status === 'paused').length
   useEffect(() => {
     if (!live) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -62,7 +67,7 @@ export function Missions() {
   return (
     <aside className="missions" aria-label="Mission board">
       <button className="missions-head" onClick={() => setCollapsed((c) => !c)} aria-expanded={!collapsed}>
-        MISSIONS · {live} ACTIVE{list.length > live ? ` · ${list.length - live} ENDED` : ''}
+        MISSIONS · {live} ACTIVE{paused ? ` · ${paused} PAUSED` : ''}{list.length > live + paused ? ` · ${list.length - live - paused} ENDED` : ''}
         <span>{collapsed ? '▸' : '▾'}</span>
       </button>
       {!collapsed && rows.map(({ task: t, nested }) => {
@@ -94,7 +99,9 @@ export function Missions() {
             )}
             {t.status === 'waiting_input' && <Question task={t} />}
             <div className="mission-actions">
-              {LIVE.has(t.status)
+              {pausable(t) && <button onClick={() => pauseTask(t.id)}>PAUSE</button>}
+              {t.status === 'paused' && <button onClick={() => resumeTask(t.id)}>RESUME</button>}
+              {LIVE.has(t.status) || t.status === 'paused'
                 ? <button onClick={() => cancelTask(t.id)}>CANCEL</button>
                 : <button onClick={() => dismissTask(t.id)}>DISMISS</button>}
             </div>

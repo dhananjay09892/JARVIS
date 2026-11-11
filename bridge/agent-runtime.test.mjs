@@ -366,7 +366,7 @@ test('approval cards name the agent; the store keeps the agent id across a resta
   assert.equal(saved.get(task.id).agentId, 'researcher')
   const again = createTaskManager({ runAgent, agents, store, log: silent })
   const back = again.get(task.id)
-  assert.equal(back.status, 'interrupted')
+  assert.equal(back.status, 'paused')
   assert.equal(back.agentId, 'researcher')
   assert.equal(back.agentName, 'Researcher')
 })

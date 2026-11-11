@@ -208,7 +208,7 @@ export type TaskView = {
   id: string
   title: string
   goal: string
-  status: 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'done' | 'failed' | 'cancelled' | 'interrupted'
+  status: 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'paused' | 'done' | 'failed' | 'cancelled' | 'interrupted'
   steps: { label: string; state: 'done' | 'active' | 'todo' }[]
   percent: number
   note: string
@@ -253,6 +253,10 @@ export type TaskView = {
   depth?: number
   /** Set when the task is a team run (a Coordinator task whose children are the team's members). */
   team?: { id: string; name: string }
+  /** How many times the task was resumed after a pause. */
+  resumed?: number
+  /** What the task has used so far, across pauses and restarts. */
+  usage?: { toolCalls: number; activeMs: number }
 }
 
 let onTask: ((task: TaskView) => void) | null = null
@@ -273,6 +277,15 @@ export function dismissTask(id: string) {
 
 export function cancelTask(id: string) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_cancel', id }))
+}
+
+/** Stops a task's session but keeps it on the board to resume later. */
+export function pauseTask(id: string) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_pause', id }))
+}
+
+export function resumeTask(id: string) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_resume', id }))
 }
 
 export function answerTask(id: string, text: string) {
