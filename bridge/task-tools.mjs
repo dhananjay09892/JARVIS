@@ -2,8 +2,12 @@ import { createSdkMcpServer, tool } from './sdk-server.mjs'
 import { z } from 'zod'
 import { agentOperations, roster, taskBrief as brief } from './agent-ask.mjs'
 import { DELEGATE_SERVER, MAX_WAIT_MS } from './agent-delegation.mjs'
+import { findTask, workingOn } from './mission-control.mjs'
+import { isActive } from './tasks.mjs'
 
-const ORCHESTRATOR_TOOLS = ['spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'draft_agent', 'start_team', 'start_agent', 'list_agents']
+const ORCHESTRATOR_TOOLS = [
+  'spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'pause_task', 'resume_task',
+  'draft_agent', 'start_team', 'start_agent', 'list_agents']
 export const isTaskTool = (name) => ORCHESTRATOR_TOOLS.includes(name)
 
 const reply = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }] })
@@ -20,13 +24,27 @@ export function taskOperations(manager) {
       const r = manager.spawn({ title, goal })
       return r.ok ? { started: true, ...brief(r.task) } : { started: false, reason: r.reason }
     },
-    list: () => ({ tasks: manager.list().map(brief) }),
+    /** Every task; with `active_only`, what is being worked on now ("what are you working on?"). */
+    list: ({ active_only: activeOnly } = {}) => (activeOnly ? workingOn(manager.list()) : { tasks: manager.list().map(brief) }),
     status: ({ id }) => {
-      const t = manager.get(id)
+      const t = manager.get(id) ?? (typeof id === 'string' ? findTask(manager.list(), id).task : null)
       return t ? { ...brief(t), steps: t.steps, result: t.result || undefined, recent: t.log.slice(-5).map((l) => l.text) } : { found: false }
     },
-    cancel: ({ id }) => manager.cancel(id),
+    cancel: ({ id }) => act(manager, id, { accept: (t) => isActive(t) || t.status === 'paused', kind: 'running or paused' }, (t) => manager.cancel(t.id)),
+    /** "Pause the trip planning": the one live task the words name. */
+    pause: ({ id }) => act(manager, id, { accept: (t) => isActive(t) && !t.parentId && !t.team, kind: 'running' }, (t) => manager.pause(t.id)),
+    /** "Carry on with the trip planning": the one paused task the words name. */
+    resume: ({ id }) => act(manager, id, { accept: (t) => t.status === 'paused', kind: 'paused' }, (t) => manager.resume(t.id)),
   }
+}
+
+/** Find the task the owner means (mission-control.mjs), then do `fn` to it; the answer names it. */
+function act(manager, query, how, fn) {
+  const found = findTask(manager.list(), typeof query === 'string' ? query : '', how)
+  if (!found.task) return { ok: false, reason: found.reason, ...(found.candidates && { candidates: found.candidates }) }
+  const r = fn(found.task)
+  const { task: _snap, ...rest } = r
+  return { ...rest, id: found.task.id, title: found.task.title }
 }
 
 /** The start_agent description, naming the agents that can be asked when the session starts. */
@@ -70,15 +88,28 @@ export function taskServer(manager, { agents = null, drafts = null, approve = nu
     instructions:
       'Tasks are background agents that work while you keep talking. Use spawn_task for anything that will take more than a few seconds ' +
       '(research, code changes, multi-step file work); it returns at once. Several can run together. Progress shows on the Mission Board, ' +
-      'so do not read it out unless asked. Anything a task needs approving shows its own card, named for the task.',
+      'so do not read it out unless asked. Anything a task needs approving shows its own card, named for the task. ' +
+      'When the owner asks what you are working on, call list_tasks with active_only and answer in a sentence or two. ' +
+      'pause_task, resume_task and cancel_task take the task\'s id or the owner\'s words for it ("the trip planning"); ' +
+      'if the answer asks which one, read out the candidates and ask. A paused task keeps its progress and resumes where the board left it.',
     tools: [
       tool('spawn_task',
         'Start a background agent on a self-contained goal. Write the goal as a complete brief: the agent has no access to this conversation.',
         { title: z.string().min(1).max(60).describe('Short name for the board'), goal: z.string().min(1).max(4000).describe('Everything the agent needs, including paths and what done looks like') },
         async (a) => reply(ops.spawn(a))),
-      tool('list_tasks', 'Every task with its status and progress.', {}, async () => reply(ops.list())),
-      tool('task_status', 'Detail for one task: steps, latest activity and, when finished, the result.', { id: z.string() }, async (a) => reply(ops.status(a))),
-      tool('cancel_task', 'Stop a running or queued task.', { id: z.string() }, async (a) => reply(ops.cancel(a))),
+      tool('list_tasks', 'Every task with its status and progress. With active_only, only what is running or paused now, and a short summary.',
+        { active_only: z.boolean().optional().describe('Only running and paused tasks: "what are you working on?"') },
+        async (a) => reply(ops.list(a))),
+      tool('task_status', 'Detail for one task: steps, latest activity and, when finished, the result.',
+        { id: z.string().max(200).describe('The task\'s id, or words from its title') }, async (a) => reply(ops.status(a))),
+      tool('cancel_task', 'Stop a running, queued or paused task for good.',
+        { id: z.string().max(200).describe('The task\'s id, or words from its title') }, async (a) => reply(ops.cancel(a))),
+      tool('pause_task', 'Pause a running or queued task: its session stops, its progress is kept, and it can be resumed later. "Pause the trip planning."',
+        { id: z.string().max(200).describe('The task\'s id, or words from its title, e.g. "trip planning"; empty when only one task is running') },
+        async (a) => reply(ops.pause(a))),
+      tool('resume_task', 'Resume a paused task, including one paused by a restart. It carries on from what the board recorded.',
+        { id: z.string().max(200).describe('The task\'s id, or words from its title; empty when only one task is paused') },
+        async (a) => reply(ops.resume(a))),
       tool('start_agent', startAgentText(agents),
         {
           agent: z.string().max(60).optional().describe('The agent\'s id or name, e.g. researcher'),

@@ -1152,6 +1152,11 @@ Tasks:
   when its status shows it finished, and then in a sentence.
 - A task that needs approval shows its own card, named for the task. Never claim
   a task did something its status does not say.
+- "What are you working on?" is list_tasks with active_only; answer in a
+  sentence or two. "Pause the trip planning" is pause_task, "carry on with it"
+  is resume_task, both with the owner's words for the task. A task JARVIS was
+  running when it restarted comes back paused; say so if asked, and resume it
+  only when the owner says to.
 - Named agents (a researcher, a writer…) are started with start_agent when the
   owner asks one by name: "ask the researcher to…", "get the writer to…". If it
   says the agent is unknown or switched off, say so in a sentence and offer a
@@ -3294,6 +3299,16 @@ wss.on('connection', (socket, req) => {
 
     if (msg.type === 'task_cancel' && typeof msg.id === 'string') {
       taskManager.cancel(msg.id)
+      return
+    }
+
+    if (msg.type === 'task_pause' && typeof msg.id === 'string') {
+      taskManager.pause(msg.id)
+      return
+    }
+
+    if (msg.type === 'task_resume' && typeof msg.id === 'string') {
+      taskManager.resume(msg.id)
       return
     }
 

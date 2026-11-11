@@ -21,7 +21,7 @@ function withDir(fn) {
   })
 }
 
-test('finished tasks come back after a restart, and a running one is marked interrupted', () => withDir(async (open) => {
+test('finished tasks come back after a restart, and a running one comes back paused', () => withDir(async (open) => {
   const store = open()
   let runs = 0
   const first = createTaskManager({
@@ -42,14 +42,18 @@ test('finished tasks come back after a restart, and a running one is marked inte
   const second = createTaskManager({ store: open(), log: silent, runAgent: idleAgent })
   assert.equal(second.get(done).status, 'done')
   assert.equal(second.get(done).result, 'all good')
-  assert.equal(second.get(live).status, 'interrupted')
-  assert.match(second.get(live).error, /restarted/)
+  assert.equal(second.get(live).status, 'paused')
+  assert.match(second.get(live).note, /restarted/)
+  assert.equal(second.get(live).error, '')
   assert.equal(second.list().length, 2)
-  assert.equal(second.cancel(live).ok, false)
 
-  // The interrupted verdict itself is saved, so a third start does not redo it.
+  // The paused state itself is saved, so a third start finds it paused too,
+  // and it can still be cancelled for good.
   const third = createTaskManager({ store: open(), log: silent, runAgent: idleAgent })
-  assert.equal(third.get(live).status, 'interrupted')
+  assert.equal(third.get(live).status, 'paused')
+  assert.equal(third.cancel(live).ok, true)
+  assert.equal(third.get(live).status, 'cancelled')
+  assert.equal(third.cancel(live).ok, false)
 }))
 
 test('dismiss removes an ended task from memory and disk; a live task refuses', () => withDir(async (open) => {

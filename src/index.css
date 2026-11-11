@@ -2100,6 +2100,8 @@ kbd {
 .mission-ask input { min-width: 0; }
 .mission-ask button { font-size: 9px; letter-spacing: 0.2em; cursor: pointer; }
 .mission-interrupted { border-color: #ffb300; opacity: 0.8; }
+.mission-paused { border-color: #6fa8dc; opacity: 0.85; }
+.mission-paused .mission-row em { color: #6fa8dc; }
 
 /* Settings → Connectors (task C03) */
 .conn-card { border-top: 1px solid rgba(255, 255, 255, 0.12); padding: 8px 0; }
