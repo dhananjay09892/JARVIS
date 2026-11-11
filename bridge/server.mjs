@@ -45,6 +45,9 @@ import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSourc
 import { createBriefing } from './briefing.mjs'
 import { BRIEFING_SERVER, briefingLanguage, briefingSchedule, createBriefingRuns } from './briefing-agent.mjs'
 import { WATCH_SERVER, WATCHES_SETTING, createWatchRuns, createWatchState, watchStateFile } from './watcher.mjs'
+import {
+  MEETING_NOTES_ID, MEETING_SERVER, createMeetingReads, createMeetingSource, createMeetingState, meetingStateFile,
+} from './meeting-notes.mjs'
 import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, delegateServer, isTaskTool } from './task-tools.mjs'
 import { DELEGATE_SERVER, DELEGATE_TOOLS } from './agent-delegation.mjs'
@@ -589,6 +592,24 @@ const watchRuns = createWatchRuns({
 /** The Watcher's SDK server for one task (or, with no task, for the catalogue). */
 function watchServer(taskId) {
   const spec = watchRuns.serverSpec(taskId)
+  return createSdkMcpServer({
+    name: spec.name,
+    version: '1.0.0',
+    alwaysLoad: true,
+    instructions: spec.instructions,
+    tools: spec.tools.map((t) => sdkTool(t.name, t.description, {}, t.handler)),
+  })
+}
+/**
+ * The Meeting Notes agent's one tool (meeting-notes.mjs): the oldest synced
+ * meeting note from the last day not yet written up, with its calendar entry;
+ * kept per task so the end of a run raises the notes and marks it written up.
+ */
+const meetingState = createMeetingState({ file: meetingStateFile() })
+const meetingReads = createMeetingReads({ store: connectorStore, state: meetingState })
+/** The Meeting Notes SDK server for one task (or, with no task, for the catalogue). */
+function meetingServer(taskId) {
+  const spec = meetingReads.serverSpec(taskId)
   return createSdkMcpServer({
     name: spec.name,
     version: '1.0.0',
@@ -2450,6 +2471,8 @@ function workerServers({ report, ask, approve, withMemory = false, coder = null,
     [BRIEFING_SERVER]: briefingServer(taskId),
     // The Watcher's check, read-only (watcher.mjs); kept against this task's id.
     [WATCH_SERVER]: watchServer(taskId),
+    // The meeting to write up, read-only (meeting-notes.mjs); kept against this task's id.
+    [MEETING_SERVER]: meetingServer(taskId),
     ...connectorServerEntry(),
     ...(withMemory && memory && { jarvis_memory: memoryServer(memory, { conversation: () => null, project: () => '' }) }),
   }
@@ -2752,17 +2775,33 @@ const agentTriggers = createAgentTriggers({
   maxDepth: agentSettings.maxDepth,
   notifier,
   // The Watcher's alert is the matches its check found, once; nothing new raises nothing.
+  // Meeting notes carry the decisions and action items, once per meeting.
   notificationFor: (task, at) => {
     const watched = watchRuns.notification(task, at)
-    return watched === undefined ? triggerNotification(task, at) : watched
+    if (watched !== undefined) return watched
+    const notes = meetingReads.notification(task, at)
+    return notes === undefined ? triggerNotification(task, at) : notes
   },
+})
+/**
+ * The meeting source (meeting-notes.mjs): announces a newly synced meeting
+ * note as `meeting.ended`, one per tick and only while Meeting Notes is
+ * switched on. It reads the documents the connectors already keep.
+ */
+const meetingSource = createMeetingSource({
+  store: connectorStore,
+  bus,
+  state: meetingState,
+  wanted: () => switchedAgents.isActive(MEETING_NOTES_ID) === true && !agentSettings.paused(),
 })
 if (engine) {
   engine.addJob(agentScheduler)
   engine.addJob(agentTriggers)
+  engine.addJob(meetingSource)
 } else {
   startTicker(() => agentScheduler.tick())
   startTicker(() => agentTriggers.tick())
+  startTicker(() => meetingSource.tick())
 }
 
 // Freezing stops every queued and running task at once; unfreezing lets the

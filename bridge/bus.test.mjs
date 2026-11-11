@@ -23,6 +23,7 @@ const ALERT = {
 const SEEN = { channel: 'telegram', rule: 'chat-turn', length: 12, bindingId: 'bind-1' }
 const STRANGER = { channel: 'telegram', rule: 'rejected-unknown', length: 5, senderHash: '0123456789abcdef' }
 const FROZE = { source: 'chat', at: T0 }
+const MET = { meetingId: 'granola:note:abc', source: 'granola', title: 'Weekly sync', endedAt: T0 }
 const ev = (topic, payload, extra = {}) => ({ v: 1, id: 'ev-1', ts: T0, topic, payload, ...extra })
 
 const VALID = [
@@ -44,6 +45,8 @@ const VALID = [
   ev('channel.sent', { ...SEEN, rule: 'reply-private', length: 0 }),
   ev('freeze.on', FROZE),
   ev('freeze.off', { source: 'hud', at: T0 + 1 }),
+  ev('meeting.ended', MET),
+  ev('meeting.ended', { ...MET, extra: 'unknown fields are allowed' }),
 ]
 
 const INVALID = [
@@ -97,6 +100,10 @@ const INVALID = [
   ev('channel.sent', { channel: 'telegram', rule: 'reply-public', length: 1 }),
   ev('freeze.on', { ...FROZE, source: 'telegram' }),
   ev('freeze.off', { source: 'hud' }),
+  ev('meeting.ended', { ...MET, source: 'zoom' }),
+  ev('meeting.ended', { ...MET, title: '' }),
+  ev('meeting.ended', { ...MET, meetingId: 'has space' }),
+  ev('meeting.ended', { ...MET, endedAt: -1 }),
 ]
 
 test('the bridge topic list is the contract topic list', () => {
