@@ -70,6 +70,8 @@ export type PublicSettings = {
   JARVIS_AGENTS_PAUSED: string
   /** 'id=on|off,…' or 'none' — per-agent switches. '' means the default (none). */
   JARVIS_AGENT_SWITCHES: string
+  /** Watch rules for the Watcher agent, or 'none'. '' means the default (none). */
+  JARVIS_WATCHES: string
   /** '1' | '0' — the morning briefing answers "brief me" (plan 12, Q34). '' means the default (on). */
   JARVIS_BRIEFING: string
   /** '1' | '0' — the briefing names who new mail is from (plan 12, Q34). '' means the default (off). */

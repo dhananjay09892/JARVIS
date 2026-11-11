@@ -128,10 +128,13 @@ export function triggerNotification(task, at) {
  * @param {() => number} [o.maxDepth] agents.maxDepth (1–2)
  * @param {{ submit: Function } | null} [o.notifier] the notification policy engine
  * @param {() => number} [o.clock]
+ * @param {(task: object, at: number) => object | null} [o.notificationFor]
+ *   the alert for a run that ended (triggerNotification unless an agent has
+ *   its own); null raises nothing
  */
 export function createAgentTriggers({
   agents, tasks, bus = null, paused = () => null, maxDepth = () => 1, notifier = null,
-  clock = () => Date.now(), log = console,
+  clock = () => Date.now(), log = console, notificationFor = triggerNotification,
 } = {}) {
   if (!agents || !tasks) throw new TypeError('Agent triggers need the agent registry and the task manager.')
   const safe = (fn, fallback) => { try { return fn() } catch { return fallback } }
@@ -171,7 +174,8 @@ export function createAgentTriggers({
       endedAt.set(t.agentId, clock())
       if (endedOnBudget(t) && safe(() => agents.get(t.agentId)?.mode, null) === 'continuous') budgetStopped.add(t.agentId)
     }
-    const n = triggerNotification(t, clock())
+    let n = null
+    try { n = notificationFor(t, clock()) } catch (err) { log.error?.('[jarvis] agent alert could not be built:', err?.message ?? err) }
     if (n && notifier) {
       try { notifier.submit(n) } catch (err) { log.error?.('[jarvis] agent alert failed:', err?.message ?? err) }
     }

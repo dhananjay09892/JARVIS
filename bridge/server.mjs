@@ -36,7 +36,7 @@ import { createAgentRoutes } from './agent-routes.mjs'
 import { createAgentDrafter } from './agent-drafts.mjs'
 import { createAgentProposer, createProposalState, proposalsStateFile } from './agent-proposals.mjs'
 import { createAgentScheduler, createScheduleState, runNotification, scheduleStateFile } from './agent-schedule.mjs'
-import { createAgentTriggers } from './agent-triggers.mjs'
+import { createAgentTriggers, triggerNotification } from './agent-triggers.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
 import { REVIEWER_ID, createReviewer } from './agent-review.mjs'
 import { createBus } from './bus.mjs'
@@ -44,6 +44,7 @@ import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.m
 import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSource, timeSource } from './context-broker.mjs'
 import { createBriefing } from './briefing.mjs'
 import { BRIEFING_SERVER, briefingLanguage, briefingSchedule, createBriefingRuns } from './briefing-agent.mjs'
+import { WATCH_SERVER, WATCHES_SETTING, createWatchRuns, createWatchState, watchStateFile } from './watcher.mjs'
 import { openTaskStore } from './task-store.mjs'
 import { taskServer, progressServer, delegateServer, isTaskTool } from './task-tools.mjs'
 import { DELEGATE_SERVER, DELEGATE_TOOLS } from './agent-delegation.mjs'
@@ -567,6 +568,27 @@ const briefingRuns = createBriefingRuns({
 /** The briefing tool's SDK server for one task (or, with no task, for the catalogue). */
 function briefingServer(taskId) {
   const spec = briefingRuns.serverSpec(taskId)
+  return createSdkMcpServer({
+    name: spec.name,
+    version: '1.0.0',
+    alwaysLoad: true,
+    instructions: spec.instructions,
+    tools: spec.tools.map((t) => sdkTool(t.name, t.description, {}, t.handler)),
+  })
+}
+/**
+ * The Watcher agent's one tool (watcher.mjs): the owner's watch rules checked
+ * against synced GitHub notifications and RSS items and the owner's own page
+ * addresses; kept per task so the end of a run raises what it found, once.
+ */
+const watchRuns = createWatchRuns({
+  store: connectorStore,
+  watches: () => setting(WATCHES_SETTING) || 'none',
+  state: createWatchState({ file: watchStateFile() }),
+})
+/** The Watcher's SDK server for one task (or, with no task, for the catalogue). */
+function watchServer(taskId) {
+  const spec = watchRuns.serverSpec(taskId)
   return createSdkMcpServer({
     name: spec.name,
     version: '1.0.0',
@@ -2426,6 +2448,8 @@ function workerServers({ report, ask, approve, withMemory = false, coder = null,
     [CODER_SERVER]: coderServer(coder),
     // The morning briefing, read-only (briefing-agent.mjs); kept against this task's id.
     [BRIEFING_SERVER]: briefingServer(taskId),
+    // The Watcher's check, read-only (watcher.mjs); kept against this task's id.
+    [WATCH_SERVER]: watchServer(taskId),
     ...connectorServerEntry(),
     ...(withMemory && memory && { jarvis_memory: memoryServer(memory, { conversation: () => null, project: () => '' }) }),
   }
@@ -2727,6 +2751,11 @@ const agentTriggers = createAgentTriggers({
   paused: agentSettings.paused,
   maxDepth: agentSettings.maxDepth,
   notifier,
+  // The Watcher's alert is the matches its check found, once; nothing new raises nothing.
+  notificationFor: (task, at) => {
+    const watched = watchRuns.notification(task, at)
+    return watched === undefined ? triggerNotification(task, at) : watched
+  },
 })
 if (engine) {
   engine.addJob(agentScheduler)
