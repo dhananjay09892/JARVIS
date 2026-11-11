@@ -60,6 +60,15 @@ export const WATCH_SERVER = 'jarvis_watch'
 export const WATCH_TOOL_NAMES = Object.freeze(['check_watches'])
 
 /**
+ * The Meeting Notes server (meeting-notes.mjs): one tool that reads the
+ * latest synced meeting note not yet written up, with its calendar entry. It
+ * sends nothing and changes nothing; which meetings were written up is only
+ * remembered so one is not written up twice.
+ */
+export const MEETING_SERVER = 'jarvis_meeting'
+export const MEETING_TOOL_NAMES = Object.freeze(['read_meeting'])
+
+/**
  * Both spellings of every renamed built-in are listed on purpose. The SDK
  * presents several tools to the model under newer names — Task is Agent,
  * BashOutput is TaskOutput, KillShell is TaskStop, and the MCP resource tools
@@ -428,6 +437,8 @@ function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool,
     if (server === BRIEFING_SERVER) return fixed(BRIEFING_TOOL_NAMES.includes(tool), 'own-server-list')
     // The Watcher's check: reads only, with no arguments to steer it.
     if (server === WATCH_SERVER) return fixed(WATCH_TOOL_NAMES.includes(tool), 'own-server-list')
+    // The meeting to write up: reads only, with no arguments to steer it.
+    if (server === MEETING_SERVER) return fixed(MEETING_TOOL_NAMES.includes(tool), 'own-server-list')
     // Saved memories are local data. These tools can neither act nor approve.
     if (server === 'jarvis_memory') return fixed(isMemoryTool(tool) === true, 'own-server-list')
     // Recipes can only be changed through an approval card, and their action

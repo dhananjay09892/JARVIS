@@ -231,6 +231,8 @@ export function resultIsExternal(toolName) {
   if (mcp.server === 'jarvis') return mcp.tool === 'probe_url'
   // The Watcher hands back issue titles, feed items and page text written by others.
   if (mcp.server === 'jarvis_watch') return true
+  // Meeting notes hold what other people said in the meeting.
+  if (mcp.server === 'jarvis_meeting') return true
   return !mcp.server.startsWith('jarvis')
 }
 

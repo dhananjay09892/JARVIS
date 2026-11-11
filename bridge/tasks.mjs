@@ -76,6 +76,7 @@ import { resolveAgent } from './agent-ask.mjs'
 import { isDraftAgent, readDraft } from './agent-draft-result.mjs'
 import { isAlertAgent, readTriage } from './agent-triage-result.mjs'
 import { isMemoryReviewAgent, readMemoryReview } from './agent-memory-review.mjs'
+import { copyMeetingNotes, isMeetingNotesAgent, readMeetingNotes } from './meeting-notes.mjs'
 import {
   TEAM_STOPS, memberGoal, memberRecord, memberTitle, reviewGoal, teamAgents, teamOutcome, teamPlan, teamPreset, teamResult, teamSize,
 } from './agent-teams.mjs'
@@ -119,6 +120,7 @@ function snapshot(t) {
     ...(t.draft && { draft: { ...t.draft } }),
     ...(t.triage && { triage: copyTriage(t.triage) }),
     ...(t.memoryReview && { memoryReview: copyReview(t.memoryReview) }),
+    ...(t.meetingNotes && { meetingNotes: copyMeetingNotes(t.meetingNotes) }),
     ...(t.depth > 1 && { depth: t.depth }),
     ...(t.parentId && { parentId: t.parentId }),
     ...(t.team && { team: { id: t.team, name: teamPreset(t.team)?.name ?? t.team } }),
@@ -276,14 +278,19 @@ export function createTaskManager({
    * so the board can show and copy it; for an alert agent in the triage
    * shape (agent-triage-result.mjs), the triage, so its end can be raised by
    * what it found; for a memory-reading report agent in the review shape
-   * (agent-memory-review.mjs, the Memory Curator), its memory proposals.
-   * Reading any of them sends, saves or changes nothing.
+   * (agent-memory-review.mjs, the Memory Curator), its memory proposals;
+   * for a report agent that reads meetings (meeting-notes.mjs), the minutes,
+   * decisions and action-item drafts. Reading any of them sends, saves or
+   * changes nothing.
    */
   function doneFields(agent, result) {
     const draft = isDraftAgent(agent) ? readDraft(result) : null
     const triage = isAlertAgent(agent) ? readTriage(result) : null
     const memoryReview = isMemoryReviewAgent(agent) ? readMemoryReview(result) : null
-    return { result, ...(draft && { draft }), ...(triage && { triage }), ...(memoryReview && { memoryReview }) }
+    const meetingNotes = isMeetingNotesAgent(agent) ? readMeetingNotes(result) : null
+    return {
+      result, ...(draft && { draft }), ...(triage && { triage }), ...(memoryReview && { memoryReview }), ...(meetingNotes && { meetingNotes }),
+    }
   }
 
   function finish(t, status, fields = {}) {

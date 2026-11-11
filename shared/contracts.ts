@@ -349,6 +349,20 @@ export type ChannelEvent = z.infer<typeof ChannelEvent>
 export const FreezeChange = z.object({ source: z.enum(['chat', 'hud']), at: Ts })
 export type FreezeChange = z.infer<typeof FreezeChange>
 
+/**
+ * A meeting that ended and has something recorded to write up
+ * (bridge/meeting-notes.mjs): which synced note, from which source, its
+ * title and when it ended (or when its note appeared). The title is
+ * outside text; a listener treats the whole payload as untrusted.
+ */
+export const MeetingEnded = z.object({
+  meetingId: Id,
+  source: z.enum(['granola']),
+  title: z.string().min(1).max(200),
+  endedAt: Ts,
+})
+export type MeetingEnded = z.infer<typeof MeetingEnded>
+
 // ---------------------------------------------------------------------------
 // Skills, devices, audit
 // ---------------------------------------------------------------------------
@@ -409,8 +423,8 @@ export const TOPICS = [
   'task.finished',
   // Plan 20 (Q79): what the messaging channels did, ids and lengths only.
   'channel.received', 'channel.rejected', 'channel.sent',
-  // Agents A2 (A08): a topic triggered agents can wait on. Nothing publishes
-  // it yet; its payload is fixed when the meeting source is built.
+  // Agents A2 (A08): a topic triggered agents can wait on. Published by the
+  // meeting source (bridge/meeting-notes.mjs) when a new meeting note syncs.
   'meeting.ended',
 ] as const
 export const Topic = z.enum(TOPICS)
@@ -478,6 +492,7 @@ const TOPIC_PAYLOADS: Partial<Record<Topic, z.ZodType>> = {
   'channel.sent': ChannelEvent,
   'freeze.on': FreezeChange,
   'freeze.off': FreezeChange,
+  'meeting.ended': MeetingEnded,
 }
 
 export const BusEvent = z.object({

@@ -47,8 +47,8 @@ export const TOPICS = Object.freeze([
   'task.finished',
   // Plan 20 (Q79): what the messaging channels did, ids and lengths only.
   'channel.received', 'channel.rejected', 'channel.sent',
-  // A topic triggered agents can wait on (agent-triggers.mjs). Nothing
-  // publishes it yet, so it has no payload check here.
+  // A topic triggered agents can wait on (agent-triggers.mjs), published by
+  // the meeting source (meeting-notes.mjs).
   'meeting.ended',
 ])
 
@@ -161,6 +161,18 @@ const FREEZE_CHANGE = {
   rules: [],
 }
 
+/** `MeetingEnded` in shared/contracts.ts: a synced meeting note to write up. */
+const MEETING_ENDED = {
+  fields: {
+    meetingId: [isId, 'invalid id'],
+    source: [oneOf('granola'), 'must be granola'],
+    title: [isText(200, 1), 'must be 1–200 characters'],
+    endedAt: [isTs, 'must be a timestamp'],
+  },
+  optional: {},
+  rules: [],
+}
+
 /** Payload checks for the topics the bridge publishes today. */
 const PAYLOADS = {
   'workflow.started': WORKFLOW_RUN,
@@ -174,6 +186,7 @@ const PAYLOADS = {
   'channel.sent': CHANNEL_EVENT,
   'freeze.on': FREEZE_CHANGE,
   'freeze.off': FREEZE_CHANGE,
+  'meeting.ended': MEETING_ENDED,
 }
 export const PUBLISHABLE = Object.freeze(Object.keys(PAYLOADS))
 
