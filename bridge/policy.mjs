@@ -69,6 +69,23 @@ export const MEETING_SERVER = 'jarvis_meeting'
 export const MEETING_TOOL_NAMES = Object.freeze(['read_meeting'])
 
 /**
+ * The Browser Operator's server (browser-operator.mjs): the owner's own
+ * browser, one step at a time. Opening and reading pages is reading, like the
+ * voice session's browser tools. Filling a field and submitting act on a page
+ * that may be signed in, so only the built-in Browser Operator may ask for
+ * them, only with general writes on, and every submit shows an approval card.
+ * agent-browser-operator.test.mjs pins that the id matches the shipped file.
+ */
+export const BROWSER_SERVER = 'jarvis_browser'
+export const BROWSER_FILL_TOOL = 'fill_field'
+export const BROWSER_SUBMIT_TOOL = 'submit'
+export const BROWSER_TOOL_NAMES = Object.freeze([
+  'open_page', 'read_page', 'page_text', 'scroll_page', BROWSER_FILL_TOOL, BROWSER_SUBMIT_TOOL,
+])
+export const BROWSER_ACT_TOOLS = Object.freeze([BROWSER_FILL_TOOL, BROWSER_SUBMIT_TOOL])
+export const BROWSER_OPERATOR_ID = 'browser-operator'
+
+/**
  * Both spellings of every renamed built-in are listed on purpose. The SDK
  * presents several tools to the model under newer names — Task is Agent,
  * BashOutput is TaskOutput, KillShell is TaskStop, and the MCP resource tools
@@ -439,6 +456,15 @@ function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool,
     if (server === WATCH_SERVER) return fixed(WATCH_TOOL_NAMES.includes(tool), 'own-server-list')
     // The meeting to write up: reads only, with no arguments to steer it.
     if (server === MEETING_SERVER) return fixed(MEETING_TOOL_NAMES.includes(tool), 'own-server-list')
+    // The Browser Operator's own browser tools. Reading is free; filling and
+    // submitting are the built-in Browser Operator's alone and wait for writes,
+    // and browser-operator.mjs asks the owner before every submit.
+    if (server === BROWSER_SERVER) {
+      if (!BROWSER_TOOL_NAMES.includes(tool)) return fixed(false, 'own-server-list')
+      if (!BROWSER_ACT_TOOLS.includes(tool)) return fixed(true, 'own-browser')
+      if (agentId !== BROWSER_OPERATOR_ID) return fixed(false, 'browser-act-only')
+      return writes('browser-act')
+    }
     // Saved memories are local data. These tools can neither act nor approve.
     if (server === 'jarvis_memory') return fixed(isMemoryTool(tool) === true, 'own-server-list')
     // Recipes can only be changed through an approval card, and their action
@@ -585,6 +611,8 @@ export const RULE_REASONS = Object.freeze({
   'subagent': 'Starting a sub-agent needs general writes.',
   'delegate-coordinator-only': 'Only the Coordinator may start other agents.',
   'coder-pull-request-only': 'Only the Coder may open a pull request.',
+  'browser-act-only': 'Only the Browser Operator may fill in or submit a page.',
+  'browser-act': 'Filling in and submitting a page needs general writes, and every submit asks for approval.',
   'coder-pull-request': 'Opening a pull request publishes code, so it needs general writes and approval each time.',
   'read-only-builtin': 'A built-in tool that only reads.',
   'write-builtin': 'A built-in tool that writes or runs commands needs general writes.',
