@@ -229,6 +229,8 @@ export function resultIsExternal(toolName) {
   if (!mcp) return false
   if (mcp.server === 'jarvis_chrome') return true
   if (mcp.server === 'jarvis') return mcp.tool === 'probe_url'
+  // The Watcher hands back issue titles, feed items and page text written by others.
+  if (mcp.server === 'jarvis_watch') return true
   return !mcp.server.startsWith('jarvis')
 }
 

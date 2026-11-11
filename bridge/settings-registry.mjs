@@ -556,6 +556,18 @@ const DEFS = [
     visibleIn: 'advanced',
   },
   {
+    id: 'JARVIS_WATCHES',
+    section: 'agents',
+    label: 'Watcher rules',
+    help: 'What the Watcher agent tells you about, rules separated by ";". Start each with github, rss or page, then filters: github repo=owner/name reason=mention kind="pull request" words=security; rss feed=example.com words="open source"; page url=https://shop.example/desk words="in stock". Each match is alerted once. The Watcher only reads; switch it on under agents.',
+    type: 'string',
+    pattern: /^(none|(?:github|rss|page)\b[^\u0000-\u001f\u007f]{0,1995})$/i,
+    default: 'none',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'advanced',
+  },
+  {
     id: 'JARVIS_ALLOW_WRITES',
     section: 'safety',
     label: 'Let JARVIS take real actions',

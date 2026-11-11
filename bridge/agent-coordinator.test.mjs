@@ -16,7 +16,7 @@ import { DELEGATION_REFUSALS, DELEGATE_TOOLS } from './agent-delegation.mjs'
 import { agentOperations, roster } from './agent-ask.mjs'
 import { MIN_SCORE, STARTER_HINTS, matchAgent } from './agent-match.mjs'
 import { MEMORY_READ_TOOLS, agentToolPlan, workerRuleFor } from './agent-runtime.mjs'
-import { BRIEFING_SERVER, BRIEFING_TOOL_NAMES, CODER_SERVER, CODER_TOOL_NAMES, createPolicy } from './policy.mjs'
+import { BRIEFING_SERVER, BRIEFING_TOOL_NAMES, CODER_SERVER, CODER_TOOL_NAMES, WATCH_SERVER, WATCH_TOOL_NAMES, createPolicy } from './policy.mjs'
 import { createTaskManager } from './tasks.mjs'
 import { AGENT_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { BUILTIN_AGENT_CONNECTORS } from './fixtures/agent-connectors.mjs'
@@ -46,6 +46,7 @@ const CATALOGUE = createToolCatalogue({
     jarvis_memory: ['remember', 'list_memories', 'search_memory', 'update_memory', 'forget'],
     [CODER_SERVER]: [...CODER_TOOL_NAMES],
     [BRIEFING_SERVER]: [...BRIEFING_TOOL_NAMES],
+    [WATCH_SERVER]: [...WATCH_TOOL_NAMES],
   },
 })
 
