@@ -375,12 +375,12 @@ export function markUntrustedResult(result, source) {
 /**
  * JARVIS's own servers whose results are either written entirely by the
  * bridge (the UI, app launching, workflows, the camera) or already wrapped
- * where they are built (chrome, and probe_url in `jarvis`). Everything else —
+ * where they are built (chrome, the Browser Operator, and probe_url in `jarvis`). Everything else —
  * including any server added later — gets the notice, so the safe default is
  * the one that applies when this list is out of date.
  */
 const SELF_LABELLED_SERVERS = new Set([
-  'jarvis', 'jarvis_ui', 'jarvis_apps', 'jarvis_eyes', 'jarvis_workflows', 'jarvis_chrome',
+  'jarvis', 'jarvis_ui', 'jarvis_apps', 'jarvis_eyes', 'jarvis_workflows', 'jarvis_chrome', 'jarvis_browser',
 ])
 
 /** Built-in tools that only report on the agent's own bookkeeping. */

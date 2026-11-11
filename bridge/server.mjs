@@ -23,7 +23,8 @@ import { createSdkMcpServer, tool as sdkTool } from './sdk-server.mjs'
 import { z } from 'zod'
 import { displayServer } from './panels.mjs'
 import { uiServer } from './ui.mjs'
-import { chromeAvailable, chromeServer } from './chrome.mjs'
+import { chromeAvailable, chromeBrowser, chromeServer } from './chrome.mjs'
+import { BROWSER_SERVER, browserOperatorServer, createBrowserOperator } from './browser-operator.mjs'
 import { visionServer } from './vision.mjs'
 import { appsServer } from './apps.mjs'
 import { workspaceServer, workspaceFiles, WORKSPACE_ROOT } from './workspace.mjs'
@@ -2471,7 +2472,7 @@ try {
  * copy (agent-runtime.mjs narrowServers); a plain task gets them all, as
  * before. Memory is only there for an agent whose definition may read it.
  */
-function workerServers({ report, ask, approve, withMemory = false, coder = null, taskId = null }) {
+function workerServers({ report, ask, approve, withMemory = false, coder = null, browserOp = null, taskId = null }) {
   return {
     ...MCP_SERVERS,
     jarvis_task: progressServer(report, ask),
@@ -2479,6 +2480,8 @@ function workerServers({ report, ask, approve, withMemory = false, coder = null,
     jarvis_development: developmentServer(approve),
     // The Coder's own worktree tools (coder.mjs); only a run whose file lists them keeps them.
     [CODER_SERVER]: coderServer(coder),
+    // The Browser Operator's step-by-step browser (browser-operator.mjs); every submit asks.
+    [BROWSER_SERVER]: browserOperatorServer(browserOp),
     // The morning briefing, read-only (briefing-agent.mjs); kept against this task's id.
     [BRIEFING_SERVER]: briefingServer(taskId),
     // The Watcher's check, read-only (watcher.mjs); kept against this task's id.
@@ -2563,7 +2566,11 @@ function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget, 
   const coder = plan.allowed.some((n) => mcpServerOf(n) === CODER_SERVER)
     ? createCoderWorkspace({ taskId: task.id, approve })
     : null
-  const all = workerServers({ report, ask, approve, withMemory: agent.memory !== 'none', coder, taskId: task.id })
+  // The owner's browser for this task, made only if the agent's file lists the Browser Operator's tools.
+  const browserOp = plan.allowed.some((n) => mcpServerOf(n) === BROWSER_SERVER)
+    ? createBrowserOperator({ browser: chromeBrowser, approve })
+    : null
+  const all = workerServers({ report, ask, approve, withMemory: agent.memory !== 'none', coder, browserOp, taskId: task.id })
   // The Coordinator, when the task manager lets this run delegate, also gets
   // the delegation tools; the policy still has to agree to each of them.
   const delegating = delegation ? DELEGATE_TOOLS.filter((n) => policy.decideTool(n)) : []

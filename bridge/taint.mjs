@@ -233,6 +233,8 @@ export function resultIsExternal(toolName) {
   if (mcp.server === 'jarvis_watch') return true
   // Meeting notes hold what other people said in the meeting.
   if (mcp.server === 'jarvis_meeting') return true
+  // The Browser Operator reads pages somebody else wrote.
+  if (mcp.server === 'jarvis_browser') return true
   return !mcp.server.startsWith('jarvis')
 }
 
@@ -285,6 +287,14 @@ export function outboundKind(toolName, input, { isEffectful = () => false } = {}
     // A blade with a url frames that page through the bridge; a gallery or
     // markup blade only draws images, which the media proxy decides.
     if (mcp.tool === 'blade') return input && typeof input === 'object' && String(input.url ?? '').trim() ? 'always' : 'none'
+    return 'none'
+  }
+  // The Browser Operator (browser-operator.mjs): opening a page goes to its
+  // address; a filled value is checked for links and addresses in it. A submit
+  // is never decided here: it shows the owner its own card every time.
+  if (mcp.server === 'jarvis_browser') {
+    if (mcp.tool === 'open_page') return 'always'
+    if (mcp.tool === 'fill_field') return 'scan'
     return 'none'
   }
   if (mcp.server === 'jarvis_chrome') {

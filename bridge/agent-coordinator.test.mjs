@@ -16,7 +16,7 @@ import { DELEGATION_REFUSALS, DELEGATE_TOOLS } from './agent-delegation.mjs'
 import { agentOperations, roster } from './agent-ask.mjs'
 import { MIN_SCORE, STARTER_HINTS, matchAgent } from './agent-match.mjs'
 import { MEMORY_READ_TOOLS, agentToolPlan, workerRuleFor } from './agent-runtime.mjs'
-import { BRIEFING_SERVER, BRIEFING_TOOL_NAMES, CODER_SERVER, CODER_TOOL_NAMES, WATCH_SERVER, WATCH_TOOL_NAMES, MEETING_SERVER, MEETING_TOOL_NAMES, createPolicy } from './policy.mjs'
+import { BRIEFING_SERVER, BRIEFING_TOOL_NAMES, CODER_SERVER, CODER_TOOL_NAMES, WATCH_SERVER, WATCH_TOOL_NAMES, MEETING_SERVER, MEETING_TOOL_NAMES, BROWSER_SERVER, BROWSER_TOOL_NAMES, createPolicy } from './policy.mjs'
 import { createTaskManager } from './tasks.mjs'
 import { AGENT_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { BUILTIN_AGENT_CONNECTORS } from './fixtures/agent-connectors.mjs'
@@ -48,6 +48,7 @@ const CATALOGUE = createToolCatalogue({
     [BRIEFING_SERVER]: [...BRIEFING_TOOL_NAMES],
     [WATCH_SERVER]: [...WATCH_TOOL_NAMES],
     [MEETING_SERVER]: [...MEETING_TOOL_NAMES],
+    [BROWSER_SERVER]: [...BROWSER_TOOL_NAMES],
   },
 })
 

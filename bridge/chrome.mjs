@@ -826,3 +826,20 @@ export function chromeServer({ allowWrites }) {
 export async function chromeAvailable() {
   return (await findSocket()) !== null
 }
+
+/**
+ * The same browser for the Browser Operator agent (browser-operator.mjs),
+ * which offers its own narrower tools over it. `call` runs one extension tool
+ * in the working tab, its result wrapped as untrusted; `open` navigates and
+ * waits for the page to be there, as chrome_navigate does. Nothing here
+ * decides whether a call may happen: that is the policy, the agent's guard
+ * and, for a submit, the owner's approval.
+ */
+export const chromeBrowser = Object.freeze({
+  call: (name, args) => forward(name)(args ?? {}),
+  async open(url) {
+    const out = await forward('navigate')({ url })
+    if (!out.isError && /^https?:\/\//i.test(url)) await settle(await resolveTab(undefined), url)
+    return out
+  },
+})
