@@ -29,7 +29,8 @@
  * No value is ever logged, put in an error message, or returned by describe();
  * toJSON() and inspection of a store show only key names.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from '../atomic-rename.mjs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, isAbsolute } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -159,7 +160,7 @@ export function createDevFileCredentialStore({ file = defaultDevCredentialFile()
     }, null, 2)
     writeFileSync(tmp, body, { mode: 0o600 })
     try { chmodSync(tmp, 0o600) } catch { /* Windows: mode is advisory */ }
-    renameSync(tmp, file)
+    renameWithRetry(tmp, file)
   }
   return storeOver('dev-file', {
     get: (id, key) => read()[id]?.[key],

@@ -45,7 +45,8 @@
  * server.mjs turns `serverSpec()` into the SDK server.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { join } from 'node:path'
 import { WATCH_SERVER, WATCH_TOOL_NAMES } from './policy.mjs'
 import { settingsDir } from './settings.mjs'
@@ -257,7 +258,7 @@ export function createWatchState({ file = null, now = () => Date.now(), log = co
       mkdirSync(join(file, '..'), { recursive: true })
       const tmp = `${file}.${process.pid}.tmp`
       writeFileSync(tmp, `${JSON.stringify({ v: 1, seen: Object.fromEntries(seen), pages: Object.fromEntries(pages) })}\n`, { mode: 0o600 })
-      renameSync(tmp, file)
+      renameWithRetry(tmp, file)
     } catch (err) {
       log.error?.('[jarvis] watcher state write failed:', err?.message ?? err)
     }

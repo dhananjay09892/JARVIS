@@ -9,7 +9,8 @@
  * leave this machine; only the model file comes in.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { join } from 'node:path'
 
 export const CAMPP_MODEL_ID = 'wespeaker-campp'
@@ -156,7 +157,7 @@ export async function ensureModel({ dir, url = CAMPP_URL, sha256 = CAMPP_SHA256,
     mkdirSync(dir, { recursive: true, mode: 0o700 })
     const tmp = `${path}.${process.pid}.tmp`
     writeFileSync(tmp, bytes)
-    renameSync(tmp, path)
+    renameWithRetry(tmp, path)
     return path
   } catch (err) {
     throw Object.assign(new Error(`speaker model unavailable: ${err.message}`), { code: 'model-unavailable' })

@@ -12,7 +12,8 @@
  * downloaded and loaded first, so a failed download leaves the old model and
  * the old voiceprints exactly as they were.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { join } from 'node:path'
 import { CAMPP_MODEL_ID, CAMPP_SPEC, createOnnxEmbedder } from './speaker-campp.mjs'
 
@@ -74,7 +75,7 @@ function writeChosenModel(dir, id) {
   const file = join(dir, 'model.json')
   const tmp = `${file}.${process.pid}.tmp`
   writeFileSync(tmp, JSON.stringify({ id }), { mode: 0o600 })
-  renameSync(tmp, file)
+  renameWithRetry(tmp, file)
 }
 
 /**
