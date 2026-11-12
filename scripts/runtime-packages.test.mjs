@@ -2,10 +2,11 @@
 // This reads what bridge/ and launcher/ actually import and compares.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { builtinModules } from 'node:module'
+import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
-import { RUNTIME_PACKAGES } from './runtime-packages.mjs'
+import { RUNTIME_PACKAGES, pruneOnnxRuntime } from './runtime-packages.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -85,4 +86,48 @@ test('every staged package has a version in package.json', () => {
   for (const name of RUNTIME_PACKAGES) {
     assert.equal(typeof pkg.dependencies[name], 'string', `${name} is not in package.json dependencies`)
   }
+})
+
+/** A staged app folder with a made-up onnxruntime-node laid out like the real one. */
+function fakeStage(t, layout) {
+  const app = mkdtempSync(join(tmpdir(), 'jarvis-stage-'))
+  t.after(() => rmSync(app, { recursive: true, force: true }))
+  const bin = join(app, 'node_modules', 'onnxruntime-node', 'bin', 'napi-v3')
+  for (const [where, bytes] of Object.entries(layout)) {
+    mkdirSync(join(bin, where), { recursive: true })
+    writeFileSync(join(bin, where, 'onnxruntime_binding.node'), 'x'.repeat(bytes))
+    writeFileSync(join(bin, where, 'onnxruntime.dll'), 'y'.repeat(bytes))
+  }
+  writeFileSync(join(app, 'node_modules', 'onnxruntime-node', 'package.json'), '{}')
+  return { app, bin }
+}
+const FULL = { 'darwin/arm64': 10, 'darwin/x64': 20, 'linux/arm64': 30, 'linux/x64': 40, 'win32/arm64': 50, 'win32/x64': 60 }
+
+test('pruneOnnxRuntime keeps only the binary the staged Node can load', (t) => {
+  const { app, bin } = fakeStage(t, FULL)
+  const result = pruneOnnxRuntime(app, { platform: 'win32', arch: 'x64' })
+  assert.equal(result.kept, 'win32/x64')
+  assert.deepEqual(result.removed, ['darwin/arm64', 'darwin/x64', 'linux/arm64', 'linux/x64', 'win32/arm64'])
+  assert.equal(result.removedBytes, 2 * (10 + 20 + 30 + 40 + 50))
+  assert.deepEqual(readdirSync(bin), ['win32'])
+  assert.deepEqual(readdirSync(join(bin, 'win32')), ['x64'])
+  assert.deepEqual(readdirSync(join(bin, 'win32', 'x64')).sort(), ['onnxruntime.dll', 'onnxruntime_binding.node'])
+  assert.equal(existsSync(join(app, 'node_modules', 'onnxruntime-node', 'package.json')), true, 'the rest of the package is untouched')
+  // Running it again finds nothing more to remove.
+  assert.deepEqual(pruneOnnxRuntime(app, { platform: 'win32', arch: 'x64' }).removed, [])
+})
+
+test('pruneOnnxRuntime follows the architecture of the Node being staged', (t) => {
+  const { app, bin } = fakeStage(t, FULL)
+  assert.equal(pruneOnnxRuntime(app, { platform: 'win32', arch: 'arm64' }).kept, 'win32/arm64')
+  assert.deepEqual(readdirSync(join(bin, 'win32')), ['arm64'])
+})
+
+test('pruneOnnxRuntime removes nothing when the binary to keep is missing', (t) => {
+  const { app, bin } = fakeStage(t, { 'darwin/arm64': 10, 'linux/x64': 40 })
+  assert.throws(() => pruneOnnxRuntime(app, { platform: 'win32', arch: 'x64' }), /no binary for win32\/x64/)
+  assert.deepEqual(readdirSync(bin).sort(), ['darwin', 'linux'])
+  const empty = mkdtempSync(join(tmpdir(), 'jarvis-stage-'))
+  t.after(() => rmSync(empty, { recursive: true, force: true }))
+  assert.throws(() => pruneOnnxRuntime(empty, { platform: 'win32', arch: 'x64' }), /no binary for win32\/x64/)
 })
