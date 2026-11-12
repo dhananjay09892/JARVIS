@@ -20,8 +20,14 @@ const reply = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value
  */
 export function taskOperations(manager) {
   return {
-    spawn: ({ title, goal }) => {
-      const r = manager.spawn({ title, goal })
+    spawn: ({ title, goal, allowed_tools: tools, allowed_paths: paths, allowed_domains: domains, max_tool_calls: calls, max_minutes: minutes, max_cost_usd: cost }) => {
+      // What the mission asks for can only narrow it (mission-budget.mjs): a
+      // smaller budget, fewer tools, certain folders or sites. Never more.
+      const r = manager.spawn({
+        title, goal,
+        scope: { allowedTools: tools, allowedPaths: paths, allowedDomains: domains },
+        limits: { maxToolCalls: calls, maxMinutes: minutes, maxCostUsd: cost },
+      })
       return r.ok ? { started: true, ...brief(r.task) } : { started: false, reason: r.reason }
     },
     /** Every task; with `active_only`, what is being worked on now ("what are you working on?"). */
@@ -95,7 +101,16 @@ export function taskServer(manager, { agents = null, drafts = null, approve = nu
     tools: [
       tool('spawn_task',
         'Start a background agent on a self-contained goal. Write the goal as a complete brief: the agent has no access to this conversation.',
-        { title: z.string().min(1).max(60).describe('Short name for the board'), goal: z.string().min(1).max(4000).describe('Everything the agent needs, including paths and what done looks like') },
+        {
+          title: z.string().min(1).max(60).describe('Short name for the board'),
+          goal: z.string().min(1).max(4000).describe('Everything the agent needs, including paths and what done looks like'),
+          allowed_tools: z.array(z.string().max(200)).max(20).optional().describe('Only when the owner asks to limit the tools: the task may use just these tool names'),
+          allowed_paths: z.array(z.string().max(300)).max(20).optional().describe('Only when the owner asks to limit the folders: absolute folder paths the task may touch. A shell is then refused'),
+          allowed_domains: z.array(z.string().max(200)).max(20).optional().describe('Only when the owner asks to limit the websites: domains the task may open'),
+          max_tool_calls: z.number().int().min(1).max(1000).optional().describe('Only when the owner asks for a smaller budget: tool calls. Cannot raise the default'),
+          max_minutes: z.number().min(1).max(1440).optional().describe('Only when the owner asks for a smaller budget: minutes. Cannot raise the default'),
+          max_cost_usd: z.number().min(0).max(100).optional().describe('Only when the owner asks for a smaller budget: dollars. Cannot raise the default'),
+        },
         async (a) => reply(ops.spawn(a))),
       tool('list_tasks', 'Every task with its status and progress. With active_only, only what is running or paused now, and a short summary.',
         { active_only: z.boolean().optional().describe('Only running and paused tasks: "what are you working on?"') },

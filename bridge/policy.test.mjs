@@ -398,7 +398,7 @@ test('server.mjs routes every tool path through policy.mjs', () => {
   // Chat turns narrow the tools by role first, and named agents by their
   // allow-list and budget; both then run the same taint guard.
   assert.equal(
-    count(/guard: (scopeGuard\(turn\.toolScope, |agentGuard\(\{ allowed, budget, next: )?taintGuard\(/g), agents,
+    count(/guard: (scopeGuard\(turn\.toolScope, |agentGuard\(\{ allowed, budget, next: (missionScopeGuard\(normaliseScope\(task\.scope\), )?|missionGuard\(\{ budget, scope: normaliseScope\(task\.scope\), next: )?taintGuard\(/g), agents,
     'every session runs the taint guard')
   // A named agent's policy is the one engine's own view, never a second engine.
   assert.match(src, /const policy = basePolicy\.forAgent\(agent\.id\)/)

@@ -138,7 +138,7 @@ export const AGENT_REFUSALS = Object.freeze({
  *
  * @param {object} o
  * @param {string[]} o.allowed the run's tools (RUNTIME_TOOLS are always allowed)
- * @param {{ toolCall?: (name: string) => string | null }} [o.budget] from the task manager
+ * @param {{ toolCall?: (name: string) => Promise<string|null>|string|null }} [o.budget] from the task manager
  * @param {(name: string, input: object) => Promise<string|null>|string|null} [o.next]
  */
 export function agentGuard({ allowed, budget = null, next = null }) {
@@ -147,7 +147,7 @@ export function agentGuard({ allowed, budget = null, next = null }) {
     if (!ok.has(name)) return AGENT_REFUSALS.notAllowed
     // Reporting progress is free; everything else counts.
     if (!RUNTIME_TOOLS.includes(name) && typeof budget?.toolCall === 'function') {
-      const over = budget.toolCall(name)
+      const over = await budget.toolCall(name)
       if (over) return over
     }
     return next ? next(name, input) : null
@@ -248,4 +248,5 @@ export const BUDGET_STOPS = Object.freeze({
   toolCalls: (n) => `Stopped: it reached its budget of ${n} tool call${n === 1 ? '' : 's'} before finishing.`,
   minutes: (n) => `Stopped: it reached its time limit of ${n} minute${n === 1 ? '' : 's'} before finishing.`,
   cost: (usd) => `Stopped: it reached its cost limit of $${usd.toFixed(2)} before finishing.`,
+  tokens: (n) => `Stopped: it reached its budget of ${n.toLocaleString('en-US')} tokens before finishing.`,
 })

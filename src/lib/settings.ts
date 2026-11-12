@@ -63,6 +63,12 @@ export type PublicSettings = {
   JARVIS_AGENTS_MAX_DEPTH: string
   /** 'N calls, N min, $N.NN' — the budget for an agent that sets none. '' means the default (40 calls, 20 min, $1.00). */
   JARVIS_AGENTS_BUDGET: string
+  /** 'N calls, N min, $N.NN' — the default limits of a mission (background task). '' means the default (40 calls, 30 min, $2.00). */
+  JARVIS_MISSIONS_BUDGET: string
+  /** Most tokens one mission may use, as digits. '' means the default (500000). */
+  JARVIS_MISSIONS_TOKENS: string
+  /** 'ask' | 'stop' — what a mission does at a limit. '' means the default (ask). */
+  JARVIS_MISSIONS_OVERSPEND: string
   /** '1' | '0' — reviewer pass for agents that do not say otherwise. '' means the default (off). */
   JARVIS_AGENTS_REVIEWER: string
   JARVIS_AGENTS_PROPOSALS: string
