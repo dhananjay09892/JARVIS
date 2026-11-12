@@ -62,6 +62,13 @@
  * delegation rule above holds for every member; the Reviewer's verdict
  * decides how the team's task ends.
  *
+ * Mission limits (mission-budget.mjs, plan 13 phase 3): when `missionDefaults`
+ * is given, every task runs under limits on time, tool calls, tokens and cost,
+ * cut to fixed ceilings, and under the scope it was started with (tools,
+ * folders, domains). A limit that is reached asks the owner (`approveMore`,
+ * at most twice) or stops the task, per `overspend()`; each stop and each
+ * out-of-scope refusal goes to `onStop` for the audit.
+ *
  * Only background tasks live here. The voice session is not a task, so the
  * cap and the pause never hold it back.
  *
@@ -86,6 +93,7 @@ import {
 } from './agent-delegation.mjs'
 import { resolveAgent } from './agent-ask.mjs'
 import { resumeBrief } from './mission-control.mjs'
+import { LIMIT_KINDS, askMoreTitle, extendLimit, missionLimits, normaliseScope, withCeilings } from './mission-budget.mjs'
 import { isDraftAgent, readDraft } from './agent-draft-result.mjs'
 import { isAlertAgent, readTriage } from './agent-triage-result.mjs'
 import { isMemoryReviewAgent, readMemoryReview } from './agent-memory-review.mjs'
@@ -150,8 +158,19 @@ function snapshot(t) {
     ...(t.team && { team: { id: t.team, name: teamPreset(t.team)?.name ?? t.team } }),
     ...(t.resumed > 0 && { resumed: t.resumed }),
     // What the task has used so far, so a resume (or a restart) keeps its budget.
-    ...((t.calls > 0 || t.usedMs > 0 || t.runFrom) && { usage: { toolCalls: t.calls ?? 0, activeMs: activeMs(t) } }),
+    ...((t.calls > 0 || t.usedMs > 0 || t.runFrom) && { usage: { toolCalls: t.calls ?? 0, activeMs: activeMs(t), ...(t.tokens > 0 && { tokens: t.tokens }) } }),
+    // The limits it runs under now (after any extension), and the scope it was given.
+    ...(t.limits && { limits: { ...t.limits }, ...(t.extensions > 0 && { extensions: t.extensions }) }),
+    ...(t.asked && { asked: { ...t.asked } }),
+    ...(t.scope && { scope: { allowedTools: [...t.scope.allowedTools], allowedPaths: [...t.scope.allowedPaths], allowedDomains: [...t.scope.allowedDomains] } }),
   }
+}
+
+/** The limits a mission may ask to have lowered, from untrusted input. */
+const pickAsked = (l) => {
+  const out = {}
+  for (const f of ['maxToolCalls', 'maxMinutes', 'maxCostUsd', 'maxTokens']) if (typeof l?.[f] === 'number' && Number.isFinite(l[f]) && l[f] >= 0) out[f] = l[f]
+  return Object.keys(out).length ? out : null
 }
 
 /** Milliseconds the task has spent running, across every run. */
@@ -169,11 +188,16 @@ const activeMs = (t) => (t.usedMs ?? 0) + (t.runFrom ? Math.max(0, Date.now() - 
  * @param {() => boolean} [o.reviewDefault] the owner's reviewer default, for agents whose file does not say
  * @param {() => number} [o.maxDepth] agents.maxDepth (1–2); how deep delegation may go
  * @param {number} [o.maxChildren] how many agents one run may start in all
+ * @param {() => object | null} [o.missionDefaults] the default mission limits (mission-budget.mjs); without it only named agents have limits, as before
+ * @param {() => 'ask' | 'stop'} [o.overspend] what a reached limit does
+ * @param {(title: string, details?: string) => Promise<boolean>} [o.approveMore] shows the "allow more?" card
+ * @param {(e: { taskId: string, agentId?: string, rule: string, reason: string }) => void} [o.onStop] hears every limit stop and scope refusal
  */
 export function createTaskManager({
   runAgent, store = null, bus = null, agents = null, costCounts = () => false,
   concurrency = MAX_CONCURRENT, paused = () => null, defaultBudget = () => null,
   reviewer = null, reviewDefault = () => false, maxDepth = () => 1, maxChildren = MAX_CHILDREN,
+  missionDefaults = null, overspend = () => 'ask', approveMore = null, onStop = null,
   now = () => Date.now(), log = console,
 } = {}) {
   const tasks = new Map()
@@ -199,6 +223,20 @@ export function createTaskManager({
     let b = null
     try { b = defaultBudget() } catch { b = null }
     return b && typeof b === 'object' ? b : null
+  }
+
+  /**
+   * The limits a task starts under. Without `missionDefaults` that is what it
+   * always was: a named agent's budget, else none. With it, every task has all
+   * four limits: its agent's budget (or the owner's default), cut to the
+   * ceilings, and lowered further by anything the mission itself asked for.
+   */
+  const missionBase = (t, agent) => {
+    const own = agent ? budgetOf(agent) : null
+    if (typeof missionDefaults !== 'function') return own
+    let def = null
+    try { def = missionDefaults() } catch { def = null }
+    return missionLimits({ ...(def && typeof def === 'object' ? def : {}), ...(agent?.budget ?? {}) }, t.asked)
   }
 
   /** A `TaskOutcome` (shared/contracts.ts) on the bus. The bus never throws. */
@@ -243,6 +281,11 @@ export function createTaskManager({
         usedMs: typeof s.usage?.activeMs === 'number' && s.usage.activeMs > 0 ? s.usage.activeMs : 0,
         runFrom: null,
         resumed: Number.isInteger(s.resumed) && s.resumed > 0 ? s.resumed : 0,
+        tokens: Number.isInteger(s.usage?.tokens) && s.usage.tokens > 0 ? s.usage.tokens : 0,
+        extensions: Number.isInteger(s.extensions) && s.extensions > 0 ? Math.min(s.extensions, 2) : 0,
+        ...(s.limits && typeof s.limits === 'object' && { limits: withCeilings(s.limits) }),
+        ...(s.asked && typeof s.asked === 'object' && { asked: pickAsked(s.asked) }),
+        ...(normaliseScope(s.scope) && { scope: normaliseScope(s.scope) }),
       }
       if (ACTIVE.has(t.status) && !t.parentId && !t.team) {
         // Its agent is gone with the old process, but the task is not: it
@@ -443,30 +486,123 @@ export function createTaskManager({
     finish(t, 'failed', { error: reason })
   }
 
+  const LIMIT_STOP = {
+    maxToolCalls: BUDGET_STOPS.toolCalls, maxMinutes: BUDGET_STOPS.minutes, maxCostUsd: BUDGET_STOPS.cost, maxTokens: BUDGET_STOPS.tokens,
+  }
+  const LIMIT_ORDER = ['maxToolCalls', 'maxMinutes', 'maxCostUsd', 'maxTokens']
+
+  /** Tell the audit about a stop or a refusal. It must never change what happens. */
+  const report = (t, rule, reason) => {
+    try { onStop?.({ taskId: t.id, ...(t.agentId && { agentId: t.agentId }), rule, reason }) } catch (err) { log.error?.('[jarvis] mission audit failed:', err?.message ?? err) }
+  }
+
+  /** Is this limit used up now? Cost only counts for a run billed per use. */
+  function exceeded(t, field) {
+    const limit = t.limits?.[field]
+    if (typeof limit !== 'number') return false
+    switch (field) {
+      case 'maxToolCalls': return t.calls >= limit
+      case 'maxMinutes': return activeMs(t) >= limit * 60_000
+      case 'maxTokens': return (t.tokens ?? 0) >= limit
+      case 'maxCostUsd': {
+        if (typeof t.costUsd !== 'number' || t.costUsd <= limit) return false
+        try { return costCounts(t.agent ?? null) === true } catch { return false }
+      }
+      default: return false
+    }
+  }
+
+  /**
+   * A limit was reached. With "ask" and an approval card available, ask the
+   * owner for more (twice at most, never past the ceiling); otherwise, or on a
+   * "no", end the run with the reason and audit it. Resolves true when the run
+   * may go on. One question at a time: other callers wait for its answer.
+   */
+  async function reached(t, run, field) {
+    const live = () => isActive(t) && t.run === run
+    if (!live()) return false
+    if (t.more) {
+      await t.more.catch(() => false)
+      return live() && !exceeded(t, field)
+    }
+    const limit = t.limits[field]
+    let mode = 'ask'
+    try { mode = overspend() === 'stop' ? 'stop' : 'ask' } catch { mode = 'stop' }
+    const next = mode === 'ask' && typeof approveMore === 'function' ? extendLimit(t.limits, t.start ?? t.limits, field, t.extensions ?? 0) : null
+    const end = (why) => {
+      stopper(t, run)(LIMIT_STOP[field](limit))
+      report(t, `mission-${LIMIT_KINDS[field]}`, `${LIMIT_KINDS[field]} limit reached; ${why}`)
+      return false
+    }
+    if (!next) return end(mode === 'stop' ? 'stopped by the setting' : 'no more allowed')
+    const asking = (async () => {
+      try { return (await approver(t, approveMore, run)(askMoreTitle(field, limit))) === true } catch { return false }
+    })()
+    t.more = asking
+    let ok = false
+    try { ok = await asking } finally { if (t.more === asking) t.more = null }
+    if (!live()) return false
+    if (!ok) return end('owner did not allow more')
+    t.limits = next
+    t.extensions = (t.extensions ?? 0) + 1
+    note(t, 'budget', `allowed more: ${LIMIT_KINDS[field]} now ${next[field]}`)
+    report(t, `mission-${LIMIT_KINDS[field]}-extended`, `owner allowed more ${LIMIT_KINDS[field]}`)
+    if (field === 'maxMinutes') armTimer(t, run)
+    emit(t)
+    return true
+  }
+
+  /** The minutes limit as a timer: when it fires the limit has been reached. */
+  function armTimer(t, run) {
+    if (t.timer) { clearTimeout(t.timer); t.timer = null }
+    const minutes = t.limits?.maxMinutes
+    if (!(typeof minutes === 'number' && minutes > 0)) return
+    const left = Math.max(0, minutes * 60_000 - activeMs(t))
+    t.timer = setTimeout(() => {
+      t.timer = null
+      if (!isActive(t) || t.run !== run) return
+      void reached(t, run, 'maxMinutes')
+    }, left)
+    t.timer.unref?.()
+  }
+
   /** The budget the session's guard spends from; null without one. */
   function budgetFor(t, limits, run) {
     if (!Number.isInteger(limits?.maxToolCalls)) return null
     return {
-      /** One tool call is about to run. Returns null to let it, or the refusal. */
+      /**
+       * One tool call is about to run. Returns null to let it, or the refusal;
+       * only when a limit has been reached does it return a promise, which
+       * settles once the owner has been asked (or the run has been stopped).
+       */
       toolCall() {
         if (!isActive(t) || t.run !== run) return AGENT_REFUSALS.budget
-        if (t.calls >= limits.maxToolCalls) {
-          stopper(t, run)(BUDGET_STOPS.toolCalls(limits.maxToolCalls))
+        if (t.more || LIMIT_ORDER.some((f) => exceeded(t, f))) return slow()
+        return take()
+      },
+    }
+    async function slow() {
+      if (t.more) await t.more.catch(() => false)
+      for (const field of LIMIT_ORDER) {
+        if (!isActive(t) || t.run !== run) return AGENT_REFUSALS.budget
+        if (exceeded(t, field) && !(await reached(t, run, field))) return AGENT_REFUSALS.budget
+      }
+      return take()
+    }
+    function take() {
+      if (!isActive(t) || t.run !== run) return AGENT_REFUSALS.budget
+      // A child spends from its parent's tool calls as it goes, so the
+      // children of one run share what that run has, not each a copy.
+      const parent = t.parentId ? tasks.get(t.parentId) : null
+      if (parent && Number.isInteger(parent.limits?.maxToolCalls)) {
+        if (!isActive(parent) || parent.calls >= parent.limits.maxToolCalls) {
+          stopper(t, run)(DELEGATION_STOPS.parentBudget)
           return AGENT_REFUSALS.budget
         }
-        // A child spends from its parent's tool calls as it goes, so the
-        // children of one run share what that run has, not each a copy.
-        const parent = t.parentId ? tasks.get(t.parentId) : null
-        if (parent && Number.isInteger(parent.limits?.maxToolCalls)) {
-          if (!isActive(parent) || parent.calls >= parent.limits.maxToolCalls) {
-            stopper(t, run)(DELEGATION_STOPS.parentBudget)
-            return AGENT_REFUSALS.budget
-          }
-          parent.calls += 1
-        }
-        t.calls += 1
-        return null
-      },
+        parent.calls += 1
+      }
+      t.calls += 1
+      return null
     }
   }
 
@@ -502,7 +638,10 @@ export function createTaskManager({
         report: reporter(t, run),
         ask: asker(t, run),
         wrapApprove: (approve) => approver(t, approve, run),
-        ...(agent && { agent, budget: budgetFor(t, limits, run), stop: stopper(t, run) }),
+        ...(agent && { agent }),
+        ...((agent || t.limits) && { budget: budgetFor(t, t.limits ?? limits, run) }),
+        ...(t.limits && { stop: stopper(t, run) }),
+        ...(t.scope && { scopeDenied: (r) => report(t, `mission-scope-${r.kind}`, `${r.tool}: ${r.reason}`) }),
         ...(agent && { depth: t.depth }),
         ...(agent && delegationFor(t, agent)),
         ...(retry && { retry: { attempt: retry.attempt, reasons: [...retry.reasons] } }),
@@ -529,10 +668,9 @@ export function createTaskManager({
             break
           case 'usage':
             if (e.costUsd !== undefined) spend(t, e.costUsd)
-            if (typeof limits?.maxCostUsd === 'number' && typeof t.costUsd === 'number' && t.costUsd > limits.maxCostUsd) {
-              let billed = false
-              try { billed = costCounts(agent) === true } catch { billed = false }
-              if (billed) stopper(t, run)(BUDGET_STOPS.cost(limits.maxCostUsd))
+            for (const n of [e.inTokens, e.outTokens]) if (Number.isFinite(n) && n > 0) t.tokens = (t.tokens ?? 0) + Math.floor(n)
+            for (const field of ['maxCostUsd', 'maxTokens']) {
+              if (live() && exceeded(t, field)) await reached(t, run, field)
             }
             break
           case 'error':
@@ -611,7 +749,7 @@ export function createTaskManager({
       }
     }
     // A child runs within what its parent has left now, not when it was asked for.
-    let limits = agent ? budgetOf(agent) : null
+    let limits = missionBase(t, agent)
     if (t.parentId) {
       const parent = tasks.get(t.parentId)
       if (!parent || !isActive(parent)) {
@@ -625,9 +763,14 @@ export function createTaskManager({
         finish(t, 'failed', { error: DELEGATION_STOPS.parentBudget })
         return
       }
-      limits = shareBudget(limits, left)
+      const own = limits
+      limits = shareBudget(own, left)
+      if (own && Number.isInteger(own.maxTokens)) limits = { ...(limits ?? {}), maxTokens: own.maxTokens }
     }
-    t.limits = limits
+    // A resumed mission keeps the extra the owner allowed; its ceilings still hold.
+    t.limits = limits && t.extensions > 0 && t.limits ? withCeilings({ ...limits, ...t.limits }) : limits
+    t.start = limits
+    t.agent = agent
     t.status = 'running'
     // A resumed task keeps when it first started and what it has already used.
     t.startedAt = t.startedAt ?? now()
@@ -636,11 +779,7 @@ export function createTaskManager({
     t.costBase = typeof t.costUsd === 'number' ? t.costUsd : 0
     note(t, 'start', `${t.resumed > 0 ? 'resumed' : 'started'}${agent ? ` as ${agent.name}` : ''}`)
     emit(t)
-    if (limits && typeof limits.maxMinutes === 'number' && limits.maxMinutes > 0) {
-      const left = Math.max(0, limits.maxMinutes * 60_000 - (t.usedMs ?? 0))
-      t.timer = setTimeout(() => stopper(t, run)(BUDGET_STOPS.minutes(limits.maxMinutes)), left)
-      t.timer.unref?.()
-    }
+    armTimer(t, run)
     if (t.team) { await runTeam(t); return }
     // Only a named agent is reviewed, and only when its file or the owner's
     // default asks for it. The budget covers every attempt together.
@@ -670,7 +809,7 @@ export function createTaskManager({
   }
 
   /** A new task in the queue; started as soon as the cap allows. */
-  function enqueue({ title, goal, agent = null, depth = 1, parentId = null, team = null }) {
+  function enqueue({ title, goal, agent = null, depth = 1, parentId = null, team = null, scope = null, asked = null }) {
     const g = goal
     const t = {
       id: `t${randomUUID().slice(0, 8)}`,
@@ -697,7 +836,9 @@ export function createTaskManager({
       ...(parentId && { parentId }),
       ...(team && { team }),
       children: 0, childCostUsd: 0, waiters: new Set(),
-      calls: 0, usedMs: 0, runFrom: null, run: 0, resumed: 0,
+      calls: 0, usedMs: 0, runFrom: null, run: 0, resumed: 0, tokens: 0, extensions: 0,
+      ...(normaliseScope(scope) && { scope: normaliseScope(scope) }),
+      ...(pickAsked(asked) && { asked: pickAsked(asked) }),
     }
     tasks.set(t.id, t)
     note(t, 'queued', 'queued')
@@ -895,7 +1036,7 @@ export function createTaskManager({
       for (const send of listeners) send({ type: 'task_removed', id })
       return { ok: true }
     },
-    spawn({ title, goal, agentId, depth }) {
+    spawn({ title, goal, agentId, depth, scope, limits: asked }) {
       const g = clip(goal, 4000)
       if (!g) return { ok: false, reason: 'A task needs a goal.' }
       const held = pauseReason()
@@ -908,7 +1049,7 @@ export function createTaskManager({
         try { on = agents.isActive(agentId) === true } catch { on = false }
         if (!on) return { ok: false, reason: `The ${agent.name} agent is not switched on.` }
       }
-      const t = enqueue({ title, goal: g, agent, depth })
+      const t = enqueue({ title, goal: g, agent, depth, scope, asked })
       pump()
       return { ok: true, task: snapshot(t) }
     },

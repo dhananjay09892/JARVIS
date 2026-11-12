@@ -32,6 +32,7 @@ import { openWorkflows, createApprovalHub, createEngine, startTicker } from './w
 import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
 import { AGENT_LIVE_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
+import { createMissionSettings, missionGuard, normaliseScope, scopeGuard as missionScopeGuard } from './mission-budget.mjs'
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
 import { createAgentRoutes } from './agent-routes.mjs'
 import { createAgentDrafter } from './agent-drafts.mjs'
@@ -2542,7 +2543,7 @@ const workerBilledPerUse = (b) => (b?.id === 'claude' ? claudeAuth().mode === 'a
  * the same policy engine, with the agent's guard after the gate and its id on
  * every audit entry and approval card.
  */
-function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget, delegation = null }) {
+function runNamedAgent({ task, signal, report, ask, wrapApprove, agent, budget, scopeDenied = null, delegation = null }) {
   // The one policy engine, as this agent's view: the same decisions, with the
   // agent's id on every audit entry.
   const policy = basePolicy.forAgent(agent.id)
@@ -2595,7 +2596,7 @@ ${task.goal}`,
     effort: currentEffort(),
     policy,
     // The gate, then the agent's allow-list and budget, then the taint check.
-    guard: agentGuard({ allowed, budget, next: taintGuard(taint, approve) }),
+    guard: agentGuard({ allowed, budget, next: missionScopeGuard(normaliseScope(task.scope), taintGuard(taint, approve), scopeDenied) }),
     afterTool: postToolUse(taint, 'worker'),
   })).events
 }
@@ -2653,6 +2654,8 @@ const agentReviewer = (ctx) => createReviewer({
  * so none of this ever holds it back.
  */
 const agentSettings = createAgentSettings({ read: setting, frozen: killSwitch.isFrozen })
+/** Default limits and the "ask before spending more" choice for every mission (mission-budget.mjs). */
+const missionSettings = createMissionSettings({ read: setting })
 
 /** The registry with the owner's switches applied: what the task manager and the voice session's agent tools see. */
 const switchedAgents = switchedRegistry(agentRegistry, agentSettings)
@@ -2664,17 +2667,26 @@ const taskManager = createTaskManager({
   concurrency: agentSettings.maxConcurrent,
   paused: agentSettings.paused,
   defaultBudget: agentSettings.defaultBudget,
+  // Every mission has limits on time, calls, tokens and cost, and a scope (mission-budget.mjs).
+  missionDefaults: missionSettings.defaultLimits,
+  overspend: missionSettings.overspend,
+  approveMore: auditedApprove(approvalHub.request, audit, 'worker'),
+  onStop: (e) => audit?.({
+    type: 'decision', actor: 'worker', ...(e.agentId && { agentId: e.agentId }), stage: 'pre-tool-use', request: { kind: 'other' },
+    decision: { verdict: e.rule.endsWith('-extended') ? 'allow' : 'deny', rule: e.rule, reason: e.reason },
+  }),
   reviewer: agentReviewer,
   reviewDefault: agentSettings.reviewerDefault,
   // Delegation (agent-delegation.mjs): only the Coordinator, only its list, this deep.
   maxDepth: agentSettings.maxDepth,
   costCounts: (agent) => {
+    if (!agent) return workerBilledPerUse(brain)
     const pick = agentBrain(agent, brains)
     return pick.ok && workerBilledPerUse(pick.brain)
   },
   runAgent: (ctx) => {
     if (ctx.agent) return runNamedAgent(ctx)
-    const { task, signal, report, ask, wrapApprove } = ctx
+    const { task, signal, report, ask, wrapApprove, budget, scopeDenied } = ctx
     const approve = auditedApprove(wrapApprove(approvalHub.request), audit, 'worker')
     // A brief is written by a model that may have read private content, so a
     // worker starts tainted; the links in its brief count as named (taint.mjs).
@@ -2701,7 +2713,7 @@ ${task.goal}`,
       effort: currentEffort(),
       policy,
       // The gate, then the taint check (plan 08, phase 2). See taint.mjs.
-      guard: taintGuard(taint, approve),
+      guard: missionGuard({ budget, scope: normaliseScope(task.scope), next: taintGuard(taint, approve), onDeny: scopeDenied }),
       // Results the bridge does not build itself are labelled as untrusted
       // data as they come back, and private reads taint the worker.
       afterTool: postToolUse(taint, 'worker'),

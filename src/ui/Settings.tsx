@@ -93,6 +93,9 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_AGENTS_REVIEWER: { default: '0', help: '' },
   JARVIS_AGENTS_PROPOSALS: { default: '1', help: '' },
   JARVIS_AGENTS_BUDGET: { default: '40 calls, 20 min, $1.00', help: '' },
+  JARVIS_MISSIONS_BUDGET: { default: '40 calls, 30 min, $2.00', help: '' },
+  JARVIS_MISSIONS_TOKENS: { default: '500000', help: '' },
+  JARVIS_MISSIONS_OVERSPEND: { default: 'ask', options: ['ask', 'stop'], help: '' },
   JARVIS_BRIEFING: { default: '1', help: '' },
   JARVIS_BRIEFING_MAIL: { default: '0', help: '' },
   JARVIS_BRIEFING_TIME: { default: 'off', help: '' },
@@ -444,6 +447,9 @@ export function Settings() {
   const agentsReviewer = def(schema, 'JARVIS_AGENTS_REVIEWER')
   const agentsBudget = def(schema, 'JARVIS_AGENTS_BUDGET')
   const agentsProposals = def(schema, 'JARVIS_AGENTS_PROPOSALS')
+  const missionsBudget = def(schema, 'JARVIS_MISSIONS_BUDGET')
+  const missionsTokens = def(schema, 'JARVIS_MISSIONS_TOKENS')
+  const missionsOverspend = def(schema, 'JARVIS_MISSIONS_OVERSPEND')
   const agentsMaxValue = s?.JARVIS_AGENTS_MAX_CONCURRENT || agentsMax.default
   const agentsDepthValue = s?.JARVIS_AGENTS_MAX_DEPTH || agentsDepth.default
   const agentsBlock = (
@@ -515,6 +521,45 @@ export function Settings() {
           />
         </label>
       </div>
+      <div className="mem-add">
+        <label title={missionsBudget.help || undefined}>
+          Mission budget{' '}
+          <input
+            key={s?.JARVIS_MISSIONS_BUDGET ?? ''}
+            defaultValue={s?.JARVIS_MISSIONS_BUDGET || ''}
+            placeholder={missionsBudget.default}
+            aria-label="Default mission budget"
+            disabled={busy || !s}
+            onBlur={(e) =>
+              s && e.target.value.trim() !== s.JARVIS_MISSIONS_BUDGET && patchSetting({ JARVIS_MISSIONS_BUDGET: e.target.value.trim() })
+            }
+          />
+        </label>{' '}
+        <label title={missionsTokens.help || undefined}>
+          Tokens{' '}
+          <input
+            key={s?.JARVIS_MISSIONS_TOKENS ?? ''}
+            defaultValue={s?.JARVIS_MISSIONS_TOKENS || ''}
+            placeholder={missionsTokens.default}
+            aria-label="Mission token limit"
+            disabled={busy || !s}
+            onBlur={(e) =>
+              s && e.target.value.trim() !== s.JARVIS_MISSIONS_TOKENS && patchSetting({ JARVIS_MISSIONS_TOKENS: e.target.value.trim() })
+            }
+          />
+        </label>
+      </div>
+      <label title={missionsOverspend.help || undefined}>
+        At a mission limit{' '}
+        <select
+          value={s?.JARVIS_MISSIONS_OVERSPEND || missionsOverspend.default}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_MISSIONS_OVERSPEND: e.target.value })}
+        >
+          <option value="ask">Ask me before spending more</option>
+          <option value="stop">Stop at once</option>
+        </select>
+      </label>
       <Agents />
     </>
   )
