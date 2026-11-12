@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
-import { RUNTIME_PACKAGES } from './runtime-packages.mjs'
+import { RUNTIME_PACKAGES, pruneOnnxRuntime } from './runtime-packages.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const stage = join(root, 'installer', 'stage')
@@ -94,5 +94,11 @@ writeFileSync(
 )
 console.log('installing runtime dependencies (includes the bundled Claude Code binary)…')
 run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund'], join(stage, 'app'))
+
+// Keep only the speaker-recognition binary the staged node.exe can load.
+{
+  const { kept, removed, removedBytes } = pruneOnnxRuntime(join(stage, 'app'))
+  console.log(`onnxruntime-node: kept ${kept}, removed ${removed.join(', ')} (${Math.round(removedBytes / 1e6)} MB)`)
+}
 
 console.log(`\nstaged ${pkg.version} in ${stage}\nnext: ISCC /DAppVersion=${pkg.version} installer\\jarvis.iss`)
