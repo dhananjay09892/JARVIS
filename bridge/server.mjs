@@ -78,6 +78,7 @@ import { onSettingsChange, publicSettings, readSettings, restartPending, secretV
 import { connectorKeychain, scopedVault } from './secrets.mjs'
 import { settingDefault, settingsSchema } from './settings-registry.mjs'
 import { languagePreface, readPersonProfile, sanitiseProfileOverride } from './language-profile.mjs'
+import { isTranslatorAgent, translatorContext } from './translator.mjs'
 import { createRestarter } from './restart.mjs'
 import { createClaudeBrain } from './brains/claude.mjs'
 import { createBrainRegistry } from './brains/registry.mjs'
@@ -2588,7 +2589,8 @@ ${task.goal}`,
     mcpServers,
     ...narrowToolParams(toolParams(brain, mcpServers, { schema: toolSchemas, log: console }), allowed),
     hideTools: hiddenTools(allowed, { known }),
-    systemPrompt: agentPrompt(agent, WORKER_PROMPT),
+    // The Translator also gets the owner's languages, read now so a change applies to the next run.
+    systemPrompt: agentPrompt(agent, WORKER_PROMPT, isTranslatorAgent(agent) ? translatorContext(readPersonProfile(setting)) : ''),
     model: agentModel(agent, () => modelFor(brain)),
     effort: currentEffort(),
     policy,

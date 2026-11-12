@@ -37,6 +37,7 @@ import { REVIEW_SET } from './agent-definition.mjs'
 import { wrapUntrusted } from './untrusted.mjs'
 import { citationProblems, needsCitations } from './agent-citations.mjs'
 import { draftProblems, isDraftAgent } from './agent-draft-result.mjs'
+import { isTranslatorAgent, translationProblems } from './translator.mjs'
 
 /** First attempt plus at most two retries. */
 export const MAX_REVIEW_ATTEMPTS = 3
@@ -118,18 +119,21 @@ ${def.body.trim()}`
 export const CLEAN_CHECKS = Object.freeze({
   citations: 'No citation problems found.',
   draft: 'No problems found with the draft\'s shape.',
+  translation: 'No problems found with the translation\'s shape or script.',
 })
 
 /**
  * The automatic checks for an agent's result, by what kind of result it is:
  * a report from an agent that reads the web must cite its sources, and a
- * draft must be in the draft shape and never claim it was sent.
+ * draft must be in the draft shape and never claim it was sent, and a
+ * translation must be in the Translator's shape and the script it names.
  *
  * @returns {{ checks: string[] | null, clean?: string }} checks is null when none apply
  */
 export function automaticChecks(agent, result) {
   if (needsCitations(agent)) return { checks: citationProblems(result), clean: CLEAN_CHECKS.citations }
   if (isDraftAgent(agent)) return { checks: draftProblems(result), clean: CLEAN_CHECKS.draft }
+  if (isTranslatorAgent(agent)) return { checks: translationProblems(result), clean: CLEAN_CHECKS.translation }
   return { checks: null }
 }
 

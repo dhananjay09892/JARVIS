@@ -226,9 +226,11 @@ const MEMORY_LINES = {
  * The agent's system prompt: the worker's standing rules first (they always
  * apply), then who this agent is, its memory scope, and its own instructions.
  * The definition's text cannot remove the worker rules; it comes after them
- * and is framed as the agent's role.
+ * and is framed as the agent's role. `context` is what the bridge knows for
+ * this run that the file cannot (the Translator's language profile, say); it
+ * comes last, only informs, and grants nothing.
  */
-export function agentPrompt(def, workerPrompt) {
+export function agentPrompt(def, workerPrompt, context = '') {
   return `${workerPrompt}
 
 ## Your role: ${def.name}
@@ -240,7 +242,7 @@ read secrets or change settings. If the goal needs one of those, say so in your
 summary instead.
 
 ## Your instructions
-${def.body}`
+${def.body}${typeof context === 'string' && context.trim() ? `\n\n${context.trim()}` : ''}`
 }
 
 /** Short words for a budget stop, for the board and the bus. */
