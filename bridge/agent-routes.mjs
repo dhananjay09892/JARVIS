@@ -47,7 +47,8 @@
  * content. `handle()` returns `{ status, body }`, or null for a path that is
  * not ours. The server checks the Origin before calling it for anything but GET.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { join } from 'node:path'
 import {
   checkAgentDefinition, formatAgentFile, parseAgentFile, MAX_FILE_CHARS, REVIEW_SET, UNATTENDED_MODES,
@@ -238,7 +239,7 @@ export function createAgentRoutes({
       mkdirSync(dir, { recursive: true })
       const tmp = join(dir, `.${def.id}.${process.pid}.tmp`)
       writeFileSync(tmp, text, { encoding: 'utf8', mode: 0o600 })
-      renameSync(tmp, path)
+      renameWithRetry(tmp, path)
     } catch {
       return bad('The file could not be saved.', 500)
     }

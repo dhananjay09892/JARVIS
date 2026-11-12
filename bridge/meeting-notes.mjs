@@ -34,7 +34,8 @@
  * Like watcher.mjs this has no package imports, so it is tested alone;
  * server.mjs turns `serverSpec()` into the SDK server.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { join } from 'node:path'
 import { MEETING_SERVER, MEETING_TOOL_NAMES } from './policy.mjs'
 import { settingsDir } from './settings.mjs'
@@ -131,7 +132,7 @@ export function createMeetingState({ file = null, now = () => Date.now(), log = 
       mkdirSync(join(file, '..'), { recursive: true })
       const tmp = `${file}.${process.pid}.tmp`
       writeFileSync(tmp, `${JSON.stringify({ v: 1, announced: Object.fromEntries(announced), written: Object.fromEntries(written) })}\n`, { mode: 0o600 })
-      renameSync(tmp, file)
+      renameWithRetry(tmp, file)
     } catch (err) {
       log.error?.('[jarvis] meeting notes state write failed:', err?.message ?? err)
     }

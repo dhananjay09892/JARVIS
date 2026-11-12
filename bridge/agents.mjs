@@ -30,7 +30,8 @@
  * to show on the Agents screen.
  */
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseAgentFile, MAX_FILE_CHARS } from './agent-definition.mjs'
@@ -354,7 +355,7 @@ export function createAgentRegistry({
         mkdirSync(dir, { recursive: true })
         const tmp = `${approvalsFile}.${process.pid}.tmp`
         writeFileSync(tmp, `${JSON.stringify({ v: 1, approved: approvals }, null, 2)}\n`, { mode: 0o600 })
-        renameSync(tmp, approvalsFile)
+        renameWithRetry(tmp, approvalsFile)
       } catch {
         return { ok: false, error: 'the approval could not be saved' }
       }

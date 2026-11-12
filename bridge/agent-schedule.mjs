@@ -40,7 +40,8 @@
  * Nothing here grants anything: what the run may do is still its definition,
  * narrowed by agent-runtime.mjs and decided call by call by policy.mjs.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { join } from 'node:path'
 import { settingsDir } from './settings.mjs'
 import { isActive as taskActive } from './tasks.mjs'
@@ -172,7 +173,7 @@ export function createScheduleState({ file = null, log = console } = {}) {
       mkdirSync(join(file, '..'), { recursive: true })
       const tmp = `${file}.${process.pid}.tmp`
       writeFileSync(tmp, `${JSON.stringify({ v: 1, last: Object.fromEntries(last) }, null, 2)}\n`, { mode: 0o600 })
-      renameSync(tmp, file)
+      renameWithRetry(tmp, file)
     } catch (err) {
       log.error?.('[jarvis] agent schedule state write failed:', err?.message ?? err)
     }
