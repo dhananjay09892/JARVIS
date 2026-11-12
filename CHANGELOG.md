@@ -18,6 +18,7 @@ Everything since 0.2.3.
   exceptions, both under Settings → Alerts, are listed below.
 - The Windows installer is still not code-signed, so Windows shows "Windows protected your PC".
   Choose **More info**, then **Run anyway**.
+- The installer is about 180 MB, roughly 30 MB more than 0.2.3.
 
 ### New
 
