@@ -25,6 +25,10 @@ jobs:
       - name: Contract tests
         run: node --test "shared/**/*.test.ts" "src/**/*.test.ts" "scripts/**/*.test.mjs"
       - run: node scripts/package.mjs
+      # Starts the staged app with the staged Node and checks that every package it
+      # needs is inside the stage, before the installer is built from it.
+      - name: Staged app smoke test
+        run: node scripts/stage-smoke.mjs
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
       - name: Build installer
