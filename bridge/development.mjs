@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { join } from 'node:path'
+import { win32 } from 'node:path'
 import { createSdkMcpServer, tool } from './sdk-server.mjs'
 import { z } from 'zod'
 import { workspaceFiles, WORKSPACE_ROOT } from './workspace.mjs'
@@ -23,7 +23,8 @@ export async function approvedCommand({ cwd, command }, approve, {
     if (env[key]) childEnv[key] = env[key]
   }
   return new Promise((resolve, reject) => {
-    execute(join(env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    // Always a Windows path, whatever machine the tests run on.
+    execute(win32.join(env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
       ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'Stop';\n${command}\nif ($LASTEXITCODE) { exit $LASTEXITCODE }`],
       { cwd: directory, env: childEnv, shell: false, windowsHide: true, timeout: 120_000, maxBuffer: 1024 * 1024 },
       (err, stdout, stderr) => {

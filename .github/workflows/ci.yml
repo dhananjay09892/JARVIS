@@ -1,0 +1,51 @@
+name: CI
+
+# Runs on every pull request and on main, so a broken test, type error or
+# lint error is caught before it merges (the installer workflow only runs on tags).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is the product; Linux is where the autopilot and reviewers run.
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Test files are found by pattern, as in release.yml.
+      - name: Bridge tests
+        run: node --test "bridge/**/*.test.mjs"
+      - name: Contract tests
+        run: node --test "shared/**/*.test.ts" "src/**/*.test.ts" "scripts/**/*.test.mjs"
+
+  build:
+    name: Lint, typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      # tsc -b, vite build and the bundle secret check.
+      - run: npm run build
