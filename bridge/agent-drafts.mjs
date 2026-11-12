@@ -39,7 +39,8 @@
  * used, so this can be tested on its own with a mocked brain.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { join } from 'node:path'
 import {
   AGENT_MODES, MEMORY_SCOPES, OUTPUT_KINDS, UNATTENDED_MODES, checkAgentDefinition, formatAgentFile,
@@ -524,7 +525,7 @@ export function createAgentDrafter({
         mkdirSync(registry.userDir, { recursive: true })
         const tmp = join(registry.userDir, `.${def.id}.${process.pid}.tmp`)
         writeFileSync(tmp, d.file, { encoding: 'utf8', mode: 0o600 })
-        renameSync(tmp, path)
+        renameWithRetry(tmp, path)
       } catch {
         return { ok: false, status: 500, reason: 'The file could not be saved.' }
       }

@@ -33,7 +33,8 @@
  * simple English endings taken off, compared as sets.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { join } from 'node:path'
 import { settingsDir } from './settings.mjs'
 import { wrapUntrusted } from './untrusted.mjs'
@@ -253,7 +254,7 @@ export function createProposalState({ file = null, log = console } = {}) {
       mkdirSync(join(file, '..'), { recursive: true })
       const tmp = `${file}.${process.pid}.tmp`
       writeFileSync(tmp, `${JSON.stringify({ v: 1, lastAttemptAt, proposals: proposals.slice(-MAX_KEPT) }, null, 2)}\n`, { mode: 0o600 })
-      renameSync(tmp, file)
+      renameWithRetry(tmp, file)
     } catch (err) {
       log.error?.('[jarvis] agent proposals state write failed:', err?.message ?? err)
     }
