@@ -14,8 +14,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
+import { connect, createServer } from 'node:net'
+import { networkInterfaces, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import WebSocket from 'ws'
@@ -85,9 +85,9 @@ async function startBridge(t, extraEnv = {}) {
 }
 
 /** Try a WebSocket handshake. Resolves to { open, first } or { refused: status }. */
-function handshake(port, { origin, path = '/' } = {}) {
+function handshake(port, { origin, path = '/', host = '127.0.0.1' } = {}) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`, origin ? { origin } : {})
+    const ws = new WebSocket(`ws://${host}:${port}${path}`, origin ? { origin } : {})
     const timer = setTimeout(() => { ws.terminate(); reject(new Error('websocket handshake timed out')) }, 10_000)
     const finish = (result) => { clearTimeout(timer); resolve(result) }
     ws.once('unexpected-response', (_req, res) => { res.resume(); finish({ refused: res.statusCode }) })
@@ -131,4 +131,42 @@ test('the bridge starts, answers /health, and lets only a local page open its so
   assert.equal(bridge.child.exitCode, null, bridge.output())
   const again = await fetch(`${bridge.base}/health`)
   assert.equal(again.status, 200)
+})
+
+/** Try a plain TCP connection. Resolves to 'connected' or the error code. */
+function tryConnect(host, port) {
+  return new Promise((resolve) => {
+    const socket = connect({ host, port })
+    const done = (result) => { socket.destroy(); resolve(result) }
+    socket.setTimeout(3_000, () => done('timeout'))
+    socket.once('connect', () => done('connected'))
+    socket.once('error', (err) => done(err.code ?? String(err)))
+  })
+}
+
+test('the bridge answers on this computer only', async (t) => {
+  const bridge = await startBridge(t)
+
+  // By name, as the page and the launcher reach it, and on the IPv4 loopback.
+  assert.equal((await fetch(`http://localhost:${bridge.port}/health`)).status, 200)
+  assert.equal(await tryConnect('127.0.0.1', bridge.port), 'connected')
+
+  // On the IPv6 loopback too, unless this computer has none (the bridge says so).
+  if (/not listening on [::1]/.test(bridge.output())) t.diagnostic('no IPv6 loopback here; ::1 not checked')
+  else {
+    assert.equal(await tryConnect('::1', bridge.port), 'connected', bridge.output())
+    // The same bridge answers there, and the same rule decides who may open the socket.
+    assert.equal((await fetch(`http://[::1]:${bridge.port}/health`)).status, 200)
+    const local = await handshake(bridge.port, { host: '[::1]', origin: 'http://localhost:5173' })
+    assert.equal(local.first?.type, 'ready', JSON.stringify(local))
+    assert.equal((await handshake(bridge.port, { host: '[::1]', origin: 'https://example.com' })).refused, 403)
+    assert.equal((await handshake(bridge.port, { host: '[::1]' })).refused, 403)
+  }
+
+  // Not on any address other devices could use.
+  const outside = Object.values(networkInterfaces()).flat().filter((a) => a && !a.internal).map((a) => a.address)
+  if (!outside.length) t.diagnostic('this computer has no network address besides loopback; nothing to check')
+  // All at once: Windows takes about two seconds to report each refusal.
+  const results = await Promise.all(outside.map((address) => tryConnect(address, bridge.port)))
+  outside.forEach((address, i) => assert.notEqual(results[i], 'connected', `reachable on ${address}`))
 })

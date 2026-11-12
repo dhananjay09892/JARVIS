@@ -2354,14 +2354,24 @@ const wss = new WebSocketServer({
     done(true)
   },
 })
-server.listen(PORT)
+// This computer only. The page, the launcher and the browser all reach the
+// bridge as `localhost`; with no address given, Node would also accept
+// connections from other devices on the network.
+server.listen(PORT, '127.0.0.1')
+// `localhost` can resolve to the IPv6 loopback first, so answer there too, by
+// handing its requests and WebSocket upgrades to the server above. A computer
+// with IPv6 turned off has no ::1; that is reported and is not an error.
+const server6 = http.createServer((req, res) => server.emit('request', req, res))
+server6.on('upgrade', (req, socket, head) => server.emit('upgrade', req, socket, head))
+server6.on('error', (err) => console.warn(`[jarvis] not listening on [::1]:${PORT} (${err?.code ?? err?.message ?? err})`))
+server6.listen({ port: PORT, host: '::1', ipv6Only: true })
 
 /**
  * Live apply (plan 39 phase 4). Settings marked `live` reconfigure here the
  * moment they are saved; `reconnect` ones (model, effort) are read when the
  * next conversation or task starts; `restart` ones wait for the banner.
  */
-const restarter = createRestarter({ beforeExit: () => server.close() })
+const restarter = createRestarter({ beforeExit: () => { server.close(); server6.close() } })
 onSettingsChange(({ changed, appliedLive, nextConversation, needsRestart }) => {
   if (changed.includes('JARVIS_TRACES')) applyTraces()
   if (channels.watches(changed)) void channels.apply()
@@ -2375,7 +2385,7 @@ onSettingsChange(({ changed, appliedLive, nextConversation, needsRestart }) => {
   if (needsRestart.length) console.log(`[jarvis] settings waiting for a restart: ${needsRestart.join(', ')}`)
 })
 
-console.log(`[jarvis] bridge listening on ws://localhost:${PORT}`)
+console.log(`[jarvis] bridge listening on ws://localhost:${PORT} (this computer only)`)
 console.log(
   `[jarvis] speech ${elevenKey() ? 'via ElevenLabs' : 'using browser fallback voice'}`,
 )
