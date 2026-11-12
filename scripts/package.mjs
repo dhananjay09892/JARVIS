@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
+import { RUNTIME_PACKAGES } from './runtime-packages.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const stage = join(root, 'installer', 'stage')
@@ -76,7 +77,7 @@ cpSync(join(root, 'launcher'), join(stage, 'app/launcher'), { recursive: true })
 cpSync(join(root, 'dist'), join(stage, 'app/dist'), { recursive: true })
 
 // Only what the bridge imports at runtime; the UI is already compiled into dist/.
-const runtime = ['@anthropic-ai/claude-agent-sdk', 'ws', 'zod']
+const runtime = RUNTIME_PACKAGES
 writeFileSync(
   join(stage, 'app/package.json'),
   JSON.stringify(
