@@ -25,7 +25,7 @@ orders from a web page — is set out on one page: [NEVER.md](NEVER.md).
 
 **1. Download the installer:**
 [**JARVIS-Setup.exe**](https://github.com/dhananjay09892/JARVIS/releases/latest/download/JARVIS-Setup.exe)
-(about 140 MB, Windows 10 or 11). Step-by-step pictures and help:
+(about 180 MB, Windows 10 or 11). Step-by-step pictures and help:
 [jarvis.pateldhananjay.com](https://www.jarvis.pateldhananjay.com/).
 
 **2. Double-click it and click Next, Install, Finish.** It installs just for you,
