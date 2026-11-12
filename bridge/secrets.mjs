@@ -27,7 +27,8 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { dirname } from 'node:path'
 
 const NAME = /^[A-Za-z][\w./:-]{0,159}$/
@@ -103,7 +104,7 @@ export function dpapiBackend({ file, run = runTool, shell = 'powershell.exe' }) 
       const tmp = `${file}.tmp`
       writeFileSync(tmp, r.stdout.trim(), { mode: 0o600 })
       try { chmodSync(tmp, 0o600) } catch { /* Windows: the folder is per-user */ }
-      renameSync(tmp, file)
+      renameWithRetry(tmp, file)
     },
     clear() {
       rmSync(file, { force: true })

@@ -37,7 +37,8 @@
  * `handle()` returns `{ status, body }`, or null for a path that is not ours.
  * The server checks the Origin before calling it for anything but GET.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from '../atomic-rename.mjs'
 import { dirname } from 'node:path'
 import { CAPABILITIES, CONNECTOR_ID, SENSITIVITY_CLASSES } from './interface.mjs'
 import { ERROR_MESSAGES } from './http.mjs'
@@ -440,7 +441,7 @@ export function createGrantsFile(file) {
     const tmp = `${file}.tmp`
     writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 })
     try { chmodSync(tmp, 0o600) } catch { /* Windows: mode is advisory */ }
-    renameSync(tmp, file)
+    renameWithRetry(tmp, file)
   }
   return {
     file,

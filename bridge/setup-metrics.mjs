@@ -20,7 +20,8 @@
  *
  * Like traces.mjs this uses only Node built-ins, so it can be tested on its own.
  */
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -168,7 +169,7 @@ export function createSetupMetrics({ enabled, file = defaultSetupMetricsFile(), 
     mkdirSync(dirname(file), { recursive: true })
     const tmp = `${file}.tmp`
     writeFileSync(tmp, JSON.stringify({ v: 1, events }))
-    renameSync(tmp, file)
+    renameWithRetry(tmp, file)
   }
 
   return {

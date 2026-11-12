@@ -16,7 +16,8 @@
  * converted. Identity alone never authorises anything; it only picks the role
  * a turn is read at (a guest sees public information only).
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, chmodSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from 'node:fs'
+import { renameWithRetry } from './atomic-rename.mjs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -105,7 +106,7 @@ export function createVoiceprintStore({ dir = defaultSpeakerDir(), clock = Date.
     mkdirSync(dir, { recursive: true, mode: 0o700 })
     const tmp = `${file}.${process.pid}.tmp`
     writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 })
-    renameSync(tmp, file)
+    renameWithRetry(tmp, file)
     try { chmodSync(file, 0o600) } catch { /* not supported everywhere */ }
   }
   return {
