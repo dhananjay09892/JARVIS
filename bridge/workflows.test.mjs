@@ -48,8 +48,12 @@ test('a daily workflow is due once per day after its time, and only if enabled',
   assert.equal(isDue({ enabled: true, scheduleTime: null }, null, at(9, 0)), false)
 })
 
-test('the approval hub holds requests until a browser connects, once, and fails closed', async () => {
+test('the approval hub holds requests until a browser connects, once, and fails closed', async (t) => {
   const hub = createApprovalHub({ ttlMs: 50 })
+  // The hub's expiry timer is unref'd so it never keeps the bridge alive; the
+  // test has to hold the event loop open itself while it waits for an expiry.
+  const keepAlive = setInterval(() => {}, 1000)
+  t.after(() => clearInterval(keepAlive))
   const first = hub.request('Run', 'cmd')
   const sent = []
   const detach = hub.attach((f) => sent.push(f))
