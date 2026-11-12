@@ -212,19 +212,38 @@ test('apple_calendar: a link in place of the database is not followed; a non-dat
   assert.equal(r.error.code, 'bad-response')
 })
 
-test('macos-local: the snapshot is a private copy that is deleted afterwards, the original untouched, and size is capped', async () => {
+test('macos-local: the snapshot is a private copy that is deleted afterwards, the original untouched, and size is capped', async (t) => {
   const { file } = fixture()
-  const before = readdirSync(tmpdir()).filter((n) => n.startsWith('jarvis-snap-')).length
+  // Snapshots go to the system temp folder. Every test file shares it, and the
+  // other connectors' tests put their own snapshots there while this one runs,
+  // so a count taken there includes theirs. Give this test a temp folder of its
+  // own: the count is then exactly this test's copies.
+  const own = tempDir()
+  const saved = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP }
+  for (const k of Object.keys(saved)) process.env[k] = own
+  t.after(() => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+  })
+  assert.equal(realpathSync.native(tmpdir()), own, 'snapshots will be made in the private folder')
+  const snapshots = () => readdirSync(own).filter((n) => n.startsWith('jarvis-snap-')).length
   const { statSync } = await import('node:fs')
   const m0 = statSync(file).mtimeMs
-  const n = await withSnapshot(file, (db) => db.prepare('SELECT COUNT(*) AS n FROM CalendarItem').get().n)
+  let during = -1
+  const n = await withSnapshot(file, (db) => {
+    during = snapshots()
+    return db.prepare('SELECT COUNT(*) AS n FROM CalendarItem').get().n
+  })
   assert.equal(Number(n), 6)
-  assert.equal(readdirSync(tmpdir()).filter((x) => x.startsWith('jarvis-snap-')).length, before, 'copy removed')
+  assert.equal(during, 1, 'the copy exists while it is in use')
+  assert.equal(snapshots(), 0, 'copy removed')
   assert.equal(statSync(file).mtimeMs, m0)
   // read-only: a write inside the callback fails
   await assert.rejects(() => withSnapshot(file, (db) => db.exec('DELETE FROM CalendarItem')))
   await assert.rejects(() => withSnapshot(file, () => 1, { maxBytes: 10 }), (e) => e.code === 'bad-response')
-  assert.equal(readdirSync(tmpdir()).filter((x) => x.startsWith('jarvis-snap-')).length, before)
+  assert.equal(snapshots(), 0)
 })
 
 test('apple_calendar: injection text in an event is neutralised and changes nothing', async () => {
