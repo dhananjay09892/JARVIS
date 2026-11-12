@@ -1,0 +1,12 @@
+# Text is LF on every machine. Windows checkouts used to convert to CRLF, which
+# broke the tests that read source files and match across line ends.
+* text=auto eol=lf
+
+# Windows-native scripts keep CRLF.
+*.vbs text eol=crlf
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+
+*.onnx binary
+*.pcm binary
+*.mp3 binary
