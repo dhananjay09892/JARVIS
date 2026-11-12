@@ -140,6 +140,16 @@ Click **INITIALISE**, allow the microphone when asked, and say **"Hey Jarvis"**.
 > It has to be a real browser window. Embedded preview panes block the
 > microphone, so JARVIS will look perfectly alive and simply never respond.
 
+### Checking your changes
+
+`npm run verify` runs what the pull-request checks run, in the same order: the
+bridge tests, the contract tests, lint, then the build (typecheck, Vite build and
+the bundle secret check). It stops at the first one that fails. To run one part,
+use `npm run test:bridge`, `npm run test:contracts`, `npm run lint` or
+`npm run build`; `npm test` runs both test suites. On Windows, a few bridge tests
+create symbolic links, which needs Developer Mode or an administrator terminal;
+without it those tests fail with `EPERM … symlink`.
+
 ---
 
 ## How it works
