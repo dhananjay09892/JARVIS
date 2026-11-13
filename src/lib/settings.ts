@@ -69,6 +69,10 @@ export type PublicSettings = {
   JARVIS_MISSIONS_TOKENS: string
   /** 'ask' | 'stop' — what a mission does at a limit. '' means the default (ask). */
   JARVIS_MISSIONS_OVERSPEND: string
+  /** 'risky' | 'always' | 'never' — which missions show their plan for approval first. '' means the default (risky). */
+  JARVIS_MISSIONS_PLAN_APPROVAL: string
+  /** '1' | '0' — read a mission's result against its goal before it is done. '' means the default (on). */
+  JARVIS_MISSIONS_VERIFY: string
   /** '1' | '0' — reviewer pass for agents that do not say otherwise. '' means the default (off). */
   JARVIS_AGENTS_REVIEWER: string
   JARVIS_AGENTS_PROPOSALS: string

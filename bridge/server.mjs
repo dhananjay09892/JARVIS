@@ -33,6 +33,7 @@ import { workflowServer, isWorkflowTool } from './workflow-tools.mjs'
 import { createTaskManager } from './tasks.mjs'
 import { AGENT_LIVE_SETTINGS, createAgentSettings, switchedRegistry } from './agent-settings.mjs'
 import { createMissionSettings, missionGuard, normaliseScope, scopeGuard as missionScopeGuard } from './mission-budget.mjs'
+import { createPlanSettings, createVerifier } from './mission-plan.mjs'
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
 import { createAgentRoutes } from './agent-routes.mjs'
 import { createAgentDrafter } from './agent-drafts.mjs'
@@ -2463,13 +2464,21 @@ const RESULT_FAILURES = {
 const WORKER_PROMPT = `You are a JARVIS worker agent carrying out one task alone, in the background.
 Nobody is listening: write for a screen, not for speech.
 
-First call report_progress with a plan of 2 to 8 short steps. Call it again as you
-start each step, with the step number and a one-line note. Keep working until the
-goal is met, then finish with a plain summary of what you did and found, under
-120 words, with no preamble. If the goal cannot be met, say exactly why.
+First call report_progress with a plan of 2 to 8 short steps and, for each step,
+a check: how you will know that step worked. Set risky when any step changes,
+sends, deletes, buys or runs something; the owner then approves the plan before
+you start, so wait for the answer. Call report_progress again as you start each
+step, with the step number and a one-line note, and when a step is finished run
+its check and report it as checked: passed or not, and what you saw. Never
+report a check as passed that you did not run. Keep working until the goal is
+met, then finish with a plain summary of what you did and found, under 120
+words, with no preamble.
 
 If you truly cannot proceed without a decision, call ask_owner with one short
-question; otherwise decide for yourself.
+question; otherwise decide for yourself. If you are stuck (a step keeps failing,
+something is missing, or the goal cannot be met as asked), do not finish as if
+it were done: call report_progress with blocked, giving the reason and two to
+four options the owner can choose between, then stop.
 
 Use only the tools you are given. Commands and deletions ask the owner for
 approval and wait; do not try to work around a refusal. Never invent results.
@@ -2673,6 +2682,8 @@ const agentReviewer = (ctx) => createReviewer({
 const agentSettings = createAgentSettings({ read: setting, frozen: killSwitch.isFrozen })
 /** Default limits and the "ask before spending more" choice for every mission (mission-budget.mjs). */
 const missionSettings = createMissionSettings({ read: setting })
+/** Plan approval for risky missions and the final check of a result (mission-plan.mjs). */
+const planSettings = createPlanSettings({ read: setting })
 
 /** The registry with the owner's switches applied: what the task manager and the voice session's agent tools see. */
 const switchedAgents = switchedRegistry(agentRegistry, agentSettings)
@@ -2690,8 +2701,13 @@ const taskManager = createTaskManager({
   approveMore: auditedApprove(approvalHub.request, audit, 'worker'),
   onStop: (e) => audit?.({
     type: 'decision', actor: 'worker', ...(e.agentId && { agentId: e.agentId }), stage: 'pre-tool-use', request: { kind: 'other' },
-    decision: { verdict: e.rule.endsWith('-extended') ? 'allow' : 'deny', rule: e.rule, reason: e.reason },
+    decision: { verdict: /-(extended|approved)$/.test(e.rule) ? 'allow' : 'deny', rule: e.rule, reason: e.reason },
   }),
+  // A risky plain mission shows its plan first; its result is checked against its goal (mission-plan.mjs).
+  planApproval: planSettings.planApproval,
+  approvePlan: auditedApprove(approvalHub.request, audit, 'worker'),
+  verifier: createVerifier({ converse: toollessTurn(null) }),
+  verify: planSettings.verify,
   reviewer: agentReviewer,
   reviewDefault: agentSettings.reviewerDefault,
   // Delegation (agent-delegation.mjs): only the Coordinator, only its list, this deep.
@@ -3392,7 +3408,7 @@ wss.on('connection', (socket, req) => {
     }
 
     if (msg.type === 'task_resume' && typeof msg.id === 'string') {
-      taskManager.resume(msg.id)
+      taskManager.resume(msg.id, { choice: typeof msg.choice === 'string' ? msg.choice : undefined })
       return
     }
 

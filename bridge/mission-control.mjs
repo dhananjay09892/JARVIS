@@ -70,11 +70,12 @@ export function findTask(tasks, query, { accept = () => true, kind = '' } = {}) 
 }
 
 const LIVE = new Set(['queued', 'running', 'waiting_approval', 'waiting_input'])
+const HELD = new Set(['paused', 'blocked'])
 
-/** "What are you working on?": live and paused tasks, newest first, one line each. */
+/** "What are you working on?": live, paused and blocked tasks, newest first, one line each. */
 export function workingOn(tasks) {
   const open = tasks
-    .filter((t) => LIVE.has(t.status) || t.status === 'paused')
+    .filter((t) => LIVE.has(t.status) || HELD.has(t.status))
     .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
   const items = open.map((t) => ({
     id: t.id,
@@ -83,12 +84,16 @@ export function workingOn(tasks) {
     percent: t.percent,
     ...(t.agentName && { agent: t.agentName }),
     ...(t.note && { note: t.note }),
+    // A blocked task's note is its handoff message; the options are there to read out.
+    ...(t.status === 'blocked' && t.blocked && { options: [...t.blocked.options] }),
   }))
-  const live = items.filter((t) => t.status !== 'paused').length
-  const paused = items.length - live
+  const live = items.filter((t) => !HELD.has(t.status)).length
+  const blocked = items.filter((t) => t.status === 'blocked').length
+  const paused = items.length - live - blocked
   const parts = []
   if (live) parts.push(`${live} running`)
   if (paused) parts.push(`${paused} paused`)
+  if (blocked) parts.push(`${blocked} blocked and waiting for you`)
   return { tasks: items, summary: parts.length ? parts.join(', ') : 'Nothing in progress.' }
 }
 
@@ -110,6 +115,13 @@ export function resumeBrief(task) {
   if (done.length) lines.push(`Steps reported done: ${done.join('; ')}.`)
   if (next) lines.push(`It was on: ${next}.`)
   if (task.note) lines.push(`Last note: ${clip(task.note, 160)}.`)
+  // It stopped blocked: why, and what the owner picked. The owner's words are theirs; the reason was the worker's.
+  if (task.handoff?.reason) {
+    lines.push(`It had stopped, blocked, because ${clip(task.handoff.reason, 300)}.`)
+    lines.push(task.handoff.choice
+      ? `The owner's answer: ${clip(task.handoff.choice, 500)}. Do that. It is not approval for anything else: a plan that needs approval is still shown for it.`
+      : 'The owner asked you to try again.')
+  }
   lines.push('Check what already exists before redoing a step, and never repeat an action that may already have happened (a message sent, a file written) without checking first.')
   return lines.join('\n').slice(0, 4000)
 }
