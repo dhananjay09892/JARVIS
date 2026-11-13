@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { RUNTIME_PACKAGES } from './runtime-packages.mjs'
+import { RUNTIME_PACKAGES, installedPackages, versionsNotInLock } from './runtime-packages.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const stage = join(root, 'installer', 'stage')
@@ -101,6 +101,12 @@ async function main() {
   const tests = readdirSync(join(app, 'bridge'), { recursive: true }).filter((f) => String(f).endsWith('.test.mjs'))
   if (tests.length) fail('test files were staged', tests.slice(0, 5).join(', '))
   ok('no test files are staged')
+
+  // Every staged package is at a version the lockfile records, so it is what the tests ran against.
+  const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'))
+  const drifted = versionsNotInLock(app, lock)
+  if (drifted.length) fail('the stage has package versions that package-lock.json does not record', drifted.slice(0, 20).join('\n'))
+  ok('every staged package is at a lockfile version', `${installedPackages(app).length} packages`)
 
   // 2. Every runtime package loads with the staged Node, from the staged app.
   for (const name of RUNTIME_PACKAGES) {

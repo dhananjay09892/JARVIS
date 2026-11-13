@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
-import { RUNTIME_PACKAGES, pruneOnnxRuntime } from './runtime-packages.mjs'
+import { pruneOnnxRuntime, stagedInstall, versionsNotInLock } from './runtime-packages.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const stage = join(root, 'installer', 'stage')
@@ -77,23 +77,20 @@ cpSync(join(root, 'launcher'), join(stage, 'app/launcher'), { recursive: true })
 cpSync(join(root, 'dist'), join(stage, 'app/dist'), { recursive: true })
 
 // Only what the bridge imports at runtime; the UI is already compiled into dist/.
-const runtime = RUNTIME_PACKAGES
-writeFileSync(
-  join(stage, 'app/package.json'),
-  JSON.stringify(
-    {
-      name: 'jarvis-app',
-      version: pkg.version,
-      private: true,
-      type: 'module',
-      dependencies: Object.fromEntries(runtime.map((d) => [d, pkg.dependencies[d]])),
-    },
-    null,
-    2,
-  ),
-)
-console.log('installing runtime dependencies (includes the bundled Claude Code binary)…')
-run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund'], join(stage, 'app'))
+// Installed from this repository's lockfile, so the installer carries the
+// versions the tests ran against and two builds of one commit are the same.
+const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'))
+const staged = stagedInstall(pkg, lock)
+writeFileSync(join(stage, 'app/package.json'), JSON.stringify(staged.manifest, null, 2))
+writeFileSync(join(stage, 'app/package-lock.json'), JSON.stringify(staged.lock, null, 2))
+console.log('installing runtime dependencies from the lockfile (includes the bundled Claude Code binary)…')
+run('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], join(stage, 'app'))
+// The copied lockfile also lists the UI's packages, which are not installed; it has done its job.
+rmSync(join(stage, 'app/package-lock.json'))
+{
+  const drifted = versionsNotInLock(join(stage, 'app'), lock)
+  if (drifted.length) throw new Error(`the stage has versions package-lock.json does not record:\n  ${drifted.join('\n  ')}`)
+}
 
 // Keep only the speaker-recognition binary the staged node.exe can load.
 {
