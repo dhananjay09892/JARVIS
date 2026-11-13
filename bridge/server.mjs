@@ -114,6 +114,7 @@ import { appleHealthConnector } from './connectors/apple_health.mjs'
 import { appleCalendarConnector } from './connectors/apple_calendar.mjs'
 import { appleContactsConnector } from './connectors/apple_contacts.mjs'
 import { appleNotesConnector } from './connectors/apple_notes.mjs'
+import { appleMusicConnector } from './connectors/apple_music.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { newsRssConnector, NEWS_RSS_OPTIONS } from './connectors/news_rss.mjs'
 import { googleTasksConnector } from './connectors/google_tasks.mjs'
@@ -796,6 +797,12 @@ connectors.registerAll([
     // after Full Disk Access is granted. Locked notes are skipped.
     id: 'apple_notes',
     create: (ctx) => appleNotesConnector().create(ctx),
+  },
+  {
+    // Apple Music (task C38): grant access to one library export file (Library.xml
+    // from the Music app or iTunes); stream-parsed locally, read-only, any system.
+    id: 'apple_music',
+    create: (ctx) => appleMusicConnector().create(ctx),
   },
   {
     // Obsidian (task C13): grant access to one vault folder; reads its notes
