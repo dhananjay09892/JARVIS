@@ -98,6 +98,9 @@ All of these only read. None can send, change or delete anything.
   found it [153, 154].
 - **The installer is checked before it is built.** A new step starts the packaged app with the
   packaged Node and makes sure everything it needs is inside the package [155].
+- **The installer carries the versions that were tested.** Its packages, including the Claude
+  program (now 2.1.323), are installed from the lockfile, so what the tests ran against is what
+  ships [157].
 - The installer ships the licence notices it must carry; see [LICENCES.md](LICENCES.md) [101].
 
 ### For people working on JARVIS
