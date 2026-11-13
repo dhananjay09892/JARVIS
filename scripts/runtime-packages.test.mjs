@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { builtinModules } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
-import { RUNTIME_PACKAGES, pruneOnnxRuntime } from './runtime-packages.mjs'
+import { RUNTIME_PACKAGES, installedPackages, pruneOnnxRuntime, stagedInstall, versionsNotInLock } from './runtime-packages.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -130,4 +130,67 @@ test('pruneOnnxRuntime removes nothing when the binary to keep is missing', (t) 
   const empty = mkdtempSync(join(tmpdir(), 'jarvis-stage-'))
   t.after(() => rmSync(empty, { recursive: true, force: true }))
   assert.throws(() => pruneOnnxRuntime(empty, { platform: 'win32', arch: 'x64' }), /no binary for win32\/x64/)
+})
+
+const LOCK = {
+  name: 'jarvis', version: '9.9.9', lockfileVersion: 3,
+  packages: {
+    '': { name: 'jarvis', version: '9.9.9', dependencies: { alpha: '^1.0.0', '@scope/beta': '^2.0.0', react: '^19.0.0' } },
+    'node_modules/alpha': { version: '1.4.2' },
+    'node_modules/@scope/beta': { version: '2.0.7' },
+    'node_modules/gamma': { version: '3.0.0' },
+    'node_modules/alpha/node_modules/gamma': { version: '2.9.9' },
+    'node_modules/react': { version: '19.2.8' },
+  },
+}
+
+test('stagedInstall pins each runtime package to the version the lockfile records', () => {
+  const { manifest, lock } = stagedInstall({ version: '1.2.3' }, LOCK, ['alpha', '@scope/beta'])
+  assert.deepEqual(manifest, { name: 'jarvis-app', version: '1.2.3', private: true, type: 'module', dependencies: { alpha: '1.4.2', '@scope/beta': '2.0.7' } })
+  // The lockfile's own entry now describes the staged app, and nothing else changed.
+  assert.deepEqual(lock.packages[''], { name: 'jarvis-app', version: '1.2.3', dependencies: { alpha: '1.4.2', '@scope/beta': '2.0.7' } })
+  assert.equal(lock.name, 'jarvis-app')
+  assert.equal(lock.lockfileVersion, 3)
+  assert.deepEqual(lock.packages['node_modules/react'], { version: '19.2.8' })
+  // The repository's lockfile object is not changed.
+  assert.equal(LOCK.packages[''].name, 'jarvis')
+  assert.throws(() => stagedInstall({ version: '1.2.3' }, LOCK, ['alpha', 'missing']), /missing is not in package-lock\.json/)
+})
+
+test('the real lockfile records every runtime package', () => {
+  const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'))
+  const { manifest } = stagedInstall(pkg, lock)
+  assert.deepEqual(Object.keys(manifest.dependencies).sort(), [...RUNTIME_PACKAGES].sort())
+  for (const version of Object.values(manifest.dependencies)) assert.match(version, /^\d+\.\d+\.\d+/, 'an exact version, not a range')
+  assert.equal(manifest.version, pkg.version)
+})
+
+/** An app folder with packages written as { 'path under node_modules': 'version' }. */
+function fakeApp(t, tree) {
+  const app = mkdtempSync(join(tmpdir(), 'jarvis-stage-'))
+  t.after(() => rmSync(app, { recursive: true, force: true }))
+  for (const [where, version] of Object.entries(tree)) {
+    const dir = join(app, 'node_modules', where)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: where.split('node_modules/').pop(), version }))
+  }
+  return app
+}
+
+test('installedPackages finds plain, scoped and nested packages', (t) => {
+  const app = fakeApp(t, { alpha: '1.4.2', '@scope/beta': '2.0.7', gamma: '3.0.0', 'alpha/node_modules/gamma': '2.9.9' })
+  mkdirSync(join(app, 'node_modules', '.bin'), { recursive: true })
+  const found = installedPackages(app).map((p) => `${p.name}@${p.version}`).sort()
+  assert.deepEqual(found, ['@scope/beta@2.0.7', 'alpha@1.4.2', 'gamma@2.9.9', 'gamma@3.0.0'])
+  assert.deepEqual(installedPackages(join(app, 'nowhere')), [])
+})
+
+test('versionsNotInLock is empty when the stage matches, and names what does not', (t) => {
+  const good = fakeApp(t, { alpha: '1.4.2', '@scope/beta': '2.0.7', gamma: '3.0.0', 'alpha/node_modules/gamma': '2.9.9' })
+  assert.deepEqual(versionsNotInLock(good, LOCK), [])
+  const drifted = fakeApp(t, { alpha: '1.9.0', '@scope/beta': '2.0.7', 'alpha/node_modules/gamma': '2.9.9', delta: '0.1.0' })
+  assert.deepEqual(versionsNotInLock(drifted, LOCK), [
+    'alpha@1.9.0 (lockfile has 1.4.2)',
+    'delta@0.1.0 (lockfile has no such package)',
+  ])
 })
