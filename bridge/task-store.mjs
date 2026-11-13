@@ -25,7 +25,13 @@ function scrub(t) {
     question: clean(t.question),
     result: clean(t.result),
     error: clean(t.error),
-    steps: t.steps.map((s) => ({ ...s, label: clean(s.label) })),
+    steps: t.steps.map((s) => ({
+      ...s, label: clean(s.label),
+      ...(typeof s.check === 'string' && { check: clean(s.check) }),
+      ...(typeof s.evidence === 'string' && { evidence: clean(s.evidence) }),
+    })),
+    ...(t.blocked && { blocked: { ...t.blocked, reason: clean(t.blocked.reason), options: (Array.isArray(t.blocked.options) ? t.blocked.options : []).map(clean) } }),
+    ...(t.handoff && { handoff: { reason: clean(t.handoff.reason), choice: clean(t.handoff.choice) } }),
     log: t.log.map((l) => ({ ...l, text: clean(l.text) })),
   }
 }

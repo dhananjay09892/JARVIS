@@ -208,8 +208,13 @@ export type TaskView = {
   id: string
   title: string
   goal: string
-  status: 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'paused' | 'done' | 'failed' | 'cancelled' | 'interrupted'
-  steps: { label: string; state: 'done' | 'active' | 'todo' }[]
+  status: 'queued' | 'running' | 'waiting_approval' | 'waiting_input' | 'paused' | 'blocked' | 'done' | 'failed' | 'cancelled' | 'interrupted'
+  /** A step may carry its success check, and how that check came out. */
+  steps: { label: string; state: 'done' | 'active' | 'todo'; check?: string; outcome?: 'passed' | 'failed'; evidence?: string }[]
+  /** Set while the task is blocked: why it cannot go on, and what the owner may pick. */
+  blocked?: { kind: string; reason: string; options: string[] }
+  /** Set when the result was read against the goal: did it pass. */
+  verified?: boolean
   percent: number
   note: string
   question: string
@@ -284,8 +289,9 @@ export function pauseTask(id: string) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_pause', id }))
 }
 
-export function resumeTask(id: string) {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_resume', id }))
+/** Resume a paused or blocked task; `choice` is the option the owner picked for a blocked one. */
+export function resumeTask(id: string, choice?: string) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_resume', id, ...(choice && { choice }) }))
 }
 
 export function answerTask(id: string, text: string) {

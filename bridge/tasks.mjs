@@ -83,6 +83,18 @@
  * a task started by another agent, or a team run, comes back interrupted, as
  * these cannot be paused on their own. Paused tasks are never pruned and do
  * not count against the cap.
+ *
+ * Planner, verifier and handoff (mission-plan.mjs, plan 13 phases 2 and 9):
+ * a plan step may carry a success check, which the worker reports as passed
+ * or failed. A plain mission that reads as risky shows its plan as an
+ * approval card (`approvePlan`, per `planApproval()`), and none of its tools
+ * run until the owner approves that plan. Nothing ends `done` with a failed
+ * step, and a plain mission's result is read against its goal by `verifier`
+ * (when `verify()` is on) first. A mission that cannot go on becomes
+ * `blocked`: kept like a paused one, with a reason and the owner's options,
+ * and `resume(id, { choice })` carries the pick into its next run. A task
+ * another agent started cannot wait for the owner, so it fails with the same
+ * message instead.
  */
 import { randomUUID } from 'node:crypto'
 import { BUDGET_STOPS, AGENT_REFUSALS } from './agent-runtime.mjs'
@@ -93,6 +105,10 @@ import {
 } from './agent-delegation.mjs'
 import { resolveAgent } from './agent-ask.mjs'
 import { resumeBrief } from './mission-control.mjs'
+import {
+  PLAN_CARD_TITLE, PLAN_REFUSALS, failedStepBlock, handoffMessage, pickChoice, planBlock, planCard, planKey, readBlocked, readPlan,
+  readStepCheck, riskyText, verifyBlock,
+} from './mission-plan.mjs'
 import { LIMIT_KINDS, askMoreTitle, extendLimit, missionLimits, normaliseScope, withCeilings } from './mission-budget.mjs'
 import { isDraftAgent, readDraft } from './agent-draft-result.mjs'
 import { isAlertAgent, readTriage } from './agent-triage-result.mjs'
@@ -107,14 +123,15 @@ export const MAX_CONCURRENT = 3
 const CAP_MAX = 8
 const MAX_KEPT = 50
 const MAX_LOG = 40
-const MAX_STEPS = 12
 const clip = (s, n) => (typeof s === 'string' ? s.trim().slice(0, n) : '')
 
 const ACTIVE = new Set(['queued', 'running', 'waiting_approval', 'waiting_input'])
 export const ANSWER_TTL_MS = 30 * 60 * 1000
 export const isActive = (task) => ACTIVE.has(task.status)
-/** Not ended: live, or paused and waiting to be resumed. */
-export const isOpen = (task) => ACTIVE.has(task.status) || task.status === 'paused'
+/** Kept for the owner to resume: paused, or blocked with options to pick from. */
+export const isHeld = (task) => task.status === 'paused' || task.status === 'blocked'
+/** Not ended: live, or held and waiting to be resumed. */
+export const isOpen = (task) => ACTIVE.has(task.status) || isHeld(task)
 export const PAUSE_REFUSALS = Object.freeze({
   missing: 'No such task.',
   ended: 'That task has already ended.',
@@ -123,6 +140,8 @@ export const PAUSE_REFUSALS = Object.freeze({
   team: 'A team run cannot be paused. Cancel it instead.',
   notPaused: 'That task is not paused.',
 })
+/** What a step check that failed tells the worker. */
+export const STEP_FAILED_NOTE = 'Recorded as not passed. Fix it and report the check again, or report blocked with options. A mission with a failed step is never reported as done.'
 export const RESTART_PAUSED = 'Paused: JARVIS restarted while this was running. Resume it to carry on.'
 
 /** A copy of a triage, so a view never shares its lists with the task. */
@@ -137,7 +156,11 @@ function snapshot(t) {
     title: t.title,
     goal: t.goal,
     status: t.status,
-    steps: t.steps.map((s, i) => ({ label: s, state: i < t.step - 1 ? 'done' : i === t.step - 1 ? 'active' : 'todo' })),
+    steps: t.steps.map((s, i) => ({
+      label: s, state: i < t.step - 1 ? 'done' : i === t.step - 1 ? 'active' : 'todo',
+      ...(t.checks?.[i] && { check: t.checks[i] }),
+      ...(t.outcomes?.[i] && { outcome: t.outcomes[i].passed ? 'passed' : 'failed', ...(t.outcomes[i].evidence && { evidence: t.outcomes[i].evidence }) }),
+    })),
     percent: t.status === 'done' ? 100 : t.steps.length ? Math.round((Math.max(0, t.step - 1) / t.steps.length) * 100) : 0,
     note: t.note,
     question: t.question?.text ?? '',
@@ -157,6 +180,11 @@ function snapshot(t) {
     ...(t.parentId && { parentId: t.parentId }),
     ...(t.team && { team: { id: t.team, name: teamPreset(t.team)?.name ?? t.team } }),
     ...(t.resumed > 0 && { resumed: t.resumed }),
+    // Why it cannot go on and what the owner may pick; the note carries the same as one message.
+    ...(t.blocked && { blocked: { kind: t.blocked.kind, reason: t.blocked.reason, options: [...t.blocked.options] } }),
+    ...(t.handoff && { handoff: { ...t.handoff } }),
+    ...(t.planApproved && { planApproved: true }),
+    ...(typeof t.verified === 'boolean' && { verified: t.verified }),
     // What the task has used so far, so a resume (or a restart) keeps its budget.
     ...((t.calls > 0 || t.usedMs > 0 || t.runFrom) && { usage: { toolCalls: t.calls ?? 0, activeMs: activeMs(t), ...(t.tokens > 0 && { tokens: t.tokens }) } }),
     // The limits it runs under now (after any extension), and the scope it was given.
@@ -191,13 +219,18 @@ const activeMs = (t) => (t.usedMs ?? 0) + (t.runFrom ? Math.max(0, Date.now() - 
  * @param {() => object | null} [o.missionDefaults] the default mission limits (mission-budget.mjs); without it only named agents have limits, as before
  * @param {() => 'ask' | 'stop'} [o.overspend] what a reached limit does
  * @param {(title: string, details?: string) => Promise<boolean>} [o.approveMore] shows the "allow more?" card
- * @param {(e: { taskId: string, agentId?: string, rule: string, reason: string }) => void} [o.onStop] hears every limit stop and scope refusal
+ * @param {(e: { taskId: string, agentId?: string, rule: string, reason: string }) => void} [o.onStop] hears every limit stop and scope refusal, and every plan answer, block and failed final check
+ * @param {() => 'risky' | 'always' | 'never'} [o.planApproval] which plain missions show their plan for approval first
+ * @param {(title: string, details?: string) => Promise<boolean>} [o.approvePlan] shows the plan card; without it no plan is asked about
+ * @param {Function} [o.verifier] reads a plain mission's result against its goal (mission-plan.mjs createVerifier); without one nothing is verified
+ * @param {() => boolean} [o.verify] is the final check switched on
  */
 export function createTaskManager({
   runAgent, store = null, bus = null, agents = null, costCounts = () => false,
   concurrency = MAX_CONCURRENT, paused = () => null, defaultBudget = () => null,
   reviewer = null, reviewDefault = () => false, maxDepth = () => 1, maxChildren = MAX_CHILDREN,
   missionDefaults = null, overspend = () => 'ask', approveMore = null, onStop = null,
+  planApproval = () => 'risky', approvePlan = null, verifier = null, verify = () => true,
   now = () => Date.now(), log = console,
 } = {}) {
   const tasks = new Map()
@@ -269,6 +302,8 @@ export function createTaskManager({
     for (const s of saved) {
       const t = {
         id: s.id, title: s.title, goal: s.goal, status: s.status, steps: s.steps.map((x) => x.label),
+        checks: s.steps.map((x) => clip(x.check, 160)),
+        outcomes: s.steps.map((x) => (x.outcome === 'passed' || x.outcome === 'failed' ? { passed: x.outcome === 'passed', evidence: clip(x.evidence, 200) } : null)),
         step: s.steps.filter((x) => x.state === 'done').length + 1, note: s.note, log: s.log, result: s.result,
         error: s.error, costUsd: s.costUsd, startedAt: s.startedAt, endedAt: s.endedAt, createdAt: s.createdAt ?? s.startedAt ?? now(),
         waiting: 0, question: null, tools: new Set(), abort: new AbortController(),
@@ -286,6 +321,14 @@ export function createTaskManager({
         ...(s.limits && typeof s.limits === 'object' && { limits: withCeilings(s.limits) }),
         ...(s.asked && typeof s.asked === 'object' && { asked: pickAsked(s.asked) }),
         ...(normaliseScope(s.scope) && { scope: normaliseScope(s.scope) }),
+        ...(typeof s.verified === 'boolean' && { verified: s.verified }),
+        ...(s.handoff && typeof s.handoff === 'object' && { handoff: { reason: clip(s.handoff.reason, 300), choice: clip(s.handoff.choice, 500) } }),
+      }
+      if (s.planApproved === true && t.steps.length) t.planApproved = planKey(t.steps, t.checks)
+      if (t.status === 'blocked') {
+        const b = readBlocked(s.blocked)
+        // A blocked task that lost its options is still kept; it can only be resumed plainly or cancelled.
+        t.blocked = b.ok ? { kind: clip(s.blocked?.kind, 20) || 'worker', ...b.blocked } : { kind: 'worker', reason: clip(s.blocked?.reason, 300) || 'it could not go on', options: [] }
       }
       if (ACTIVE.has(t.status) && !t.parentId && !t.team) {
         // Its agent is gone with the old process, but the task is not: it
@@ -384,6 +427,7 @@ export function createTaskManager({
     // Release a parked question first, while the task still counts as active.
     t.question?.settle(null)
     Object.assign(t, fields, { status, endedAt: now() })
+    t.blocked = null
     if (status === 'done') t.step = t.steps.length + 1
     note(t, status, fields.error ?? fields.result ?? status)
     emit(t)
@@ -407,10 +451,25 @@ export function createTaskManager({
   /** The progress callback handed to the agent's report_progress tool. */
   const reporter = (t, run) => (p) => {
     if (!isActive(t) || t.run !== run) return { ok: false, reason: 'This task has ended.' }
+    // "I am stuck": the worker hands the mission back with a reason and options.
+    if (p.blocked !== undefined && p.blocked !== null) {
+      const b = readBlocked(p.blocked)
+      if (!b.ok) return { ok: false, reason: b.reason }
+      block(t, run, { kind: 'worker', ...b.blocked })
+      return { ok: true, blocked: true, note: 'The owner has been told. Stop now.' }
+    }
+    let toApprove = null
     if (Array.isArray(p.plan) && p.plan.length) {
-      t.steps = p.plan.map((s) => clip(s, 80)).filter(Boolean).slice(0, MAX_STEPS)
-      t.step = 1
-      note(t, 'plan', `${t.steps.length} steps`)
+      if (t.planAsk) return { ok: false, reason: PLAN_REFUSALS.pending }
+      const plan = readPlan(p)
+      if (plan.labels.length) {
+        t.steps = plan.labels
+        t.checks = plan.checks
+        t.outcomes = []
+        t.step = 1
+        note(t, 'plan', `${t.steps.length} steps`)
+        if (planNeedsApproval(t, p, plan)) toApprove = plan
+      }
     }
     if (Number.isInteger(p.step) && t.steps.length) {
       t.step = Math.min(Math.max(1, p.step), t.steps.length)
@@ -420,8 +479,106 @@ export function createTaskManager({
       t.note = clip(p.note, 160)
       note(t, 'note', t.note)
     }
+    // The success check of one step: the last report for a step is the one that counts.
+    const checked = readStepCheck(p.checked, t.steps.length)
+    if (checked) {
+      t.outcomes[checked.step - 1] = { passed: checked.passed, evidence: checked.evidence }
+      note(t, 'check', `step ${checked.step} ${checked.passed ? 'passed' : 'failed'}${checked.evidence ? `: ${checked.evidence}` : ''}`)
+    }
     emit(t)
-    return { ok: true }
+    if (toApprove) return askPlan(t, run, toApprove)
+    return { ok: true, ...(checked && !checked.passed && { note: STEP_FAILED_NOTE }) }
+  }
+
+  /** The owner's plan-approval choice now. A getter that throws counts as the careful default. */
+  const planMode = () => {
+    if (typeof approvePlan !== 'function') return 'never'
+    try {
+      const m = planApproval()
+      return m === 'always' || m === 'never' ? m : 'risky'
+    } catch { return 'risky' }
+  }
+
+  /** May this task be asked for plan approval at all? Plain missions only; a named agent has its own narrower tools. */
+  const planned = (t) => !t.agentId && !t.parentId && !t.team
+
+  /** Must this plan be shown to the owner before the mission goes on? An approval holds only for the plan that was shown. */
+  function planNeedsApproval(t, p, plan) {
+    if (!planned(t) || t.planApproved === plan.key) return false
+    const mode = planMode()
+    if (mode === 'never') return false
+    return mode === 'always' || t.planNeeded === true || p.risky === true || riskyText(`${plan.labels.join('\n')}\n${plan.checks.join('\n')}`)
+  }
+
+  /** Why no tool may run yet, or null: a plan is owed, or is waiting for its answer. */
+  const planHeld = (t) => {
+    if (t.planAsk) return PLAN_REFUSALS.waiting
+    return t.planNeeded && !t.planApproved && planMode() !== 'never' ? PLAN_REFUSALS.first : null
+  }
+
+  /**
+   * Show the plan as an approval card and wait. Approved: the mission goes
+   * on. Anything else (a "no", no answer, nobody connected) and it waits,
+   * blocked, for the owner; it is never taken as a yes.
+   */
+  async function askPlan(t, run, plan) {
+    const asking = (async () => {
+      try { return (await approver(t, approvePlan, run)(PLAN_CARD_TITLE, planCard(plan))) === true } catch { return false }
+    })()
+    t.planAsk = asking
+    let ok = false
+    try { ok = await asking } finally { if (t.planAsk === asking) t.planAsk = null }
+    if (!isActive(t) || t.run !== run) return { ok: false, reason: 'This task has ended.' }
+    if (!ok) {
+      report(t, 'mission-plan-denied', 'the plan was not approved')
+      block(t, run, planBlock())
+      return { ok: false, reason: 'The plan was not approved. Stop now.' }
+    }
+    t.planApproved = plan.key
+    note(t, 'plan', 'approved by the owner')
+    report(t, 'mission-plan-approved', 'the owner approved the plan')
+    emit(t)
+    return { ok: true, approved: true }
+  }
+
+  /** Stop a task's session but keep the task: what pause and block share. */
+  function hold(t, status, text) {
+    // Release a parked question while the task still counts as live.
+    t.question?.settle(null)
+    if (t.timer) { clearTimeout(t.timer); t.timer = null }
+    if (t.runFrom) { t.usedMs = activeMs(t); t.runFrom = null }
+    t.status = status
+    t.note = clip(text, 900)
+    t.abort.abort()
+    note(t, status, text)
+    emit(t)
+    for (const wake of t.waiters) wake()
+    t.waiters.clear()
+    for (const c of [...tasks.values()]) {
+      if (c.parentId !== t.id || !isActive(c)) continue
+      c.abort.abort()
+      finish(c, 'cancelled', { error: DELEGATION_STOPS.parentEnded })
+    }
+    pump()
+  }
+
+  /**
+   * The mission cannot go on: keep it, blocked, with the reason and the
+   * owner's options. A task another agent started (or a team run) cannot wait
+   * for the owner on its own, so it fails with the same message.
+   */
+  function block(t, run, info, fields = {}) {
+    if (!isActive(t) || t.run !== run) return
+    const message = handoffMessage(info)
+    report(t, 'mission-blocked', `${info.kind}: ${clip(info.reason, 200)}`)
+    if (t.parentId || t.team) {
+      t.abort.abort()
+      finish(t, 'failed', { ...fields, error: message })
+      return
+    }
+    Object.assign(t, fields)
+    t.blocked = { kind: info.kind, reason: info.reason, options: [...info.options] }
+    hold(t, 'blocked', message)
   }
 
   /** Wraps an approval so the card names the task and the task shows it is waiting. */
@@ -568,7 +725,7 @@ export function createTaskManager({
 
   /** The budget the session's guard spends from; null without one. */
   function budgetFor(t, limits, run) {
-    if (!Number.isInteger(limits?.maxToolCalls)) return null
+    if (!Number.isInteger(limits?.maxToolCalls) && !t.planNeeded) return null
     return {
       /**
        * One tool call is about to run. Returns null to let it, or the refusal;
@@ -577,6 +734,8 @@ export function createTaskManager({
        */
       toolCall() {
         if (!isActive(t) || t.run !== run) return AGENT_REFUSALS.budget
+        const held = planHeld(t)
+        if (held) return held
         if (t.more || LIMIT_ORDER.some((f) => exceeded(t, f))) return slow()
         return take()
       },
@@ -632,6 +791,7 @@ export function createTaskManager({
     try {
       const task = snapshot(t)
       const goal = retry?.goal ?? (t.resumed > 0 ? resumeBrief(task) : null)
+      t.handoff = null
       const stream = runAgent({
         task: goal ? { ...task, goal } : task,
         signal,
@@ -639,7 +799,7 @@ export function createTaskManager({
         ask: asker(t, run),
         wrapApprove: (approve) => approver(t, approve, run),
         ...(agent && { agent }),
-        ...((agent || t.limits) && { budget: budgetFor(t, t.limits ?? limits, run) }),
+        ...((agent || t.limits || t.planNeeded) && { budget: budgetFor(t, t.limits ?? limits, run) }),
         ...(t.limits && { stop: stopper(t, run) }),
         ...(t.scope && { scopeDenied: (r) => report(t, `mission-scope-${r.kind}`, `${r.tool}: ${r.reason}`) }),
         ...(agent && { depth: t.depth }),
@@ -777,6 +937,9 @@ export function createTaskManager({
     t.runFrom = Date.now()
     t.calls = Number.isInteger(t.calls) ? t.calls : 0
     t.costBase = typeof t.costUsd === 'number' ? t.costUsd : 0
+    // A plain mission whose goal reads as risky owes the owner a plan before any tool runs.
+    const mode = planMode()
+    t.planNeeded = planned(t) && (mode === 'always' || (mode === 'risky' && riskyText(`${t.title}\n${t.goal}`)))
     note(t, 'start', `${t.resumed > 0 ? 'resumed' : 'started'}${agent ? ` as ${agent.name}` : ''}`)
     emit(t)
     armTimer(t, run)
@@ -788,7 +951,13 @@ export function createTaskManager({
     for (let attempt = 1; ; attempt++) {
       const result = await attemptOnce(t, agent, limits, retry)
       if (result === null || !isActive(t) || t.run !== run) return
-      if (!reviewed) { finish(t, 'done', doneFields(agent, result)); return }
+      // A step that did not pass its check: blocked with options, never done.
+      const failed = failedStepBlock(t.steps, t.outcomes)
+      if (failed) { block(t, run, failed, { result }); return }
+      if (!reviewed) {
+        if (await verified(t, run, result)) finish(t, 'done', doneFields(agent, result))
+        return
+      }
       if (typeof t.costUsd === 'number') t.costBase = t.costUsd
       const verdict = await reviewOnce(t, agent, result, attempt)
       if (!verdict || t.run !== run) return
@@ -808,6 +977,50 @@ export function createTaskManager({
     }
   }
 
+  /** Is the final check switched on now? A getter that throws counts as on. */
+  const verifyNow = () => {
+    try { return verify() !== false } catch { return true }
+  }
+
+  /**
+   * The final check of a plain mission's result against its goal. Resolves
+   * true when the task may end done. A result the verifier does not accept
+   * blocks the mission with the reasons; a verifier that could not run lets
+   * the result through marked as not verified, and says so on the board.
+   */
+  async function verified(t, run, result) {
+    if (!planned(t) || typeof verifier !== 'function' || !verifyNow()) return true
+    const live = () => isActive(t) && t.run === run
+    note(t, 'verify', 'checking the result against the goal')
+    emit(t)
+    // What the check costs is added to what the run has spent.
+    if (typeof t.costUsd === 'number') t.costBase = t.costUsd
+    let verdict
+    try {
+      const view = snapshot(t)
+      verdict = await verifier({ task: { id: t.id, title: t.title, goal: t.goal, steps: view.steps, log: t.log.map((l) => ({ ...l })) }, result, signal: t.abort.signal })
+    } catch (err) {
+      if (!live()) return false
+      if (t.abort.signal.aborted) { finish(t, 'cancelled', { error: 'Cancelled.' }); return false }
+      log.error?.('[jarvis] mission verify failed:', err?.message ?? err)
+      t.verified = false
+      note(t, 'verify', 'the result could not be checked, so it is not verified')
+      return true
+    }
+    if (!live()) return false
+    if (!verdict || typeof verdict.pass !== 'boolean') verdict = parseVerdict('')
+    if (typeof verdict.costUsd === 'number') { spend(t, verdict.costUsd); t.costBase = t.costUsd }
+    if (verdict.pass) {
+      t.verified = true
+      note(t, 'verify', 'the result meets the goal')
+      return true
+    }
+    t.verified = false
+    report(t, 'mission-verify-failed', 'the result did not meet the goal')
+    block(t, run, verifyBlock(verdict.reasons), { result })
+    return false
+  }
+
   /** A new task in the queue; started as soon as the cap allows. */
   function enqueue({ title, goal, agent = null, depth = 1, parentId = null, team = null, scope = null, asked = null }) {
     const g = goal
@@ -817,6 +1030,8 @@ export function createTaskManager({
       goal: g,
       status: 'queued',
       steps: [],
+      checks: [],
+      outcomes: [],
       step: 0,
       note: '',
       log: [],
@@ -1112,34 +1327,19 @@ export function createTaskManager({
       if (!isActive(t)) return { ok: false, reason: PAUSE_REFUSALS.ended }
       if (t.parentId) return { ok: false, reason: PAUSE_REFUSALS.child }
       if (t.team) return { ok: false, reason: PAUSE_REFUSALS.team }
-      // Release a parked question while the task still counts as live.
-      t.question?.settle(null)
-      if (t.timer) { clearTimeout(t.timer); t.timer = null }
-      if (t.runFrom) { t.usedMs = activeMs(t); t.runFrom = null }
-      t.status = 'paused'
-      t.note = 'Paused by the owner.'
-      t.abort.abort()
-      note(t, 'paused', 'paused by the owner')
-      emit(t)
-      for (const wake of t.waiters) wake()
-      t.waiters.clear()
-      for (const c of [...tasks.values()]) {
-        if (c.parentId !== t.id || !isActive(c)) continue
-        c.abort.abort()
-        finish(c, 'cancelled', { error: DELEGATION_STOPS.parentEnded })
-      }
-      pump()
+      hold(t, 'paused', 'Paused by the owner.')
       return { ok: true, task: snapshot(t) }
     },
     /**
-     * Queue a paused task again. Its new session starts from the goal and
-     * what the board recorded, within what is left of its budget. Refused
+     * Queue a paused or blocked task again. Its new session starts from the
+     * goal and what the board recorded (for a blocked one, also why it stopped
+     * and the owner's `choice`), within what is left of its budget. Refused
      * while background work is paused or when its agent is no longer on.
      */
-    resume(id) {
+    resume(id, { choice } = {}) {
       const t = tasks.get(id)
       if (!t) return { ok: false, reason: PAUSE_REFUSALS.missing }
-      if (t.status !== 'paused') return { ok: false, reason: isActive(t) ? PAUSE_REFUSALS.notPaused : PAUSE_REFUSALS.ended }
+      if (!isHeld(t)) return { ok: false, reason: isActive(t) ? PAUSE_REFUSALS.notPaused : PAUSE_REFUSALS.ended }
       const held = pauseReason()
       if (held) return { ok: false, reason: held }
       if (!agentStillActive(t)) return { ok: false, reason: `The ${t.agentName} agent is not switched on.` }
@@ -1148,9 +1348,19 @@ export function createTaskManager({
       t.tools = new Set()
       t.waiting = 0
       t.question = null
+      t.planAsk = null
       t.note = ''
       t.resumed = (t.resumed ?? 0) + 1
-      note(t, 'resumed', 'resumed by the owner')
+      if (t.blocked) {
+        // The next run is told why this one stopped and what the owner picked.
+        // Picking an option never approves a plan: that is still asked on its card.
+        t.handoff = { reason: t.blocked.reason, choice: pickChoice(t.blocked, choice) }
+        t.blocked = null
+        // A failed check is the old run's; the new run checks its steps again.
+        t.outcomes = (t.outcomes ?? []).map((o) => (o && o.passed ? o : null))
+        delete t.verified
+      }
+      note(t, 'resumed', `resumed by the owner${t.handoff?.choice ? `: ${t.handoff.choice}` : ''}`)
       emit(t)
       pump()
       return { ok: true, task: snapshot(t) }

@@ -96,6 +96,8 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_MISSIONS_BUDGET: { default: '40 calls, 30 min, $2.00', help: '' },
   JARVIS_MISSIONS_TOKENS: { default: '500000', help: '' },
   JARVIS_MISSIONS_OVERSPEND: { default: 'ask', options: ['ask', 'stop'], help: '' },
+  JARVIS_MISSIONS_PLAN_APPROVAL: { default: 'risky', options: ['risky', 'always', 'never'], help: '' },
+  JARVIS_MISSIONS_VERIFY: { default: '1', help: '' },
   JARVIS_BRIEFING: { default: '1', help: '' },
   JARVIS_BRIEFING_MAIL: { default: '0', help: '' },
   JARVIS_BRIEFING_TIME: { default: 'off', help: '' },
@@ -450,6 +452,8 @@ export function Settings() {
   const missionsBudget = def(schema, 'JARVIS_MISSIONS_BUDGET')
   const missionsTokens = def(schema, 'JARVIS_MISSIONS_TOKENS')
   const missionsOverspend = def(schema, 'JARVIS_MISSIONS_OVERSPEND')
+  const missionsPlan = def(schema, 'JARVIS_MISSIONS_PLAN_APPROVAL')
+  const missionsVerify = def(schema, 'JARVIS_MISSIONS_VERIFY')
   const agentsMaxValue = s?.JARVIS_AGENTS_MAX_CONCURRENT || agentsMax.default
   const agentsDepthValue = s?.JARVIS_AGENTS_MAX_DEPTH || agentsDepth.default
   const agentsBlock = (
@@ -559,6 +563,27 @@ export function Settings() {
           <option value="ask">Ask me before spending more</option>
           <option value="stop">Stop at once</option>
         </select>
+      </label>
+      <label title={missionsPlan.help || undefined}>
+        Show a mission's plan first{' '}
+        <select
+          value={s?.JARVIS_MISSIONS_PLAN_APPROVAL || missionsPlan.default}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_MISSIONS_PLAN_APPROVAL: e.target.value })}
+        >
+          <option value="risky">For risky missions</option>
+          <option value="always">For every mission</option>
+          <option value="never">Never</option>
+        </select>
+      </label>
+      <label title={missionsVerify.help || undefined}>
+        <input
+          type="checkbox"
+          checked={(s?.JARVIS_MISSIONS_VERIFY || missionsVerify.default) === '1'}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_MISSIONS_VERIFY: e.target.checked ? '1' : '0' })}
+        />{' '}
+        Check a mission's result against what I asked
       </label>
       <Agents />
     </>

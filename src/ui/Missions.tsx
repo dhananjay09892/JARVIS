@@ -9,6 +9,7 @@ const LABEL: Record<TaskView['status'], string> = {
   waiting_approval: 'NEEDS APPROVAL',
   waiting_input: 'NEEDS YOU',
   paused: 'PAUSED',
+  blocked: 'BLOCKED',
   done: 'DONE',
   failed: 'FAILED',
   cancelled: 'CANCELLED',
@@ -37,6 +38,18 @@ function Question({ task }: { task: TaskView }) {
   )
 }
 
+/** A blocked task: why it stopped, and a button for each option; picking one resumes it with that choice. */
+function Blocked({ task }: { task: TaskView }) {
+  return (
+    <div className="mission-blocked-ask">
+      <p>{task.note}</p>
+      {(task.blocked?.options ?? []).map((o, i) => (
+        <button key={i} onClick={() => resumeTask(task.id, o)}>{String.fromCharCode(65 + i)} · {o}</button>
+      ))}
+    </div>
+  )
+}
+
 /** A task the owner may pause: live, and not started by another agent or run as a team. */
 const pausable = (t: TaskView) => LIVE.has(t.status) && !t.parentId && !t.team
 
@@ -56,6 +69,7 @@ export function Missions() {
   const rows = missionRows(list)
   const live = list.filter((t) => LIVE.has(t.status)).length
   const paused = list.filter((t) => t.status === 'paused').length
+  const blocked = list.filter((t) => t.status === 'blocked').length
   useEffect(() => {
     if (!live) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -67,7 +81,7 @@ export function Missions() {
   return (
     <aside className="missions" aria-label="Mission board">
       <button className="missions-head" onClick={() => setCollapsed((c) => !c)} aria-expanded={!collapsed}>
-        MISSIONS · {live} ACTIVE{paused ? ` · ${paused} PAUSED` : ''}{list.length > live + paused ? ` · ${list.length - live - paused} ENDED` : ''}
+        MISSIONS · {live} ACTIVE{paused ? ` · ${paused} PAUSED` : ''}{blocked ? ` · ${blocked} BLOCKED` : ''}{list.length > live + paused + blocked ? ` · ${list.length - live - paused - blocked} ENDED` : ''}
         <span>{collapsed ? '▸' : '▾'}</span>
       </button>
       {!collapsed && rows.map(({ task: t, nested }) => {
@@ -89,19 +103,25 @@ export function Missions() {
             {open === t.id && (
               <div className="mission-detail">
                 <ol>
-                  {t.steps.map((s, i) => <li key={i} className={`step-${s.state}`}>{s.label}</li>)}
+                  {t.steps.map((s, i) => (
+                    <li key={i} className={`step-${s.state}${s.outcome ? ` check-${s.outcome}` : ''}`} title={[s.check && `Check: ${s.check}`, s.evidence].filter(Boolean).join(' — ') || undefined}>
+                      {s.label}{s.outcome === 'passed' ? ' ✓' : s.outcome === 'failed' ? ' ✗' : ''}
+                    </li>
+                  ))}
                 </ol>
                 <ul>
                   {t.log.slice(-6).map((l, i) => <li key={i}><code>{l.kind}</code> {l.text}</li>)}
                 </ul>
                 {t.result && <p className="mission-result">{t.result}</p>}
+                {t.status === 'done' && t.verified === false && <p className="mission-unverified">Not checked against the goal.</p>}
               </div>
             )}
             {t.status === 'waiting_input' && <Question task={t} />}
+            {t.status === 'blocked' && <Blocked task={t} />}
             <div className="mission-actions">
               {pausable(t) && <button onClick={() => pauseTask(t.id)}>PAUSE</button>}
               {t.status === 'paused' && <button onClick={() => resumeTask(t.id)}>RESUME</button>}
-              {LIVE.has(t.status) || t.status === 'paused'
+              {LIVE.has(t.status) || t.status === 'paused' || t.status === 'blocked'
                 ? <button onClick={() => cancelTask(t.id)}>CANCEL</button>
                 : <button onClick={() => dismissTask(t.id)}>DISMISS</button>}
             </div>

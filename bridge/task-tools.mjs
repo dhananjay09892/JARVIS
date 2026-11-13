@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { agentOperations, roster, taskBrief as brief } from './agent-ask.mjs'
 import { DELEGATE_SERVER, MAX_WAIT_MS } from './agent-delegation.mjs'
 import { findTask, workingOn } from './mission-control.mjs'
-import { isActive } from './tasks.mjs'
+import { isActive, isHeld } from './tasks.mjs'
 
 const ORCHESTRATOR_TOOLS = [
   'spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'pause_task', 'resume_task',
@@ -34,13 +34,15 @@ export function taskOperations(manager) {
     list: ({ active_only: activeOnly } = {}) => (activeOnly ? workingOn(manager.list()) : { tasks: manager.list().map(brief) }),
     status: ({ id }) => {
       const t = manager.get(id) ?? (typeof id === 'string' ? findTask(manager.list(), id).task : null)
-      return t ? { ...brief(t), steps: t.steps, result: t.result || undefined, recent: t.log.slice(-5).map((l) => l.text) } : { found: false }
+      return t
+        ? { ...brief(t), steps: t.steps, result: t.result || undefined, ...(t.blocked && { blocked: t.blocked }), recent: t.log.slice(-5).map((l) => l.text) }
+        : { found: false }
     },
-    cancel: ({ id }) => act(manager, id, { accept: (t) => isActive(t) || t.status === 'paused', kind: 'running or paused' }, (t) => manager.cancel(t.id)),
+    cancel: ({ id }) => act(manager, id, { accept: (t) => isActive(t) || isHeld(t), kind: 'running, paused or blocked' }, (t) => manager.cancel(t.id)),
     /** "Pause the trip planning": the one live task the words name. */
     pause: ({ id }) => act(manager, id, { accept: (t) => isActive(t) && !t.parentId && !t.team, kind: 'running' }, (t) => manager.pause(t.id)),
-    /** "Carry on with the trip planning": the one paused task the words name. */
-    resume: ({ id }) => act(manager, id, { accept: (t) => t.status === 'paused', kind: 'paused' }, (t) => manager.resume(t.id)),
+    /** "Carry on with the trip planning": the one paused or blocked task the words name, with the owner's pick for a blocked one. */
+    resume: ({ id, choice }) => act(manager, id, { accept: isHeld, kind: 'paused or blocked' }, (t) => manager.resume(t.id, { choice })),
   }
 }
 
@@ -97,7 +99,9 @@ export function taskServer(manager, { agents = null, drafts = null, approve = nu
       'so do not read it out unless asked. Anything a task needs approving shows its own card, named for the task. ' +
       'When the owner asks what you are working on, call list_tasks with active_only and answer in a sentence or two. ' +
       'pause_task, resume_task and cancel_task take the task\'s id or the owner\'s words for it ("the trip planning"); ' +
-      'if the answer asks which one, read out the candidates and ask. A paused task keeps its progress and resumes where the board left it.',
+      'if the answer asks which one, read out the candidates and ask. A paused task keeps its progress and resumes where the board left it. ' +
+      'A blocked task has stopped and needs the owner: say its note (why it is blocked, and the options) and, once the owner picks, ' +
+      'call resume_task with their choice. Never pick an option for the owner.',
     tools: [
       tool('spawn_task',
         'Start a background agent on a self-contained goal. Write the goal as a complete brief: the agent has no access to this conversation.',
@@ -122,8 +126,11 @@ export function taskServer(manager, { agents = null, drafts = null, approve = nu
       tool('pause_task', 'Pause a running or queued task: its session stops, its progress is kept, and it can be resumed later. "Pause the trip planning."',
         { id: z.string().max(200).describe('The task\'s id, or words from its title, e.g. "trip planning"; empty when only one task is running') },
         async (a) => reply(ops.pause(a))),
-      tool('resume_task', 'Resume a paused task, including one paused by a restart. It carries on from what the board recorded.',
-        { id: z.string().max(200).describe('The task\'s id, or words from its title; empty when only one task is paused') },
+      tool('resume_task', 'Resume a paused task (including one paused by a restart) or a blocked one. It carries on from what the board recorded; for a blocked task pass the option the owner chose.',
+        {
+          id: z.string().max(200).describe('The task\'s id, or words from its title; empty when only one task is paused or blocked'),
+          choice: z.string().max(500).optional().describe('For a blocked task: the option the owner chose (its letter, or their own words). Only what the owner said'),
+        },
         async (a) => reply(ops.resume(a))),
       tool('start_agent', startAgentText(agents),
         {
@@ -166,13 +173,26 @@ export function progressServer(report, ask) {
     alwaysLoad: true,
     tools: [
       tool('report_progress',
-        'Show progress on the Mission Board. Call it FIRST with a plan (2-8 short steps), then again as you start each step with its 1-based number and a one-line note.',
+        'Show progress on the Mission Board. Call it FIRST with a plan (2-8 short steps) and a check for each step, then again as you start each step ' +
+        'with its 1-based number and a one-line note. When a step is finished, run its check and send the result as checked. ' +
+        'If you cannot go on, send blocked with the reason and the owner\'s options, then stop.',
         {
           plan: z.array(z.string().max(80)).max(12).optional().describe('Step labels; send once, at the start'),
+          checks: z.array(z.string().max(160)).max(12).optional().describe('With plan, in the same order: how you will know each step worked, e.g. "the file exists and the tests pass"'),
+          risky: z.boolean().optional().describe('With plan: true when any step changes, sends, deletes, buys or runs something. The owner then approves the plan before you start; wait for the answer'),
           step: z.number().int().min(1).optional().describe('1-based number of the step you are now on'),
           note: z.string().max(160).optional().describe('One line on what you are doing right now'),
+          checked: z.object({
+            step: z.number().int().min(1).describe('1-based number of the step you checked'),
+            passed: z.boolean().describe('Did the step pass its check? Say false when it did not; never guess'),
+            evidence: z.string().max(200).optional().describe('What you saw that shows it, in a line'),
+          }).optional().describe('The result of one step\'s check, sent when that step is finished'),
+          blocked: z.object({
+            reason: z.string().min(1).max(300).describe('Why you cannot go on, in one sentence, as it follows "I\'m blocked because"'),
+            options: z.array(z.string().max(160)).min(2).max(4).describe('2 to 4 different things the owner could tell you to do next'),
+          }).optional().describe('Only when you are stuck and cannot decide for yourself: this stops the task and hands it to the owner'),
         },
-        async (a) => reply(report(a))),
+        async (a) => reply(await report(a))),
       tool('ask_owner',
         'Ask the owner ONE short question when you cannot continue without a decision. It waits for their typed answer on the board. Do not use it for things you can reasonably decide yourself.',
         { question: z.string().min(1).max(500) },
