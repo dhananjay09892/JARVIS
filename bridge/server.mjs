@@ -115,6 +115,7 @@ import { appleCalendarConnector } from './connectors/apple_calendar.mjs'
 import { appleContactsConnector } from './connectors/apple_contacts.mjs'
 import { appleNotesConnector } from './connectors/apple_notes.mjs'
 import { appleMusicConnector } from './connectors/apple_music.mjs'
+import { imessageConnector } from './connectors/imessage.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { newsRssConnector, NEWS_RSS_OPTIONS } from './connectors/news_rss.mjs'
 import { googleTasksConnector } from './connectors/google_tasks.mjs'
@@ -803,6 +804,12 @@ connectors.registerAll([
     // from the Music app or iTunes); stream-parsed locally, read-only, any system.
     id: 'apple_music',
     create: (ctx) => appleMusicConnector().create(ctx),
+  },
+  {
+    // iMessage (task C39): macOS only; reads a private copy of the Messages database
+    // after Full Disk Access is granted. Read-only; never sends. Grouped by chat and day.
+    id: 'imessage',
+    create: (ctx) => imessageConnector().create(ctx),
   },
   {
     // Obsidian (task C13): grant access to one vault folder; reads its notes
