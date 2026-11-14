@@ -67,6 +67,7 @@ import { memoryServer, isMemoryTool } from './memory-tools.mjs'
 import { developmentServer } from './development.mjs'
 import { CODER_SERVER, coderServer, createCoderWorkspace } from './coder.mjs'
 import { approvalQueue } from './approvals.mjs'
+import { createInbox } from './approvals-inbox.mjs'
 import { createPolicy, writesEnabled, isVetoed, mcpServerOf } from './policy.mjs'
 import { createSeenUrls, createTaintTracker, guardOutbound, proxiedMediaIn } from './taint.mjs'
 import { UNTRUSTED_PROMPT, createPostToolUse, withoutUntrusted } from './untrusted.mjs'
@@ -3031,6 +3032,11 @@ wss.on('connection', (socket, req) => {
   const detachHub = approvalHub.attach(send)
   const detachTasks = taskManager.subscribe(send)
 
+  // One numbered list of every card waiting on the owner, answerable by voice
+  // from the owner's own last words and only for cards the page is showing.
+  let lastOwnerText = ''
+  const approvalInbox = createInbox(approvalHub, { ownerText: () => lastOwnerText })
+
   const approvals = approvalQueue({
     send,
     connected: () => !closed && socket.readyState === socket.OPEN,
@@ -3153,7 +3159,7 @@ wss.on('connection', (socket, req) => {
     jarvis_eyes: visionServer(ask),
     // Only the voice session gets this server, so only it can start or list
     // named agents; a worker never does (agent-runtime.mjs WORKER_RULES).
-    jarvis_tasks: taskServer(taskManager, { agents: switchedAgents, drafts: agentDrafter, approve: auditedApprove(approvalHub.request, audit, 'voice') }),
+    jarvis_tasks: taskServer(taskManager, { agents: switchedAgents, drafts: agentDrafter, approve: auditedApprove(approvalHub.request, audit, 'voice'), inbox: approvalInbox }),
     // Connector tools (plans/connectors): only granted, active ones; each
     // call is decided by the policy engine and again by the registry.
     ...connectorServerEntry(),
@@ -3348,6 +3354,7 @@ wss.on('connection', (socket, req) => {
     }
 
     if (msg.type === 'ask' && typeof msg.text === 'string') {
+      lastOwnerText = msg.text.slice(0, 500)
       /**
        * Queued behind any interrupt that is still settling.
        *
@@ -3411,6 +3418,11 @@ wss.on('connection', (socket, req) => {
 
     if (msg.type === 'task_pause' && typeof msg.id === 'string') {
       taskManager.pause(msg.id)
+      return
+    }
+
+    if (msg.type === 'approvals_shown') {
+      approvalInbox.shownByPage(msg.ids)
       return
     }
 
