@@ -227,6 +227,8 @@ export function createApprovalHub({ ttlMs = APPROVAL_TTL_MS } = {}) {
       })
     },
     reply: (id, approved) => settle(id, approved),
+    /** Everything waiting, oldest first (approvals-inbox.mjs). */
+    list: () => [...pending].map(([id, p]) => ({ id, title: p.title, details: p.details })),
     /** A connected browser receives everything still waiting. Returns a detach function. */
     attach(send) {
       listeners.add(send)

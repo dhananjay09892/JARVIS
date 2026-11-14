@@ -7,7 +7,7 @@ import { isActive, isHeld } from './tasks.mjs'
 
 const ORCHESTRATOR_TOOLS = [
   'spawn_task', 'list_tasks', 'task_status', 'cancel_task', 'pause_task', 'resume_task',
-  'draft_agent', 'start_team', 'start_agent', 'list_agents']
+  'list_approvals', 'answer_approvals', 'draft_agent', 'start_team', 'start_agent', 'list_agents']
 export const isTaskTool = (name) => ORCHESTRATOR_TOOLS.includes(name)
 
 const reply = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value) }] })
@@ -86,7 +86,7 @@ export async function draftAgentTool(drafts, approve, { description } = {}) {
  *   approval hub's request. Only the voice session builds this server, so
  *   only it can start, list or draft agents.
  */
-export function taskServer(manager, { agents = null, drafts = null, approve = null } = {}) {
+export function taskServer(manager, { agents = null, drafts = null, approve = null, inbox = null } = {}) {
   const ops = taskOperations(manager)
   const agentOps = agentOperations(manager, agents)
   return createSdkMcpServer({
@@ -101,7 +101,10 @@ export function taskServer(manager, { agents = null, drafts = null, approve = nu
       'pause_task, resume_task and cancel_task take the task\'s id or the owner\'s words for it ("the trip planning"); ' +
       'if the answer asks which one, read out the candidates and ask. A paused task keeps its progress and resumes where the board left it. ' +
       'A blocked task has stopped and needs the owner: say its note (why it is blocked, and the options) and, once the owner picks, ' +
-      'call resume_task with their choice. Never pick an option for the owner.',
+      'call resume_task with their choice. Never pick an option for the owner. ' +
+      'Approval cards from every mission wait in one numbered inbox on screen. list_approvals says what is waiting; read the numbered cards out if asked. ' +
+      'When the owner says to approve or deny some of them ("approve the first two"), call answer_approvals with no arguments: it reads the owner\'s own words and only ever ' +
+      'answers cards that are on screen. Never call it unless the owner just said to approve or deny, and never approve anything for the owner.',
     tools: [
       tool('spawn_task',
         'Start a background agent on a self-contained goal. Write the goal as a complete brief: the agent has no access to this conversation.',
@@ -132,6 +135,10 @@ export function taskServer(manager, { agents = null, drafts = null, approve = nu
           choice: z.string().max(500).optional().describe('For a blocked task: the option the owner chose (its letter, or their own words). Only what the owner said'),
         },
         async (a) => reply(ops.resume(a))),
+      tool('list_approvals', 'The approval cards waiting across all missions, numbered as on screen. Changes nothing.', {},
+        async () => reply(inbox ? inbox.summary() : { waiting: 0, cards: [] })),
+      tool('answer_approvals', 'Answer approval cards by the owner\'s last words ("approve the first two", "deny the third", "approve all"). Takes no arguments: the cards and the answer come from what the owner said, and only cards on screen are answered.', {},
+        async () => reply(inbox ? inbox.answerByVoice() : { answered: [], reason: 'The approvals inbox is not available.' })),
       tool('start_agent', startAgentText(agents),
         {
           agent: z.string().max(60).optional().describe('The agent\'s id or name, e.g. researcher'),

@@ -298,6 +298,12 @@ export function answerTask(id: string, text: string) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'task_answer', id, text }))
 }
 
+/** Tell the bridge which approval cards are on screen, in the order shown (the voice inbox answers only these). */
+export function reportApprovalsShown(ids: string[]) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) return
+  socket.send(JSON.stringify({ type: 'approvals_shown', ids }))
+}
+
 export function answerApproval(id: string, approved: boolean) {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     throw new Error('Bridge disconnected; action cannot be approved.')
