@@ -43,6 +43,7 @@ import { createAgentTriggers, triggerNotification } from './agent-triggers.mjs'
 import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenTools, narrowServers, narrowToolParams } from './agent-runtime.mjs'
 import { REVIEWER_ID, createReviewer } from './agent-review.mjs'
 import { createBus } from './bus.mjs'
+import { createNarrator, missionMetrics, narrateMode } from './mission-narration.mjs'
 import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.mjs'
 import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSource, timeSource } from './context-broker.mjs'
 import { createBriefing } from './briefing.mjs'
@@ -1841,6 +1842,11 @@ const handleRequest = async (req, res) => {
     res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
     return res.end(JSON.stringify(contextBroker.stats()))
   }
+  // Mission success rate, how often help was needed and cost per mission (plan 13; Q92). Numbers only.
+  if (requestUrl.pathname === '/missions/stats' && req.method === 'GET') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+    return res.end(JSON.stringify({ ...missionMetrics(taskManager.list()), narration: missionNarrator ? missionNarrator.stats() : { enabled: false } }))
+  }
   if (requestUrl.pathname === '/notifications/stats' && req.method === 'GET') {
     res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
     return res.end(JSON.stringify(notifier ? { enabled: alertsOn(setting('JARVIS_ALERTS')), ...notifier.stats() } : { enabled: false }))
@@ -2842,6 +2848,16 @@ const agentScheduler = createAgentScheduler({
   }),
   notificationFor: (task, at) => briefingRuns.notification(task, at) ?? runNotification(task, at),
 })
+/**
+ * Progress narration (mission-narration.mjs, plan 13 phase 5, Q92): a plain
+ * mission's milestones, "I'm blocked" and summary become alerts, and the
+ * notification policy decides whether each is said, shown or held. Nothing
+ * here speaks by itself.
+ */
+const missionNarrator = notifier
+  ? createNarrator({ notify: (n) => notifier.submit(n), mode: () => narrateMode(setting('JARVIS_MISSIONS_NARRATE')) })
+  : null
+if (missionNarrator) taskManager.subscribe((frame) => missionNarrator.observe(frame))
 /**
  * Triggered and continuous agents (agent-triggers.mjs): on the same ticker,
  * which keeps their bus subscriptions in step with the roster. Each is off

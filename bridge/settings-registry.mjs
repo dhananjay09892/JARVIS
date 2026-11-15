@@ -570,6 +570,18 @@ const DEFS = [
     visibleIn: 'advanced',
   },
   {
+    id: 'JARVIS_MISSIONS_NARRATE',
+    section: 'agents',
+    label: 'Mission updates',
+    help: 'How much a mission tells you on its own. Milestones: a few short updates, a summary at the end, and a message if it gets stuck. Only the end: the summary and any "I\'m stuck". Off: nothing unprompted. Either way, nothing is said while you are talking, busy or in quiet hours; it waits or shows on screen.',
+    type: 'enum',
+    options: ['milestones', 'done', 'off'],
+    default: 'milestones',
+    risk: 'normal',
+    apply: 'live',
+    visibleIn: 'advanced',
+  },
+  {
     id: 'JARVIS_AGENTS_REVIEWER',
     section: 'agents',
     label: 'Check agents\' work',
