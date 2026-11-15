@@ -98,6 +98,7 @@ const FALLBACK: Record<string, Pick<SettingDef, 'default' | 'options' | 'help'>>
   JARVIS_MISSIONS_OVERSPEND: { default: 'ask', options: ['ask', 'stop'], help: '' },
   JARVIS_MISSIONS_PLAN_APPROVAL: { default: 'risky', options: ['risky', 'always', 'never'], help: '' },
   JARVIS_MISSIONS_VERIFY: { default: '1', help: '' },
+  JARVIS_MISSIONS_NARRATE: { default: 'milestones', options: ['milestones', 'done', 'off'], help: '' },
   JARVIS_BRIEFING: { default: '1', help: '' },
   JARVIS_BRIEFING_MAIL: { default: '0', help: '' },
   JARVIS_BRIEFING_TIME: { default: 'off', help: '' },
@@ -454,6 +455,7 @@ export function Settings() {
   const missionsOverspend = def(schema, 'JARVIS_MISSIONS_OVERSPEND')
   const missionsPlan = def(schema, 'JARVIS_MISSIONS_PLAN_APPROVAL')
   const missionsVerify = def(schema, 'JARVIS_MISSIONS_VERIFY')
+  const missionsNarrate = def(schema, 'JARVIS_MISSIONS_NARRATE')
   const agentsMaxValue = s?.JARVIS_AGENTS_MAX_CONCURRENT || agentsMax.default
   const agentsDepthValue = s?.JARVIS_AGENTS_MAX_DEPTH || agentsDepth.default
   const agentsBlock = (
@@ -584,6 +586,18 @@ export function Settings() {
           onChange={(e) => patchSetting({ JARVIS_MISSIONS_VERIFY: e.target.checked ? '1' : '0' })}
         />{' '}
         Check a mission's result against what I asked
+      </label>
+      <label title={missionsNarrate.help || undefined}>
+        Mission updates{' '}
+        <select
+          value={s?.JARVIS_MISSIONS_NARRATE || missionsNarrate.default}
+          disabled={busy || !s}
+          onChange={(e) => patchSetting({ JARVIS_MISSIONS_NARRATE: e.target.value })}
+        >
+          <option value="milestones">A few updates and a summary</option>
+          <option value="done">Only the end, or if stuck</option>
+          <option value="off">Nothing unprompted</option>
+        </select>
       </label>
       <Agents />
     </>

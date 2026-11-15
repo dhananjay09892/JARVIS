@@ -73,6 +73,8 @@ export type PublicSettings = {
   JARVIS_MISSIONS_PLAN_APPROVAL: string
   /** '1' | '0' — read a mission's result against its goal before it is done. '' means the default (on). */
   JARVIS_MISSIONS_VERIFY: string
+  /** 'milestones' | 'done' | 'off' — what a mission says on its own. '' means the default (milestones). */
+  JARVIS_MISSIONS_NARRATE: string
   /** '1' | '0' — reviewer pass for agents that do not say otherwise. '' means the default (off). */
   JARVIS_AGENTS_REVIEWER: string
   JARVIS_AGENTS_PROPOSALS: string
