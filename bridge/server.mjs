@@ -118,6 +118,7 @@ import { appleContactsConnector } from './connectors/apple_contacts.mjs'
 import { appleNotesConnector } from './connectors/apple_notes.mjs'
 import { appleMusicConnector } from './connectors/apple_music.mjs'
 import { imessageConnector } from './connectors/imessage.mjs'
+import { whatsappConnector } from './connectors/whatsapp.mjs'
 import { weatherConnector, WEATHER_OPTIONS } from './connectors/weather.mjs'
 import { newsRssConnector, NEWS_RSS_OPTIONS } from './connectors/news_rss.mjs'
 import { googleTasksConnector } from './connectors/google_tasks.mjs'
@@ -812,6 +813,12 @@ connectors.registerAll([
     // after Full Disk Access is granted. Read-only; never sends. Grouped by chat and day.
     id: 'imessage',
     create: (ctx) => imessageConnector().create(ctx),
+  },
+  {
+    // WhatsApp chat export (task C40): grant access to one folder of exported chats
+    // (.txt or .zip); parsed locally, read-only, no account, never sends.
+    id: 'whatsapp',
+    create: (ctx) => whatsappConnector().create(ctx),
   },
   {
     // Obsidian (task C13): grant access to one vault folder; reads its notes
