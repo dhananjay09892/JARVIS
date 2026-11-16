@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { fetchTraceStats, traceDiag, type TraceStats } from '../lib/trace'
 import { listConnectors, type ConnectorHealth } from '../lib/connectors'
 import { fetchSetupStats, WIZARD_STEPS, type SetupStats } from '../lib/setupMetrics'
+import { fetchMissionStats, missionRows, type MissionStats } from '../lib/missionStats'
 import { BRIDGE_HTTP_URL } from '../config'
 
 /**
@@ -164,6 +165,22 @@ export function Diagnostics() {
     }
   }, [open])
 
+  // Plan 13 (Q128): mission success rate, help needed and cost per mission.
+  const [missions, setMissions] = useState<MissionStats | null | undefined>(undefined)
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    const load = () => {
+      void fetchMissionStats(BRIDGE_HTTP_URL).then((st) => alive && setMissions(st))
+    }
+    load()
+    const id = setInterval(load, 10_000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [open])
+
   if (!open) return null
 
   const w = window as unknown as Record<string, unknown>
@@ -290,6 +307,13 @@ export function Diagnostics() {
         </>
       ) : (
         <Row k="status" v={health === undefined ? '…' : 'bridge unreachable'} bad={health === null} />
+      )}
+
+      <div className="diag-sec">MISSIONS · plan 13</div>
+      {missions ? (
+        missionRows(missions).map((r) => <Row key={r.k} k={r.k} v={r.v} bad={r.bad} />)
+      ) : (
+        <Row k="status" v={missions === undefined ? '…' : 'bridge unreachable'} bad={missions === null} />
       )}
 
       <div className="diag-sec">SETUP · plan 29</div>

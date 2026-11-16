@@ -44,6 +44,7 @@ import { agentBrain, agentGuard, agentModel, agentPrompt, agentToolPlan, hiddenT
 import { REVIEWER_ID, createReviewer } from './agent-review.mjs'
 import { createBus } from './bus.mjs'
 import { createNarrator, missionMetrics, narrateMode } from './mission-narration.mjs'
+import { EVENT_TOPICS, createMissionScheduler, createScheduleStore, missionScheduleFile } from './mission-schedule.mjs'
 import { alertsOn, createNotifier, DEFAULT_QUIET_HOURS } from './notify-policy.mjs'
 import { budgetFrom, createContextBroker, hasPrivate, renderContext, systemSource, timeSource } from './context-broker.mjs'
 import { createBriefing } from './briefing.mjs'
@@ -1854,6 +1855,47 @@ const handleRequest = async (req, res) => {
     res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
     return res.end(JSON.stringify({ ...missionMetrics(taskManager.list()), narration: missionNarrator ? missionNarrator.stats() : { enabled: false } }))
   }
+  // Recurring and event-driven plain missions (plan 13 phase 7; Q128). Reading
+  // is open like the other stats; saving, switching and removing need one of
+  // our own pages (an allowed Origin), as settings writes do.
+  if (requestUrl.pathname === '/missions/schedules' || requestUrl.pathname.startsWith('/missions/schedules/')) {
+    const headers = { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' }
+    if (req.method === 'GET' && requestUrl.pathname === '/missions/schedules') {
+      res.writeHead(200, headers)
+      return res.end(JSON.stringify({ schedules: missionSchedules.list(), eventTopics: EVENT_TOPICS }))
+    }
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    // POST /missions/schedules adds; POST /missions/schedules/<id> switches on or off;
+    // POST /missions/schedules/<id>/remove removes (the page may only use GET, POST, PATCH).
+    const rest = requestUrl.pathname.slice('/missions/schedules'.length).replace(/^\//, '').split('/')
+    const id = rest[0]
+    const removing = rest[1] === 'remove'
+    let out = null
+    if (req.method === 'POST' && id && removing) out = missionSchedules.remove(id)
+    else if (req.method === 'POST' && rest.length <= 1) {
+      let raw = ''
+      for await (const chunk of req) {
+        raw += chunk
+        if (raw.length > 8192) {
+          req.destroy()
+          res.writeHead(400, cors)
+          return res.end('body too large')
+        }
+      }
+      let body = {}
+      try { body = raw ? JSON.parse(raw) : {} } catch { body = {} }
+      out = id ? missionSchedules.setEnabled(id, body?.enabled === true) : missionSchedules.add(body)
+    }
+    if (!out) {
+      res.writeHead(405, cors)
+      return res.end('method not allowed')
+    }
+    res.writeHead(out.ok ? 200 : 400, headers)
+    return res.end(JSON.stringify(out))
+  }
   if (requestUrl.pathname === '/notifications/stats' && req.method === 'GET') {
     res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
     return res.end(JSON.stringify(notifier ? { enabled: alertsOn(setting('JARVIS_ALERTS')), ...notifier.stats() } : { enabled: false }))
@@ -2866,6 +2908,13 @@ const missionNarrator = notifier
   : null
 if (missionNarrator) taskManager.subscribe((frame) => missionNarrator.observe(frame))
 /**
+ * Recurring and event-driven plain missions (mission-schedule.mjs, plan 13
+ * phase 7, Q128): saved by the owner, started as ordinary missions, so the
+ * cap, budget, pause and kill switch apply; narrated like any mission.
+ */
+const missionSchedules = createScheduleStore({ file: missionScheduleFile() })
+const missionScheduler = createMissionScheduler({ store: missionSchedules, tasks: taskManager, bus, paused: agentSettings.paused })
+/**
  * Triggered and continuous agents (agent-triggers.mjs): on the same ticker,
  * which keeps their bus subscriptions in step with the roster. Each is off
  * until switched on; the event is untrusted input; loop guards (own finish,
@@ -2901,10 +2950,12 @@ const meetingSource = createMeetingSource({
 if (engine) {
   engine.addJob(agentScheduler)
   engine.addJob(agentTriggers)
+  engine.addJob(missionScheduler)
   engine.addJob(meetingSource)
 } else {
   startTicker(() => agentScheduler.tick())
   startTicker(() => agentTriggers.tick())
+  startTicker(() => missionScheduler.tick())
   startTicker(() => meetingSource.tick())
 }
 
