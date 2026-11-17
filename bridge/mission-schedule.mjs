@@ -58,6 +58,14 @@ export const EVENT_MAX_PER_HOUR = 4
  * Topics an event schedule may wait on. Each has a payload check on the bus
  * (bus.mjs PUBLISHABLE), and no mission publishes any of them. More topics
  * are added here one at a time, once it is clear a mission cannot cause them.
+ *
+ * Reviewed for Q129, every topic the bus can carry today: `task.finished` and
+ * `workflow.*` are caused by missions (a loop); `notification.*` are caused by
+ * a mission's own narration; `channel.*` are caused by whoever messages the
+ * bot, so any sender could start a mission; `freeze.*` stop work rather than
+ * start it. None is added. `presence.changed`, `device.event` and `health.check`
+ * have no payload check yet, so nothing can publish them. Revisit when smart
+ * home (plan 09) and presence (plan 11) arrive.
  */
 export const EVENT_TOPICS = Object.freeze(['meeting.ended'])
 export { MAX_CATCH_UP_MS }
