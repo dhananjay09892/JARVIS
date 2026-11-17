@@ -4,6 +4,7 @@ import { BACKEND, BRIDGE_HTTP_URL } from '../config'
 import { Agents } from './Agents'
 import { Connectors } from './Connectors'
 import { Channels } from './Channels'
+import { MissionSchedules } from './MissionSchedules'
 import { OpenAISignIn } from './OpenAISignIn'
 import { SelfTest } from './SelfTest'
 import { setQuickStart } from '../lib/tts'
@@ -1169,6 +1170,9 @@ export function Settings() {
 
             <h3>Agents</h3>
             {agentsBlock}
+
+            <h3>Scheduled missions</h3>
+            <MissionSchedules />
 
             <h3>Connectors</h3>
             <Connectors />
