@@ -76,6 +76,26 @@ If you turn on Settings > Channels > Telegram and add your own bot's token:
   of JARVIS's actions and his chat replies; only the app on this computer can
   unfreeze him.
 
+MESSAGING JARVIS FROM SLACK (OFF UNLESS YOU TURN IT ON)
+If you turn on Settings > Channels > Slack and add your own Slack app's bot
+token and app-level token:
+- What leaves this computer: your direct messages to the app and JARVIS's
+  replies, and your Slack user id. JARVIS does not download files or voice
+  clips yet; it only reads typed text. The brain you use (for example Claude)
+  sees the text of each message for that turn, as it does with speech.
+- Who can read it: Slack, and the administrators of your Slack workspace,
+  who may be able to export direct messages depending on your plan. Slack
+  messages are not end-to-end encrypted. Private answers (things from your
+  mail, calendar or files) are off for Slack unless you turn them on.
+- How long Slack keeps it: under your workspace's retention settings.
+- How to delete it: delete the messages in Slack (or ask your workspace
+  admin), revoke the pairing in Settings > Channels, and remove the app from
+  your workspace.
+- What stays here: who is paired, in JARVIS's local data folder. People you
+  have not paired get no answer at all. Sending "freeze" to the app stops all
+  of JARVIS's actions and his chat replies; only the app on this computer can
+  unfreeze him.
+
 VOICEPRINTS (SPEAKER RECOGNITION)
 Speaker recognition is off by default. When you turn it on and enrol someone,
 JARVIS turns a few seconds of their speech into a list of numbers (a
