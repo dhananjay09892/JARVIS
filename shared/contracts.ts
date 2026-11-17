@@ -283,7 +283,7 @@ export type Mission = z.infer<typeof Mission>
 
 export const ChannelMessage = z.object({
   ...envelope,
-  channel: z.enum(['telegram', 'sms', 'whatsapp', 'signal', 'email']),
+  channel: z.enum(['telegram', 'slack', 'sms', 'whatsapp', 'signal', 'email']),
   /** The channel's own sender id; checked against the allow-list before anything else. */
   senderId: z.string().min(1).max(256),
   /** Filled in only after the allow-list matched the sender. */
@@ -299,7 +299,7 @@ export const ChannelMessage = z.object({
 })
 export type ChannelMessage = z.infer<typeof ChannelMessage>
 
-export const ChannelId = z.enum(['telegram', 'sms', 'whatsapp', 'signal', 'email'])
+export const ChannelId = z.enum(['telegram', 'slack', 'sms', 'whatsapp', 'signal', 'email'])
 
 /**
  * Who may talk to JARVIS over a channel (plan 20 spec §4.1; Q36 built it in

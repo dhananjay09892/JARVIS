@@ -24,13 +24,18 @@ export const CHANNEL_SETTINGS = Object.freeze([
   'JARVIS_CHANNELS',
   'JARVIS_TELEGRAM',
   'TELEGRAM_BOT_TOKEN',
+  'JARVIS_SLACK',
+  'JARVIS_CHANNEL_PRIVATE_SLACK',
+  'SLACK_BOT_TOKEN',
+  'SLACK_APP_TOKEN',
   'JARVIS_CHANNEL_PRIVATE_TELEGRAM',
   'JARVIS_CHANNEL_LIMITS',
 ])
 
 /** Adapters this build has, and the setting that switches each on. */
-export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM' })
-const SECRETS = Object.freeze({ telegram: 'TELEGRAM_BOT_TOKEN' })
+export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', slack: 'JARVIS_SLACK' })
+/** The vault secrets each adapter needs; it starts only when all are set. */
+const SECRETS = Object.freeze({ telegram: ['TELEGRAM_BOT_TOKEN'], slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'] })
 
 const BUS_TOPIC = { received: 'channel.received', rejected: 'channel.rejected', sent: 'channel.sent' }
 const NOTICE_KINDS = ['pairing-match', 'pairing-burnt', 'unknown-senders', 'frozen-from-chat']
@@ -87,7 +92,7 @@ export function createChannelService({
   const getSecret = (name) => setting(name)
   const masterOn = () => on(setting('JARVIS_CHANNELS'))
   const channelOn = (id) => on(setting(CHANNEL_SWITCHES[id]))
-  const tokenSet = (id) => Boolean(setting(SECRETS[id]))
+  const tokenSet = (id) => SECRETS[id].every((name) => Boolean(setting(name)))
   const dayKey = () => new Date(now()).toISOString().slice(0, 10)
 
   const list = () => {
@@ -177,7 +182,7 @@ export function createChannelService({
       isFrozen: killSwitch.isFrozen,
       freeze: () => killSwitch.freeze('chat'),
       notify,
-      settings: { privateTelegram: setting('JARVIS_CHANNEL_PRIVATE_TELEGRAM') !== '0' },
+      settings: { privateTelegram: setting('JARVIS_CHANNEL_PRIVATE_TELEGRAM') !== '0', privateSlack: on(setting('JARVIS_CHANNEL_PRIVATE_SLACK')) },
       log,
     })
     config = want
@@ -244,6 +249,7 @@ export function createChannelService({
     return {
       enabled: masterOn(),
       privateTelegram: setting('JARVIS_CHANNEL_PRIVATE_TELEGRAM') !== '0',
+      privateSlack: on(setting('JARVIS_CHANNEL_PRIVATE_SLACK')),
       limits: setting('JARVIS_CHANNEL_LIMITS') || '20/min,300/day',
       frozen: killSwitch.state(),
       channels,
@@ -259,7 +265,7 @@ export function createChannelService({
 
   /** The token "test" button: one getMe call. Works with the switch off, since you pressed it. */
   async function test(channel) {
-    if (!tokenSet(channel)) return no(400, 'No bot token is set.')
+    if (!tokenSet(channel)) return no(400, 'The token is not set.')
     try {
       const running = pipeline?.adapters[channel]
       const adapter = running ?? (await registry[channel]()).createAdapter({ getSecret, log, ...adapterDeps })

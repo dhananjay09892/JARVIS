@@ -98,6 +98,14 @@ export type PublicSettings = {
   TELEGRAM_BOT_TOKEN_set: boolean
   /** '1' | '0' — private answers to the owner on Telegram. '' means the default (on). */
   JARVIS_CHANNEL_PRIVATE_TELEGRAM: string
+  /** '1' | '0' — the Slack direct-message channel. '' means the default (off). */
+  JARVIS_SLACK: string
+  /** Whether a Slack bot token is saved. The token itself never reaches the page. */
+  SLACK_BOT_TOKEN_set: boolean
+  /** Whether a Slack app-level token is saved. The token itself never reaches the page. */
+  SLACK_APP_TOKEN_set: boolean
+  /** '1' | '0' — private answers to the owner on Slack. '' means the default (off). */
+  JARVIS_CHANNEL_PRIVATE_SLACK: string
   /** 'N/min,M/day' per paired person. '' means the default (20/min,300/day). */
   JARVIS_CHANNEL_LIMITS: string
   setupDone: string

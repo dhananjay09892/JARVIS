@@ -27,6 +27,7 @@ import { createLimits } from './limits.mjs'
 /** Adapters by id. An adapter is imported and constructed only when enabled. */
 export const ADAPTERS = Object.freeze({
   telegram: () => import('./telegram.mjs'),
+  slack: () => import('./slack.mjs'),
 })
 
 export const REPLIES = Object.freeze({
@@ -77,7 +78,7 @@ export function senderHasher(salt = randomBytes(16)) {
  * @param {() => boolean} [deps.isFrozen]
  * @param {() => void} [deps.freeze]              sets the kill switch (bus `freeze.on`)
  * @param {(n: { kind: string, channel: string, [k: string]: unknown }) => void} [deps.notify]  HUD notices
- * @param {{ privateTelegram?: boolean }} [deps.settings]
+ * @param {{ privateTelegram?: boolean, privateSlack?: boolean }} [deps.settings]
  */
 export function createChannels({
   enabled = false,
@@ -144,7 +145,7 @@ export function createChannels({
     if (sensitivity === 'vault') return REPLIES.vault
     if (sensitivity === 'private') {
       const scope = chatScope(binding)
-      const allowed = scope.privateReplies && (adapter.capabilities().endToEnd || (binding.role === 'owner' ? settings.privateTelegram !== false : true))
+      const allowed = scope.privateReplies && (adapter.capabilities().endToEnd || (binding.role === 'owner' ? (adapter.id === 'slack' ? settings.privateSlack === true : settings.privateTelegram !== false) : true))
       if (!allowed) return REPLIES.private
       // A bland first line, so a lock-screen preview shows nothing (D2).
       return `${REPLIES.privateLead}\n\n${text}`
