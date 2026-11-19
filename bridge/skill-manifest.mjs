@@ -55,6 +55,7 @@ const TOPIC = /^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+$/
 const INPUT_NAME = /^[a-z][A-Za-z0-9_]{0,39}$/
 // A host name, optionally with a leading `*.`; no scheme, port, path or bare wildcard.
 const DOMAIN = /^(?:\*\.)?(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
+const SCRIPT_FILE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,59}\.js$/
 const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,59}$/
 const TEMPLATE = /\{\{\s*input\.([A-Za-z0-9_]*)\s*\}\}/g
 
@@ -97,7 +98,7 @@ export function checkSkillManifest(m) {
   const err = (path, message) => errors.push(`${path}: ${message}`)
   unknownKeys(m, [
     'v', 'id', 'name', 'version', 'author', 'description', 'riskTier',
-    'permissions', 'triggers', 'inputs', 'dataUse', 'steps',
+    'permissions', 'triggers', 'inputs', 'dataUse', 'steps', 'script',
   ], '(root)', err)
   const out = {}
 
@@ -201,7 +202,15 @@ export function checkSkillManifest(m) {
 
   // steps: declarative tool calls; each tool must be one the skill declared.
   out.steps = []
-  if (!Array.isArray(m.steps) || m.steps.length < 1 || m.steps.length > MAX_STEPS) {
+  // script: optional file in the skill folder, run only in the sandbox
+  // (skill-sandbox.mjs). A skill with a script may have no declarative steps.
+  if (m.script !== undefined) {
+    if (!isString(m.script) || !SCRIPT_FILE.test(m.script)) err('script', 'must be a file name ending in .js, in the skill folder')
+    else out.script = m.script
+  }
+  if (out.script !== undefined && (m.steps === undefined || (Array.isArray(m.steps) && m.steps.length === 0))) {
+    // Script only: nothing to check.
+  } else if (!Array.isArray(m.steps) || m.steps.length < 1 || m.steps.length > MAX_STEPS) {
     err('steps', `a skill needs 1 to ${MAX_STEPS} steps`)
   } else {
     m.steps.forEach((s, i) => {
@@ -242,6 +251,7 @@ export function checkSkillManifest(m) {
     const effectful = out.permissions.tools.some((t) => toolEffect(t) === 'action')
       || Object.values(out.permissions.connectors).includes('write')
     const reachesOut = out.permissions.domains.length > 0 || out.permissions.spend.maxCostUsd > 0
+    if (out.script !== undefined && out.riskTier === 'low') err('riskTier', 'a skill with a script cannot be low risk')
     if (effectful && out.riskTier === 'low') err('riskTier', 'a skill that can act, write or spend cannot be low risk')
     if (effectful && out.permissions.spend.maxCostUsd > 0 && out.riskTier !== 'high') err('riskTier', 'a skill that can spend money must be high risk')
     if (reachesOut && out.riskTier === 'low') err('riskTier', 'a skill that reaches the internet or spends cannot be low risk')
