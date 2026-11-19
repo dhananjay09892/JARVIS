@@ -1727,6 +1727,31 @@ const handleRequest = async (req, res) => {
   // The card reads GET /connectors (no secrets in it). Every change needs a
   // real, allowed Origin, as settings writes do. A pasted token goes straight
   // to the adapter's connect(), which keeps it in the credential store.
+  // ---- SMS webhook (task C45) -----------------------------------------
+  // Twilio (through a relay or tunnel the owner set up) posts each incoming
+  // text here. No Origin and no session: the adapter checks Twilio's signature
+  // over the address in Settings and refuses everything else. With the SMS
+  // channel off this is a plain 404.
+  if (requestUrl.pathname === '/inbound/sms') {
+    const none = { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }
+    if (req.method !== 'POST') {
+      res.writeHead(404, none)
+      return res.end()
+    }
+    let raw = ''
+    for await (const chunk of req) {
+      raw += chunk
+      if (raw.length > 16 * 1024) {
+        req.destroy()
+        res.writeHead(413, none)
+        return res.end()
+      }
+    }
+    const out = await channels.inbound('sms', { headers: req.headers, body: raw })
+    res.writeHead(out.status, { 'content-type': out.contentType, 'cache-control': 'no-store' })
+    return res.end(out.body)
+  }
+
   // ---- Messaging channels (plan 20, Q79) --------------------------------
   // Settings → Channels: status, pairing, bindings, the token test, freeze.
   // Same Origin rule as connectors for anything that changes state.

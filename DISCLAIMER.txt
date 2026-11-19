@@ -96,6 +96,29 @@ token and app-level token:
   of JARVIS's actions and his chat replies; only the app on this computer can
   unfreeze him.
 
+MESSAGING JARVIS BY SMS (OFF UNLESS YOU TURN IT ON)
+If you turn on Settings > Channels > SMS and add your own Twilio account's
+SID, auth token, phone number and web address (there is a monthly message
+limit, 50 unless you change it):
+- What leaves this computer: JARVIS's replies, and the number they go to, to
+  Twilio, which sends them over the mobile networks. Your texts to JARVIS come
+  from Twilio to a web address you set up yourself (a relay or tunnel you
+  choose). The brain you use (for example Claude) sees the text of each message
+  for that turn. JARVIS does not download pictures or voice clips.
+- Who can read it: Twilio and the mobile carriers. SMS is not encrypted and
+  the sender's number can be faked, so JARVIS never sends private answers (mail,
+  calendar, files, health, money) by SMS, never asks for approvals by SMS, and
+  does not take "freeze" from it; do that in the app.
+- Cost: Twilio charges for the number and for every message. JARVIS stops
+  sending when your monthly limit is reached; the limit counts messages sent
+  by JARVIS and starts again from zero when the app restarts, so also set a
+  spending limit in your Twilio account.
+- How long Twilio keeps it: under your Twilio account's logging settings.
+- How to delete it: delete the message logs in the Twilio console, revoke the
+  pairing in Settings > Channels, and release the number if you no longer want it.
+- What stays here: who is paired, in JARVIS's local data folder. Numbers you
+  have not paired get no answer at all.
+
 VOICEPRINTS (SPEAKER RECOGNITION)
 Speaker recognition is off by default. When you turn it on and enrol someone,
 JARVIS turns a few seconds of their speech into a list of numbers (a

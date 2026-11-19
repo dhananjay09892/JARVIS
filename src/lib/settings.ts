@@ -106,6 +106,18 @@ export type PublicSettings = {
   SLACK_APP_TOKEN_set: boolean
   /** '1' | '0' — private answers to the owner on Slack. '' means the default (off). */
   JARVIS_CHANNEL_PRIVATE_SLACK: string
+  /** '1' | '0' — the SMS channel over Twilio. '' means the default (off). */
+  JARVIS_SMS: string
+  /** Whether a Twilio account SID is saved. The SID itself never reaches the page. */
+  TWILIO_ACCOUNT_SID_set: boolean
+  /** Whether a Twilio auth token is saved. The token itself never reaches the page. */
+  TWILIO_AUTH_TOKEN_set: boolean
+  /** Whether the Twilio number is saved. The number itself never reaches the page. */
+  TWILIO_PHONE_NUMBER_set: boolean
+  /** Whether the public webhook address is saved. The address itself never reaches the page. */
+  TWILIO_WEBHOOK_URL_set: boolean
+  /** The most SMS messages JARVIS sends in a month. '' means the default (50). */
+  JARVIS_SMS_MONTHLY_CAP: string
   /** 'N/min,M/day' per paired person. '' means the default (20/min,300/day). */
   JARVIS_CHANNEL_LIMITS: string
   setupDone: string
