@@ -38,6 +38,7 @@ export type ChannelsStatus = {
   ok: true
   enabled: boolean
   privateTelegram: boolean
+  privateSlack?: boolean
   limits: string
   frozen: { frozen: boolean; source?: 'chat' | 'hud'; at?: number }
   channels: Record<string, {

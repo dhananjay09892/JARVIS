@@ -12,6 +12,16 @@ import {
   type ChannelsStatus,
   type PairingState,
 } from '../lib/channels'
+import {
+  CHANNEL_CARDS,
+  clearPatch,
+  privateAnswers,
+  privatePatch,
+  runningNote,
+  switchPatch,
+  tokenPatch,
+  type ChannelCardSpec,
+} from '../lib/channelsView'
 import { saveSettings } from '../lib/settings'
 
 /**
@@ -39,8 +49,7 @@ export function Channels() {
   const [st, setSt] = useState<ChannelsStatus | null>(null)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
-  const [token, setToken] = useState('')
-  const [code, setCode] = useState<{ code: string; expiresAt: number } | null>(null)
+  const [code, setCode] = useState<{ code: string; expiresAt: number; channel: string } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -86,8 +95,6 @@ export function Channels() {
 
   if (!st) return note ? <p className="mem-note">{note}</p> : null
 
-  const tg = st.channels.telegram
-  const pairing: PairingState = tg?.pairing ?? { state: 'none' }
   const bindings = st.bindings.filter((b) => b.status === 'active')
 
   return (
@@ -120,94 +127,19 @@ export function Channels() {
         </button>
       )}
 
-      <section className="conn-card" aria-labelledby="chan-telegram">
-        <h4 id="chan-telegram">Telegram</h4>
-        <label>
-          <input
-            type="checkbox"
-            checked={tg?.on ?? false}
-            disabled={busy}
-            onChange={(e) => void save({ JARVIS_TELEGRAM: e.target.checked ? '1' : '0' })}
-          />{' '}
-          Use my Telegram bot
-        </label>
-        <p className="mem-note">
-          Create a bot with @BotFather in Telegram and paste its token here. Bot chats are not end-to-end encrypted.
-          {tg?.running ? ' Running.' : st.enabled && tg?.on && !tg.tokenSet ? ' Needs a token.' : ''}
-          {tg?.health?.lastError ? ` Last problem: ${tg.health.lastError}` : ''}
-        </p>
-        <div className="mem-add">
-          <label>
-            Bot token: {tg?.tokenSet ? 'saved ✓' : 'not set'}{' '}
-            <input
-              type="password"
-              autoComplete="off"
-              value={token}
-              placeholder="123456789:AA…"
-              aria-label="Telegram bot token"
-              onChange={(e) => setToken(e.target.value)}
-            />
-          </label>
-          <button
-            disabled={busy || !token.trim()}
-            onClick={async () => {
-              const r = await save({ TELEGRAM_BOT_TOKEN: token.trim() }, 'Token saved.')
-              if (r?.ok) setToken('')
-            }}
-          >
-            Save
-          </button>
-          {tg?.tokenSet && (
-            <>
-              <button disabled={busy} onClick={() => void act(() => testChannel('telegram'), (r) => `The token works: @${r.username ?? 'your bot'}.`)}>
-                Test
-              </button>
-              <button disabled={busy} onClick={() => void save({ TELEGRAM_BOT_TOKEN: '' }, 'Token removed.')}>
-                Remove
-              </button>
-            </>
-          )}
-        </div>
-
-        {tg?.running && (
-          <div className="mem-add">
-            {pairing.state === 'confirm' ? (
-              <>
-                <span>
-                  Telegram account <strong>{pairing.senderLabel || pairing.senderId}</strong> ({pairing.senderId}) sent the code.
-                  Is that you?
-                </span>{' '}
-                <button disabled={busy} onClick={() => void act(() => confirmPairing('telegram'), () => 'Paired.').then(() => setCode(null))}>
-                  Confirm
-                </button>
-                <button disabled={busy} onClick={() => void act(() => cancelPairing('telegram'), () => 'Cancelled.').then(() => setCode(null))}>
-                  Cancel
-                </button>
-              </>
-            ) : code && pairing.state === 'open' ? (
-              <>
-                <span>
-                  Send <code>/pair {code.code}</code> to your bot from your own Telegram account within 10 minutes. The bot will
-                  not answer; Confirm appears here.
-                </span>{' '}
-                <button disabled={busy} onClick={() => void act(() => cancelPairing('telegram'), () => 'Cancelled.').then(() => setCode(null))}>
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button
-                disabled={busy || bindings.some((b) => b.channel === 'telegram' && b.role === 'owner')}
-                onClick={async () => {
-                  const r = await act(() => startPairing('telegram'))
-                  if (r?.ok && r.code && r.expiresAt) setCode({ code: r.code, expiresAt: r.expiresAt })
-                }}
-              >
-                Pair my Telegram account
-              </button>
-            )}
-          </div>
-        )}
-      </section>
+      {CHANNEL_CARDS.map((spec) => (
+        <ChannelCard
+          key={spec.id}
+          spec={spec}
+          st={st}
+          busy={busy}
+          bindings={bindings}
+          code={code?.channel === spec.id ? code : null}
+          setCode={(c) => setCode(c ? { ...c, channel: spec.id } : null)}
+          act={act}
+          save={save}
+        />
+      ))}
 
       {bindings.length > 0 && (
         <fieldset className="conn-grants">
@@ -229,17 +161,6 @@ export function Channels() {
         </fieldset>
       )}
 
-      <label>
-        <input
-          type="checkbox"
-          checked={st.privateTelegram}
-          disabled={busy}
-          onChange={(e) => void save({ JARVIS_CHANNEL_PRIVATE_TELEGRAM: e.target.checked ? '1' : '0' })}
-        />{' '}
-        Answer me on Telegram with things from my mail, calendar and files
-      </label>
-      <p className="mem-note">Off: he says it is private and to look in the app. Vault items never go to a chat.</p>
-
       {st.notices.slice(-3).map((n) => (
         <p key={`${n.kind}-${n.at}`} className="mem-note">
           {when(n.at)}: {NOTICE_LABEL[n.kind] ?? n.kind}
@@ -254,5 +175,140 @@ export function Channels() {
       )}
       {note && <p className="mem-note">{note}</p>}
     </>
+  )
+}
+
+type Act = (fn: () => Promise<ChannelReply>, done?: (r: ChannelReply) => string) => Promise<ChannelReply>
+
+function ChannelCard({
+  spec,
+  st,
+  busy,
+  bindings,
+  code,
+  setCode,
+  act,
+  save,
+}: {
+  spec: ChannelCardSpec
+  st: ChannelsStatus
+  busy: boolean
+  bindings: ChannelsStatus['bindings']
+  code: { code: string; expiresAt: number } | null
+  setCode: (c: { code: string; expiresAt: number } | null) => void
+  act: Act
+  save: (patch: Record<string, string>, done?: string) => Promise<ChannelReply>
+}) {
+  const [typed, setTyped] = useState<Record<string, string>>({})
+  const ch = st.channels[spec.id]
+  const pairing: PairingState = ch?.pairing ?? { state: 'none' }
+  const heading = `chan-${spec.id}`
+  const note = runningNote(st.enabled, ch, spec)
+  const anyTyped = spec.secrets.some((s) => tokenPatch(s, typed[s.setting] ?? ''))
+
+  const saveTokens = async () => {
+    const patch = Object.assign({}, ...spec.secrets.map((s) => tokenPatch(s, typed[s.setting] ?? '')))
+    const r = await save(patch, spec.secrets.length > 1 ? 'Tokens saved.' : 'Token saved.')
+    if (r?.ok) setTyped({})
+  }
+
+  return (
+    <section className="conn-card" aria-labelledby={heading}>
+      <h4 id={heading}>{spec.title}</h4>
+      <label>
+        <input
+          type="checkbox"
+          checked={ch?.on ?? false}
+          disabled={busy}
+          onChange={(e) => void save(switchPatch(spec, e.target.checked))}
+        />{' '}
+        {spec.switchLabel}
+      </label>
+      <p className="mem-note">
+        {spec.intro}
+        {note ? ` ${note}` : ''}
+      </p>
+      <div className="mem-add">
+        {spec.secrets.map((s) => (
+          <label key={s.setting}>
+            {s.label}{' '}
+            <input
+              type="password"
+              autoComplete="off"
+              value={typed[s.setting] ?? ''}
+              placeholder={s.placeholder}
+              aria-label={`${spec.title} ${s.label.toLowerCase()}`}
+              onChange={(e) => setTyped((t) => ({ ...t, [s.setting]: e.target.value }))}
+            />
+          </label>
+        ))}
+        <span>{ch?.tokenSet ? 'saved ✓' : 'not set'}</span>{' '}
+        <button disabled={busy || !anyTyped} onClick={() => void saveTokens()}>
+          Save
+        </button>
+        {ch?.tokenSet && (
+          <>
+            <button
+              disabled={busy}
+              onClick={() => void act(() => testChannel(spec.id), (r) => `The ${spec.secrets.length > 1 ? 'tokens work' : 'token works'}: ${r.username ? '@' + r.username : 'your ' + spec.title + ' app'}.`)}
+            >
+              Test
+            </button>
+            <button disabled={busy} onClick={() => void save(clearPatch(spec), 'Removed.')}>
+              Remove
+            </button>
+          </>
+        )}
+      </div>
+
+      {ch?.running && (
+        <div className="mem-add">
+          {pairing.state === 'confirm' ? (
+            <>
+              <span>
+                {spec.accountNoun} <strong>{pairing.senderLabel || pairing.senderId}</strong> ({pairing.senderId}) sent the code.
+                Is that you?
+              </span>{' '}
+              <button disabled={busy} onClick={() => void act(() => confirmPairing(spec.id), () => 'Paired.').then(() => setCode(null))}>
+                Confirm
+              </button>
+              <button disabled={busy} onClick={() => void act(() => cancelPairing(spec.id), () => 'Cancelled.').then(() => setCode(null))}>
+                Cancel
+              </button>
+            </>
+          ) : code && pairing.state === 'open' ? (
+            <>
+              <span>
+                {spec.pairInstruction(code.code)} It will not answer; Confirm appears here.
+              </span>{' '}
+              <button disabled={busy} onClick={() => void act(() => cancelPairing(spec.id), () => 'Cancelled.').then(() => setCode(null))}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              disabled={busy || bindings.some((b) => b.channel === spec.id && b.role === 'owner')}
+              onClick={async () => {
+                const r = await act(() => startPairing(spec.id))
+                if (r?.ok && r.code && r.expiresAt) setCode({ code: r.code, expiresAt: r.expiresAt })
+              }}
+            >
+              Pair my {spec.title} account
+            </button>
+          )}
+        </div>
+      )}
+
+      <label>
+        <input
+          type="checkbox"
+          checked={privateAnswers(spec, st)}
+          disabled={busy}
+          onChange={(e) => void save(privatePatch(spec, e.target.checked))}
+        />{' '}
+        {spec.privateLabel}
+      </label>
+      <p className="mem-note">Off: he says it is private and to look in the app. Vault items never go to a chat.</p>
+    </section>
   )
 }
