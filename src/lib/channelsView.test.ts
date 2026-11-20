@@ -11,7 +11,9 @@ import {
   privatePatch,
   runningNote,
   switchPatch,
+  numberPatch,
   tokenPatch,
+  usageNote,
 } from './channelsView.ts'
 // @ts-expect-error plain JS bridge modules, no type declarations
 import { CHANNEL_SWITCHES } from '../../bridge/channels/service.mjs'
@@ -23,12 +25,13 @@ const registryIds = new Set(
 )
 const slack = channelCard('slack')!
 const telegram = channelCard('telegram')!
+const sms = channelCard('sms')!
 
 test('every card names a channel the bridge knows and settings it registers', () => {
   assert.deepEqual(CHANNEL_CARDS.map((c) => c.id).sort(), Object.keys(CHANNEL_SWITCHES).sort())
   for (const c of CHANNEL_CARDS) {
     assert.equal(c.switchSetting, CHANNEL_SWITCHES[c.id])
-    for (const id of [c.switchSetting, c.privateSetting, ...c.secrets.map((s) => s.setting)]) {
+    for (const id of [c.switchSetting, c.privateSetting, ...(c.numbers ?? []).map((n) => n.setting), ...c.secrets.map((s) => s.setting)].filter(Boolean) as string[]) {
       assert.ok(registryIds.has(id), `${id} is in the settings registry`)
     }
   }
@@ -69,4 +72,36 @@ test('the state note says what is missing and the last problem', () => {
   assert.equal(runningNote(false, { on: true, tokenSet: false }, slack), '')
   assert.equal(runningNote(true, { running: true, health: { lastError: 'invalid_auth' } }, slack), 'Running. Last problem: invalid_auth')
   assert.equal(runningNote(true, undefined, slack), '')
+})
+
+test('SMS card: four fields, cleared together, no private-answers switch', () => {
+  assert.deepEqual(sms.secrets.map((s) => s.setting), ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'TWILIO_WEBHOOK_URL'])
+  assert.deepEqual(clearPatch(sms), { TWILIO_ACCOUNT_SID: '', TWILIO_AUTH_TOKEN: '', TWILIO_PHONE_NUMBER: '', TWILIO_WEBHOOK_URL: '' })
+  assert.deepEqual(switchPatch(sms, true), { JARVIS_SMS: '1' })
+  assert.equal(sms.privateSetting, undefined)
+  assert.deepEqual(privatePatch(sms, true), {}, 'nothing can turn private answers on for SMS')
+  assert.equal(privateAnswers(sms, { privateTelegram: true, privateSlack: true }), false)
+  assert.equal(tokenPatch(sms.secrets[0], '  '), null)
+  assert.deepEqual(tokenPatch(sms.secrets[2], ' +15551234567 '), { TWILIO_PHONE_NUMBER: '+15551234567' })
+  assert.match(sms.pairInstruction('ABCD2345'), /\/pair ABCD2345/)
+})
+
+test('SMS card: the cap is saved only when it is a valid whole number, and matches the registry', () => {
+  const cap = sms.numbers![0]
+  assert.equal(numberPatch(cap, '0'), null)
+  assert.equal(numberPatch(cap, '-3'), null)
+  assert.equal(numberPatch(cap, '12.5'), null)
+  assert.equal(numberPatch(cap, '100000'), null)
+  assert.equal(numberPatch(cap, ''), null)
+  assert.deepEqual(numberPatch(cap, ' 80 '), { JARVIS_SMS_MONTHLY_CAP: '80' })
+  const reg = (Array.isArray(REGISTRY) ? REGISTRY : Object.values(REGISTRY)).find((r: { id: string }) => r.id === cap.setting) as { pattern: RegExp; default: string }
+  assert.equal(reg.pattern.source, cap.pattern.source)
+  assert.equal(reg.default, cap.fallback)
+})
+
+test('SMS card shows the count against the cap, or just the cap when it is not running', () => {
+  assert.equal(usageNote({ cap: 50, sentThisMonth: 12 }), '12 of 50 messages sent this month.')
+  assert.equal(usageNote({ cap: 50, sentThisMonth: null }), 'Limit: 50 messages a month.')
+  assert.equal(usageNote(undefined), '')
+  assert.match(runningNote(true, { on: true, tokenSet: false }, sms), /every field/)
 })

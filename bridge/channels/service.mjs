@@ -259,6 +259,9 @@ export function createChannelService({
         pairing: pairingView(id),
       }
     }
+    // SMS is paid by the message: the card shows the cap and what is used.
+    channels.sms.cap = Number.parseInt(String(setting('JARVIS_SMS_MONTHLY_CAP') ?? ''), 10) || 50
+    channels.sms.sentThisMonth = channels.sms.health?.sentThisMonth ?? null
     return {
       enabled: masterOn(),
       privateTelegram: setting('JARVIS_CHANNEL_PRIVATE_TELEGRAM') !== '0',

@@ -3063,6 +3063,7 @@ const channels = createChannelService({
   killSwitch,
   bus,
   audit,
+  adapterDeps: { usageFile: join(settingsDir(), 'sms-usage.json') },
 })
 void channels.apply()
 

@@ -15,11 +15,13 @@ import {
 import {
   CHANNEL_CARDS,
   clearPatch,
+  numberPatch,
   privateAnswers,
   privatePatch,
   runningNote,
   switchPatch,
   tokenPatch,
+  usageNote,
   type ChannelCardSpec,
 } from '../lib/channelsView'
 import { saveSettings } from '../lib/settings'
@@ -208,7 +210,7 @@ function ChannelCard({
 
   const saveTokens = async () => {
     const patch = Object.assign({}, ...spec.secrets.map((s) => tokenPatch(s, typed[s.setting] ?? '')))
-    const r = await save(patch, spec.secrets.length > 1 ? 'Tokens saved.' : 'Token saved.')
+    const r = await save(patch, spec.secrets.length > 1 ? 'Saved.' : 'Token saved.')
     if (r?.ok) setTyped({})
   }
 
@@ -233,8 +235,9 @@ function ChannelCard({
           <label key={s.setting}>
             {s.label}{' '}
             <input
-              type="password"
+              type={s.plain ? 'text' : 'password'}
               autoComplete="off"
+              spellCheck={false}
               value={typed[s.setting] ?? ''}
               placeholder={s.placeholder}
               aria-label={`${spec.title} ${s.label.toLowerCase()}`}
@@ -250,7 +253,7 @@ function ChannelCard({
           <>
             <button
               disabled={busy}
-              onClick={() => void act(() => testChannel(spec.id), (r) => `The ${spec.secrets.length > 1 ? 'tokens work' : 'token works'}: ${r.username ? '@' + r.username : 'your ' + spec.title + ' app'}.`)}
+              onClick={() => void act(() => testChannel(spec.id), (r) => (spec.testName ? `It works: ${spec.testName(r.username)}.` : `The ${spec.secrets.length > 1 ? 'tokens work' : 'token works'}: ${r.username ? '@' + r.username : 'your ' + spec.title + ' app'}.`))}
             >
               Test
             </button>
@@ -299,16 +302,67 @@ function ChannelCard({
         </div>
       )}
 
-      <label>
-        <input
-          type="checkbox"
-          checked={privateAnswers(spec, st)}
-          disabled={busy}
-          onChange={(e) => void save(privatePatch(spec, e.target.checked))}
-        />{' '}
-        {spec.privateLabel}
-      </label>
-      <p className="mem-note">Off: he says it is private and to look in the app. Vault items never go to a chat.</p>
+      {spec.numbers?.map((n) => (
+        <NumberField key={n.setting} n={n} current={n.setting === 'JARVIS_SMS_MONTHLY_CAP' ? ch?.cap : undefined} busy={busy} save={save} usage={usageNote(ch)} />
+      ))}
+
+      {spec.privateSetting ? (
+        <>
+          <label>
+            <input
+              type="checkbox"
+              checked={privateAnswers(spec, st)}
+              disabled={busy}
+              onChange={(e) => void save(privatePatch(spec, e.target.checked))}
+            />{' '}
+            {spec.privateLabel}
+          </label>
+          <p className="mem-note">Off: he says it is private and to look in the app. Vault items never go to a chat.</p>
+        </>
+      ) : (
+        spec.noPrivateNote && <p className="mem-note">{spec.noPrivateNote}</p>
+      )}
     </section>
+  )
+}
+
+function NumberField({
+  n,
+  current,
+  busy,
+  save,
+  usage,
+}: {
+  n: NonNullable<ChannelCardSpec['numbers']>[number]
+  current?: number
+  busy: boolean
+  save: (patch: Record<string, string>, done?: string) => Promise<ChannelReply>
+  usage: string
+}) {
+  const [typed, setTyped] = useState('')
+  const patch = numberPatch(n, typed)
+  return (
+    <div className="mem-add">
+      <label>
+        {n.label}{' '}
+        <input
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          value={typed}
+          placeholder={String(current ?? n.fallback)}
+          aria-label={n.label}
+          onChange={(e) => setTyped(e.target.value)}
+        />
+      </label>{' '}
+      <button
+        disabled={busy || !patch}
+        onClick={() => patch && void save(patch, 'Limit saved.').then((r) => r?.ok && setTyped(''))}
+      >
+        Save limit
+      </button>
+      {typed.trim() !== '' && !patch && <span className="mem-note"> {n.hint}</span>}
+      {usage && <span className="mem-note"> {usage}</span>}
+    </div>
   )
 }

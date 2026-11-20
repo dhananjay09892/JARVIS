@@ -3,11 +3,14 @@
 // No real account, network or token is used.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { openAllowlist } from './allowlist.mjs'
 import { createChannelService } from './service.mjs'
 import { createChatTurns } from './turn.mjs'
 import { createKillSwitch } from './kill-switch.mjs'
-import { createAdapter, computeSignature, verifySignature, parseForm, normaliseInbound, redact } from './sms.mjs'
+import { createAdapter, createUsageStore, computeSignature, verifySignature, parseForm, normaliseInbound, redact } from './sms.mjs'
 
 // Fake credentials, built so no real-looking literal sits in the source.
 const SID = `AC${'1234abcd'.repeat(4)}`
@@ -243,6 +246,71 @@ test('send: the monthly cap is required, counts messages, stops sends and resets
   assert.equal(tw.sent.length, 3)
 })
 
+test('send: the monthly count survives a restart, and a new month starts again', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-sms-'))
+  try {
+    const file = join(dir, 'sms-usage.json')
+    const tw = fakeTwilio()
+    let t = Date.UTC(2026, 10, 15)
+    const make = () => createAdapter({ getSecret: settingsFor({ JARVIS_SMS_MONTHLY_CAP: '2' }), fetch: tw.fetch, sleep: nap, log: quiet, now: () => t, usageFile: file })
+    const first = make()
+    await first.start(() => {})
+    await first.send({ threadId: OWNER, text: 'one' })
+    assert.equal(first.health().sentThisMonth, 1)
+    await first.stop()
+
+    const second = make() // the app restarted
+    assert.equal(second.health().sentThisMonth, 1, 'the count came back')
+    await second.start(() => {})
+    await second.send({ threadId: OWNER, text: 'two' })
+    await assert.rejects(second.send({ threadId: OWNER, text: 'three' }), /cap reached/)
+    await second.stop()
+
+    const third = make()
+    await third.start(() => {})
+    await assert.rejects(third.send({ threadId: OWNER, text: 'four' }), /cap reached/, 'a restart does not reset the cap')
+    assert.equal(tw.sent.length, 2)
+    t = Date.UTC(2026, 11, 1)
+    assert.equal(third.health().sentThisMonth, 0)
+    await third.send({ threadId: OWNER, text: 'five' })
+    assert.equal(tw.sent.length, 3)
+
+    // Only a month and a number are stored.
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { month: '2026-12', count: 1 })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('send: a damaged count file counts as zero, and a file that cannot be written stops sends', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'jarvis-sms-'))
+  try {
+    const file = join(dir, 'sms-usage.json')
+    writeFileSync(file, '{"month": "nonsense", "count": -4}')
+    assert.equal(createUsageStore(file).load(), null)
+    const tw = fakeTwilio()
+    const ok = createAdapter({ getSecret: settingsFor({ JARVIS_SMS_MONTHLY_CAP: '5' }), fetch: tw.fetch, sleep: nap, log: quiet, usageFile: file })
+    await ok.start(() => {})
+    await ok.send({ threadId: OWNER, text: 'one' })
+    assert.equal(tw.sent.length, 1)
+
+    // A store whose save fails: fail closed, nothing is sent, nothing is counted.
+    const broken = createAdapter({
+      getSecret: settingsFor({ JARVIS_SMS_MONTHLY_CAP: '5' }),
+      fetch: tw.fetch,
+      sleep: nap,
+      log: quiet,
+      usage: { load: () => null, save: () => { throw new Error('disk full') } },
+    })
+    await broken.start(() => {})
+    await assert.rejects(broken.send({ threadId: OWNER, text: 'two' }), /could not save the message count/)
+    assert.equal(tw.sent.length, 1)
+    assert.equal(broken.health().sentThisMonth, 0)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('send: an auth failure shows a redacted error', async () => {
   const { a, tw } = await started()
   tw.state.failWith = 401
@@ -321,6 +389,19 @@ test('service: SMS needs its switch, all credentials and the webhook address', a
     assert.equal(ctx.service.status().channels.sms.running, false, `${missing} missing`)
     assert.equal((await text(ctx.service, OWNER, 'hi')).status, 404)
     assert.equal(ctx.tw.calls.length, 0)
+    await ctx.service.close()
+  }
+})
+
+test('status reports the SMS cap and the count, and no other channel has them', async () => {
+  const ctx = setup()
+  try {
+    assert.equal(ctx.service.status().channels.sms.cap, 100, 'the cap from Settings')
+    assert.equal(ctx.service.status().channels.sms.sentThisMonth, null, 'not running, count unknown')
+    assert.equal(ctx.service.status().channels.telegram.cap, undefined)
+    await ctx.service.apply()
+    assert.equal(ctx.service.status().channels.sms.sentThisMonth, 0)
+  } finally {
     await ctx.service.close()
   }
 })
