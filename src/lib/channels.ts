@@ -45,7 +45,10 @@ export type ChannelsStatus = {
     on: boolean
     tokenSet: boolean
     running: boolean
-    health: { ok: boolean; running: boolean; lastPollAt?: number; lastError?: string } | null
+    health: { ok: boolean; running: boolean; lastPollAt?: number; lastError?: string; sentThisMonth?: number } | null
+    /** SMS only: the monthly message limit and what has been sent this month (null when not running). */
+    cap?: number
+    sentThisMonth?: number | null
     pairing: PairingState
   }>
   bindings: ChannelBindingView[]

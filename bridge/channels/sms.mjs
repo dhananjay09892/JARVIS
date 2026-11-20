@@ -18,7 +18,8 @@
  * - Outbound is `POST /Messages.json` with HTTP Basic (account SID and auth
  *   token) to the one number the pipeline replies to, as plain text, with no
  *   media and no status callback. A required monthly message cap stops sends
- *   when reached (spec §8, F6). It talks only to api.twilio.com and follows
+ *   when reached (spec §8, F6); the count is kept in a small file (one month
+ *   and a number) so it survives a restart. It talks only to api.twilio.com and follows
  *   no redirect.
  * - The auth token is read through `getSecret` for each use, never kept on
  *   the object, and is redacted from every error, log line and `health()`
@@ -41,6 +42,8 @@
  *   - A reply to a webhook may be empty TwiML: 200, `text/xml`, `<Response/>`.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { splitReply } from './telegram.mjs'
 
 export const API_HOST = 'api.twilio.com'
@@ -164,14 +167,42 @@ export function normaliseInbound(params, { number, now = Date.now() } = {}) {
 const monthKey = (t) => new Date(t).toISOString().slice(0, 7)
 
 /**
+ * The month's sent-message count, kept in one small JSON file so the cap
+ * survives a restart (C102). Only a month and a number are stored: no phone
+ * numbers, no text. A missing, unreadable or malformed file counts as zero
+ * for a new month, but a file we cannot *write* makes the cap fail closed
+ * (sending stops) rather than quietly forgetting what was sent.
+ */
+export function createUsageStore(file) {
+  return {
+    load() {
+      try {
+        const v = JSON.parse(readFileSync(file, 'utf8'))
+        if (typeof v?.month === 'string' && /^\d{4}-\d{2}$/.test(v.month) && Number.isInteger(v.count) && v.count >= 0) return { month: v.month, count: v.count }
+      } catch {
+        // no file yet, or not ours
+      }
+      return null
+    },
+    save({ month, count }) {
+      mkdirSync(dirname(file), { recursive: true })
+      const tmp = `${file}.tmp`
+      writeFileSync(tmp, JSON.stringify({ month, count }), { mode: 0o600 })
+      renameSync(tmp, file)
+    },
+  }
+}
+
+/**
  * @param {object} deps
  * @param {(name: string) => Promise<string|undefined>|string|undefined} deps.getSecret  vault / settings read
  * @param {typeof fetch} [deps.fetch]
+ * @param {{ load: () => ({ month: string, count: number }|null), save: (u: { month: string, count: number }) => void }} [deps.usage]  keeps the monthly count across restarts
  * @param {() => number} [deps.now]
  * @param {(ms: number, signal?: AbortSignal) => Promise<void>} [deps.sleep]
  * @param {Console} [deps.log]
  */
-export function createAdapter({ getSecret, fetch: doFetch = globalThis.fetch, now = () => Date.now(), sleep = wait, log = console } = {}) {
+export function createAdapter({ getSecret, fetch: doFetch = globalThis.fetch, usage = null, usageFile, now = () => Date.now(), sleep = wait, log = console } = {}) {
   if (typeof getSecret !== 'function') throw new Error('sms: getSecret is required')
 
   let running = false
@@ -180,8 +211,14 @@ export function createAdapter({ getSecret, fetch: doFetch = globalThis.fetch, no
   let lastError
   let lastInboundAt
   let queued = 0
+  const store = usage ?? (usageFile ? createUsageStore(usageFile) : null)
   let sentMonth = monthKey(now())
   let sentCount = 0
+  const saved = store?.load()
+  if (saved) {
+    sentMonth = saved.month
+    sentCount = saved.count
+  }
   const lastSentTo = new Map()
   const seen = new Set()
 
@@ -254,6 +291,13 @@ export function createAdapter({ getSecret, fetch: doFetch = globalThis.fetch, no
     if (sentCount + parts > cap) {
       lastError = 'monthly message cap reached'
       throw new Error('sms: monthly message cap reached')
+    }
+    // Write first: if the count cannot be kept, nothing is sent.
+    try {
+      store?.save({ month: sentMonth, count: sentCount + parts })
+    } catch {
+      lastError = 'could not save the message count'
+      throw new Error('sms: could not save the message count, so nothing was sent')
     }
     sentCount += parts
   }
@@ -394,7 +438,8 @@ export function createAdapter({ getSecret, fetch: doFetch = globalThis.fetch, no
     },
 
     health() {
-      return { ok: running && !lastError, running, connected: running, lastPollAt: lastInboundAt, lastError, queued }
+      const thisMonth = monthKey(now()) === sentMonth
+      return { ok: running && !lastError, running, connected: running, lastPollAt: lastInboundAt, lastError, queued, sentThisMonth: thisMonth ? sentCount : 0 }
     },
   }
 }

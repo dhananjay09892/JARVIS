@@ -569,7 +569,7 @@ const DEFS = [
     id: 'JARVIS_SMS_MONTHLY_CAP',
     section: 'channels',
     label: 'SMS monthly message limit',
-    help: 'The most messages JARVIS will send by SMS in a month; when it is reached, sends stop. It counts messages JARVIS sends and starts again from zero when the app restarts, so also set a usage limit in your Twilio account.',
+    help: 'The most messages JARVIS will send by SMS in a month; when it is reached, sends stop. It counts messages JARVIS sends, keeps the count when the app restarts, and starts again at the beginning of each month (UTC). Also set a usage limit in your Twilio account.',
     type: 'string',
     pattern: /^[1-9]\d{0,4}$/,
     default: '50',
