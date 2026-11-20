@@ -1,0 +1,30 @@
+[
+  {
+    "utterance": "Start focus mode!",
+    "inputs": {},
+    "expect": {
+      "tools": [
+        "Read",
+        "Read"
+      ],
+      "files": [
+        "notes/today.md",
+        "notes/tasks.md"
+      ]
+    }
+  },
+  {
+    "utterance": "help me focus",
+    "inputs": {},
+    "expect": {
+      "tools": [
+        "Read",
+        "Read"
+      ],
+      "files": [
+        "notes/today.md",
+        "notes/tasks.md"
+      ]
+    }
+  }
+]

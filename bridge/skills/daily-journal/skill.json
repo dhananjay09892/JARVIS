@@ -1,0 +1,45 @@
+{
+  "v": 1,
+  "id": "daily-journal",
+  "name": "Daily journal",
+  "version": "1.0.0",
+  "author": "JARVIS",
+  "description": "Saves a short journal entry for a day to a file in your journal folder.",
+  "riskTier": "medium",
+  "permissions": {
+    "tools": [
+      "Write"
+    ],
+    "paths": [
+      "journal/**"
+    ]
+  },
+  "triggers": {
+    "phrases": [
+      "write in my journal",
+      "daily journal",
+      "journal entry"
+    ]
+  },
+  "dataUse": "Writes one file per day under journal/ on this computer. Nothing leaves it.",
+  "steps": [
+    {
+      "tool": "Write",
+      "input": {
+        "file_path": "journal/{{input.date}}.md",
+        "content": "{{input.entry}}"
+      },
+      "label": "Save the day's entry"
+    }
+  ],
+  "inputs": {
+    "date": {
+      "type": "string",
+      "description": "The day, like 2026-11-20."
+    },
+    "entry": {
+      "type": "string",
+      "description": "What you want to write down."
+    }
+  }
+}
