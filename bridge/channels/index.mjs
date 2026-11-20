@@ -28,6 +28,7 @@ import { createLimits } from './limits.mjs'
 export const ADAPTERS = Object.freeze({
   telegram: () => import('./telegram.mjs'),
   slack: () => import('./slack.mjs'),
+  sms: () => import('./sms.mjs'),
 })
 
 export const REPLIES = Object.freeze({
@@ -145,7 +146,8 @@ export function createChannels({
     if (sensitivity === 'vault') return REPLIES.vault
     if (sensitivity === 'private') {
       const scope = chatScope(binding)
-      const allowed = scope.privateReplies && (adapter.capabilities().endToEnd || (binding.role === 'owner' ? (adapter.id === 'slack' ? settings.privateSlack === true : settings.privateTelegram !== false) : true))
+      // A low-assurance channel (SMS) never carries private answers (spec §5.5).
+      const allowed = scope.privateReplies && !adapter.capabilities().noPrivate && (adapter.capabilities().endToEnd || (binding.role === 'owner' ? (adapter.id === 'slack' ? settings.privateSlack === true : settings.privateTelegram !== false) : true))
       if (!allowed) return REPLIES.private
       // A bland first line, so a lock-screen preview shows nothing (D2).
       return `${REPLIES.privateLead}\n\n${text}`

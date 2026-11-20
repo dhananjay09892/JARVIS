@@ -28,14 +28,27 @@ export const CHANNEL_SETTINGS = Object.freeze([
   'JARVIS_CHANNEL_PRIVATE_SLACK',
   'SLACK_BOT_TOKEN',
   'SLACK_APP_TOKEN',
+  'JARVIS_SMS',
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_PHONE_NUMBER',
+  'TWILIO_WEBHOOK_URL',
+  'JARVIS_SMS_MONTHLY_CAP',
   'JARVIS_CHANNEL_PRIVATE_TELEGRAM',
   'JARVIS_CHANNEL_LIMITS',
 ])
 
 /** Adapters this build has, and the setting that switches each on. */
-export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', slack: 'JARVIS_SLACK' })
-/** The vault secrets each adapter needs; it starts only when all are set. */
-const SECRETS = Object.freeze({ telegram: ['TELEGRAM_BOT_TOKEN'], slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'] })
+export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', slack: 'JARVIS_SLACK', sms: 'JARVIS_SMS' })
+/**
+ * What each adapter needs set before it starts: vault secrets (for SMS also the
+ * number and the public webhook address).
+ */
+const SECRETS = Object.freeze({
+  telegram: ['TELEGRAM_BOT_TOKEN'],
+  slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
+  sms: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'TWILIO_WEBHOOK_URL'],
+})
 
 const BUS_TOPIC = { received: 'channel.received', rejected: 'channel.rejected', sent: 'channel.sent' }
 const NOTICE_KINDS = ['pairing-match', 'pairing-burnt', 'unknown-senders', 'frozen-from-chat']
@@ -277,6 +290,18 @@ export function createChannelService({
   }
 
   /**
+   * An inbound provider webhook (SMS today), handed over by the bridge's
+   * HTTP server or a relay. The adapter checks the provider's signature; this
+   * only finds it. Returns `{ status, contentType, body }`. With the channel
+   * off the answer is 404, the same as for a path that does not exist.
+   */
+  async function inbound(channel, req) {
+    const adapter = pipeline?.adapters[channel]
+    if (typeof adapter?.receive !== 'function') return { status: 404, contentType: 'text/plain; charset=utf-8', body: '' }
+    return adapter.receive(req)
+  }
+
+  /**
    * Settings → Channels. Returns `{ status, body }`, or null for a path that
    * is not ours. The server checks the Origin before calling a POST.
    */
@@ -294,7 +319,8 @@ export function createChannelService({
       case 'pair': {
         if (!knownChannel(channel)) return no(400, 'Unknown channel.')
         if (!pipeline?.adapters[channel]) return no(409, 'Turn the channel on and set its token first.')
-        const { code, expiresAt } = list().startPairing({ channel, role: 'owner' })
+        // The binding's assurance comes from the adapter: SMS is low (spec §3, S3).
+        const { code, expiresAt } = list().startPairing({ channel, role: 'owner', assurance: pipeline.adapters[channel].capabilities().assurance })
         return ok({ code, expiresAt })
       }
       case 'pair/confirm':
@@ -328,6 +354,7 @@ export function createChannelService({
   return {
     apply,
     handle,
+    inbound,
     stats,
     status,
     /** Settings that should trigger `apply` when they change. */
