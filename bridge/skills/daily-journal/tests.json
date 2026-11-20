@@ -1,0 +1,27 @@
+[
+  {
+    "utterance": "write in my journal",
+    "inputs": {
+      "date": "2026-11-20",
+      "entry": "Good day."
+    },
+    "expect": {
+      "tools": [
+        "Write"
+      ],
+      "files": [
+        "journal/2026-11-20.md"
+      ]
+    }
+  },
+  {
+    "utterance": "journal entry",
+    "inputs": {
+      "date": "../secrets",
+      "entry": "x"
+    },
+    "expect": {
+      "refused": true
+    }
+  }
+]

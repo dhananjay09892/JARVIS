@@ -1,0 +1,41 @@
+{
+  "v": 1,
+  "id": "focus-mode",
+  "name": "Focus mode",
+  "version": "1.0.0",
+  "author": "JARVIS",
+  "description": "Reads today's notes and task list so you can pick what to focus on.",
+  "riskTier": "low",
+  "permissions": {
+    "tools": [
+      "Read"
+    ],
+    "paths": [
+      "notes/**"
+    ]
+  },
+  "triggers": {
+    "phrases": [
+      "start focus mode",
+      "focus mode",
+      "help me focus"
+    ]
+  },
+  "dataUse": "Reads notes/today.md and notes/tasks.md on this computer. Nothing leaves it.",
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "notes/today.md"
+      },
+      "label": "Read today's notes"
+    },
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "notes/tasks.md"
+      },
+      "label": "Read the task list"
+    }
+  ]
+}

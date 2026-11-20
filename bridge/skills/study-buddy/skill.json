@@ -1,0 +1,49 @@
+{
+  "v": 1,
+  "id": "study-buddy",
+  "name": "Study buddy",
+  "version": "1.0.0",
+  "author": "JARVIS",
+  "description": "Reads a deck of your study notes and lists its questions so you can be quizzed.",
+  "riskTier": "low",
+  "permissions": {
+    "tools": [
+      "Read",
+      "Grep"
+    ],
+    "paths": [
+      "study/**"
+    ]
+  },
+  "triggers": {
+    "phrases": [
+      "quiz me",
+      "study mode",
+      "help me study"
+    ]
+  },
+  "dataUse": "Reads files under study/ on this computer. Nothing leaves it.",
+  "steps": [
+    {
+      "tool": "Read",
+      "input": {
+        "file_path": "study/{{input.deck}}.md"
+      },
+      "label": "Read the deck"
+    },
+    {
+      "tool": "Grep",
+      "input": {
+        "pattern": "^Q:",
+        "path": "study/{{input.deck}}.md"
+      },
+      "label": "List the questions"
+    }
+  ],
+  "inputs": {
+    "deck": {
+      "type": "string",
+      "description": "The name of the deck, like biology."
+    }
+  }
+}
