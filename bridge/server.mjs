@@ -36,6 +36,11 @@ import { createMissionSettings, missionGuard, normaliseScope, scopeGuard as miss
 import { createPlanSettings, createVerifier } from './mission-plan.mjs'
 import { createAgentRegistry, createToolCatalogue } from './agents.mjs'
 import { createAgentRoutes } from './agent-routes.mjs'
+import { createSkillRegistry, createSkillSwitches } from './skill-registry.mjs'
+import { createSkillRunner } from './skill-runner.mjs'
+import { createSkillRoutes } from './skill-routes.mjs'
+import { createSkillHost } from './skill-host.mjs'
+import { wrapUntrusted } from './untrusted.mjs'
 import { createAgentDrafter } from './agent-drafts.mjs'
 import { createAgentProposer, createProposalState, proposalsStateFile } from './agent-proposals.mjs'
 import { createAgentScheduler, createScheduleState, runNotification, scheduleStateFile } from './agent-schedule.mjs'
@@ -1510,6 +1515,7 @@ const http = await import('node:http')
 
 /** Settings → Agents routes; set once the task manager exists (further down). */
 let agentRoutes = null
+let skillRoutes = null
 
 const handleRequest = async (req, res) => {
   const origin = req.headers.origin
@@ -1846,6 +1852,39 @@ const handleRequest = async (req, res) => {
       }
     }
     const out = await agentRoutes.handle({ method: req.method, path: requestUrl.pathname, body })
+    if (out) {
+      res.writeHead(out.status, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+      return res.end(JSON.stringify(out.body))
+    }
+  }
+
+  // ---- Settings → Skills (plan 19 phase 4) ------------------------------
+  // Review, install, pin, roll back, remove and switch skill packs. Same
+  // Origin rule as agents for anything that changes state.
+  if (requestUrl.pathname === '/skills' || requestUrl.pathname.startsWith('/skills/')) {
+    if (req.method !== 'GET' && !origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    let body
+    if (req.method === 'POST') {
+      let raw = ''
+      for await (const chunk of req) {
+        raw += chunk
+        if (raw.length > 16 * 1024) {
+          req.destroy()
+          res.writeHead(400, cors)
+          return res.end('body too large')
+        }
+      }
+      try {
+        body = raw ? JSON.parse(raw) : {}
+      } catch {
+        res.writeHead(400, { ...cors, 'content-type': 'application/json' })
+        return res.end(JSON.stringify({ ok: false, reason: 'Send JSON.' }))
+      }
+    }
+    const out = skillRoutes?.handle({ method: req.method, path: requestUrl.pathname, body })
     if (out) {
       res.writeHead(out.status, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
       return res.end(JSON.stringify(out.body))
@@ -2915,6 +2954,46 @@ agentRoutes = createAgentRoutes({
 })
 
 /**
+ * Skills (plan 19 phase 4): installed packs under the settings folder, the
+ * per-skill switches and pause from Settings, and a runner that sends every
+ * step through the skill's grants and then the policy engine. Skills touch
+ * only the skill-files folder (skill-host.mjs).
+ */
+const skillSwitches = createSkillSwitches({ read: (id) => setting(id), frozen: killSwitch.isFrozen })
+const skillRegistry = createSkillRegistry({ policy })
+const skillHost = createSkillHost()
+const skillRunner = createSkillRunner({ registry: skillRegistry, switches: skillSwitches, policy, tools: skillHost.tools, audit, actor: 'voice' })
+skillRoutes = createSkillRoutes({
+  registry: skillRegistry,
+  switches: skillSwitches,
+  packsDir: fileURLToPath(new URL('./skills/', import.meta.url)),
+  saveSettings: updateSettings,
+  read: (id) => setting(id),
+  gate: () => (killSwitch.isFrozen() ? 'JARVIS is frozen by the kill switch, so skills cannot be changed.' : null),
+  stats: skillRunner.stats,
+})
+
+/**
+ * When the owner's whole sentence is an installed skill's phrase, run it and
+ * give the model what happened, so it can say so. The results are labelled as
+ * untrusted data. Anything that goes wrong leaves the sentence as it was.
+ */
+async function skillNote(said) {
+  try {
+    const hit = skillRunner.match(said)
+    if (!hit) return ''
+    const r = await skillRunner.run(hit.id)
+    const lines = r.steps
+      ? r.steps.map((x) => `- ${x.label ?? x.tool}: ${x.status}${x.reason ? ` (${x.reason})` : ''}`)
+      : [r.reason ?? 'It did not run.']
+    const data = r.steps ? r.steps.filter((x) => x.output).map((x) => x.output).join('\n---\n') : ''
+    return `[JARVIS ran the skill "${r.name ?? hit.id}". Steps:\n${lines.join('\n')}${r.needsInput?.length ? `\nAsk the owner for: ${r.needsInput.join(', ')}.` : ''}]${data ? `\n${wrapUntrusted(data, 'skill')}` : ''}`
+  } catch {
+    return ''
+  }
+}
+
+/**
  * Scheduled agents (agent-schedule.mjs): on the workflow engine's ticker, so
  * the bridge keeps one scheduler. Each is off until switched on; a due run
  * is an ordinary named-agent task, so the cap, budget, pause and kill switch
@@ -3503,7 +3582,8 @@ wss.on('connection', (socket, req) => {
       // The page's socket is the owner's; other actors pass their own role.
       const context = contextQueue.then(() => contextBroker.forTurn(msg.text, { role: speakerRole() }))
       contextQueue = context.catch(() => {})
-      void settling.then(() => context).catch(() => null).then((gathered) => {
+      void settling.then(() => context).catch(() => null).then(async (gathered) => {
+        const ranSkill = await skillNote(msg.text)
         answering = id
         const plain = preface ? `${preface}\n\n${msg.text}` : msg.text
         const turn = stored ? stored.start() : plain
@@ -3514,7 +3594,9 @@ wss.on('connection', (socket, req) => {
         const slices = gathered?.slices ?? []
         if (hasPrivate(slices)) taint.markPrivate(`context: ${slices.map((s) => s.source).join(', ')}`)
         const block = renderContext(slices)
-        const text = block ? `${block}\n\n${turn}` : turn
+        if (ranSkill) taint.markPrivate('a skill read files')
+        const withBlock = block ? `${block}\n\n${turn}` : turn
+        const text = ranSkill ? `${withBlock}\n\n${ranSkill}` : withBlock
         // Routed on the owner's own words, never the memory context.
         handOver(id, msg.text, text)
       })
