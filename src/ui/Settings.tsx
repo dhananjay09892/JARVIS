@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { BACKEND, BRIDGE_HTTP_URL } from '../config'
 import { Agents } from './Agents'
+import { Skills } from './Skills'
 import { Connectors } from './Connectors'
 import { Channels } from './Channels'
 import { MissionSchedules } from './MissionSchedules'
@@ -601,6 +602,7 @@ export function Settings() {
         </select>
       </label>
       <Agents />
+      <Skills />
     </>
   )
   const alertsBlock = (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { listSkills, skillStatsText, type SkillsList } from '../lib/skills'
 import { useStore } from '../store'
 import { fetchTraceStats, traceDiag, type TraceStats } from '../lib/trace'
 import { listConnectors, type ConnectorHealth } from '../lib/connectors'
@@ -156,6 +157,22 @@ export function Diagnostics() {
     let alive = true
     const load = () => {
       void fetchSetupStats(BRIDGE_HTTP_URL).then((st) => alive && setSetup(st))
+    }
+    load()
+    const id = setInterval(load, 10_000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [open])
+
+  // Plan 19 (Q130): how many skills ran, and how many steps waited or were refused.
+  const [skillsInfo, setSkillsInfo] = useState<SkillsList | null | undefined>(undefined)
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    const load = () => {
+      listSkills().then((l) => alive && setSkillsInfo(l)).catch(() => alive && setSkillsInfo(null))
     }
     load()
     const id = setInterval(load, 10_000)
@@ -354,6 +371,12 @@ export function Diagnostics() {
           v={setup === undefined ? '…' : setup === null ? 'bridge unreachable' : 'off (opt in under Settings → Diagnostics)'}
         />
       )}
+
+      <div className="diag-sec">SKILLS</div>
+      <Row
+        k="skill runs"
+        v={skillsInfo === undefined ? '…' : skillsInfo === null ? 'bridge unreachable' : (skillStatsText(skillsInfo.stats) ?? `none yet · ${skillsInfo.installed.length} installed${skillsInfo.paused ? ' · paused' : ''}`)}
+      />
 
       <div className="diag-sec">SPEAKING · press T to test</div>
       <Row k="engine" v={String(t.engine ?? 'system')} />
