@@ -34,6 +34,9 @@ export type ChannelStats = {
   today: Record<string, number>
 }
 
+/** An outbound webhook target as the bridge reports it: no address path, no secret. */
+export type WebhookTarget = { id: string; name: string; host: string; preApproved: boolean; secretSet: boolean }
+
 export type ChannelsStatus = {
   ok: true
   enabled: boolean
@@ -54,9 +57,20 @@ export type ChannelsStatus = {
   bindings: ChannelBindingView[]
   notices: { kind: string; channel: string; at: number }[]
   stats: ChannelStats
+  /** Outbound webhook targets (C103); null when the bridge is older. */
+  webhook?: { targets: WebhookTarget[] } | null
 }
 
-export type ChannelReply = { ok: boolean; reason?: string; code?: string; expiresAt?: number; username?: string }
+export type ChannelReply = {
+  ok: boolean
+  reason?: string
+  code?: string
+  expiresAt?: number
+  username?: string
+  /** Webhook add only: the signing secret, in this one answer and nowhere else. */
+  secret?: string
+  target?: WebhookTarget
+}
 
 export async function getChannels(): Promise<ChannelsStatus> {
   const res = await fetch(`${BRIDGE_HTTP_URL}/channels`, { signal: AbortSignal.timeout(5000) })
@@ -84,3 +98,7 @@ export const cancelPairing = (channel: string) => post('pair/cancel', { channel 
 export const revokeBinding = (id: string) => post('revoke', { id })
 export const freezeAll = () => post('freeze')
 export const unfreezeAll = () => post('unfreeze')
+
+export const addWebhook = (name: string, url: string, preApproved: boolean) => post('webhook/add', { name, url, preApproved })
+export const removeWebhook = (id: string) => post('webhook/remove', { id })
+export const testWebhook = (id: string) => post('webhook/test', { id })
