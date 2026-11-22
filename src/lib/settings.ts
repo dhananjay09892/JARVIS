@@ -84,6 +84,10 @@ export type PublicSettings = {
   JARVIS_AGENT_SWITCHES: string
   JARVIS_SKILLS_PAUSED: string
   JARVIS_SKILL_SWITCHES: string
+  /** '1' | '0' — the knowledge base answers from the folders below (plan 33, Q96). '' means the default (off). */
+  JARVIS_KNOWLEDGE: string
+  /** Folders to index, "path;path|cloud" or 'none'. '' means the default (none). */
+  JARVIS_KNOWLEDGE_FOLDERS: string
   /** Watch rules for the Watcher agent, or 'none'. '' means the default (none). */
   JARVIS_WATCHES: string
   /** '1' | '0' — the morning briefing answers "brief me" (plan 12, Q34). '' means the default (on). */
