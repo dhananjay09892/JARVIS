@@ -148,6 +148,7 @@ import { openAllowlist } from './channels/allowlist.mjs'
 import { createChannelService } from './channels/service.mjs'
 import { createChatTurns, scopeGuard } from './channels/turn.mjs'
 import { createKillSwitch } from './channels/kill-switch.mjs'
+import { createWebhookService, openTargetStore } from './channels/webhook-service.mjs'
 import { fileURLToPath } from 'node:url'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
@@ -3135,7 +3136,22 @@ const chatTurns = createChatTurns({
   },
 })
 
+/**
+ * The outbound webhook sender (task C103). Targets live in `webhooks.json`
+ * beside the settings; each target's signing secret is in the keychain. Every
+ * send waits on the HUD approvals queue unless that target is pre-approved, the
+ * kill switch stops it, and the audit log gets ids and lengths only.
+ */
+const webhooks = createWebhookService({
+  store: openTargetStore({ file: join(settingsDir(), 'webhooks.json') }),
+  vault: secretVault(),
+  requestApproval: auditedApprove(approvalHub.request, audit, 'system'),
+  isFrozen: killSwitch.isFrozen,
+  audit: audit ?? undefined,
+})
+
 const channels = createChannelService({
+  webhook: webhooks,
   setting,
   openAllowlist: () => openAllowlist({ file: join(settingsDir(), 'channels.db') }),
   runTurn: chatTurns,
@@ -3361,6 +3377,8 @@ wss.on('connection', (socket, req) => {
     // Connector tools (plans/connectors): only granted, active ones; each
     // call is decided by the policy engine and again by the registry.
     ...connectorServerEntry(),
+    // The owner's webhook targets, if any (channels/webhook-service.mjs).
+    ...webhooks.toolServer(),
     ...(workflows && { jarvis_workflows: workflowServer({ store: workflows, engine, approve }) }),
     ...(sm && {
       jarvis_memory: memoryServer(memory, {

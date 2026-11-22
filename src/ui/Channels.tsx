@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  addWebhook,
   cancelPairing,
   confirmPairing,
   freezeAll,
   getChannels,
+  removeWebhook,
   revokeBinding,
   startPairing,
   testChannel,
+  testWebhook,
   unfreezeAll,
   type ChannelReply,
   type ChannelsStatus,
@@ -25,6 +28,7 @@ import {
   type ChannelCardSpec,
 } from '../lib/channelsView'
 import { saveSettings } from '../lib/settings'
+import { PRE_APPROVE_WARNING, SECRET_NOTE, targetLine, webhookFormProblem } from '../lib/webhookView'
 
 /**
  * Settings → Channels (plan 20 phase 2, Q79; spec §4.2 and §10). The master
@@ -142,6 +146,8 @@ export function Channels() {
           save={save}
         />
       ))}
+
+      <WebhookCard st={st} busy={busy} act={act} />
 
       {bindings.length > 0 && (
         <fieldset className="conn-grants">
@@ -364,5 +370,95 @@ function NumberField({
       {typed.trim() !== '' && !patch && <span className="mem-note"> {n.hint}</span>}
       {usage && <span className="mem-note"> {usage}</span>}
     </div>
+  )
+}
+
+/**
+ * Outbound webhooks (task C103): the places JARVIS may post a short public
+ * message. Each target has its own signing secret, shown once after adding.
+ * Sending asks you each time unless you pre-approve that one target.
+ */
+function WebhookCard({ st, busy, act }: { st: ChannelsStatus; busy: boolean; act: Act }) {
+  const [name, setName] = useState('')
+  const [url, setUrl] = useState('')
+  const [pre, setPre] = useState(false)
+  const [problem, setProblem] = useState('')
+  const [secret, setSecret] = useState<{ id: string; value: string } | null>(null)
+  const targets = st.webhook?.targets ?? []
+  if (!st.webhook) return null
+
+  const add = async () => {
+    const p = webhookFormProblem(name, url)
+    setProblem(p ?? '')
+    if (p) return
+    const r = await act(() => addWebhook(name.trim(), url.trim(), pre), () => 'Added.')
+    if (r?.ok && r.secret && r.target) {
+      setSecret({ id: r.target.id, value: r.secret })
+      setName('')
+      setUrl('')
+      setPre(false)
+    }
+  }
+
+  return (
+    <section className="conn-card" aria-labelledby="chan-webhook">
+      <h4 id="chan-webhook">Webhooks (send only)</h4>
+      <p className="mem-note">
+        Let JARVIS post a short message to a web address you choose, such as n8n, Zapier, Home Assistant or Discord. Nothing
+        comes back in. Only public text is sent, signed with a secret only that receiver knows. By default each send waits for
+        your approval.
+      </p>
+
+      {secret && (
+        <div className="mem-add" role="status">
+          <p className="mem-note">{SECRET_NOTE}</p>
+          <code aria-label="Signing secret">{secret.value}</code>{' '}
+          <button onClick={() => void navigator.clipboard?.writeText(secret.value).catch(() => {})}>Copy</button>
+          <button onClick={() => setSecret(null)}>I have copied it</button>
+        </div>
+      )}
+
+      {targets.map((t) => (
+        <div key={t.id} className="mem-add">
+          <span>{targetLine(t)}</span>{' '}
+          <button disabled={busy} onClick={() => void act(() => testWebhook(t.id), () => 'Test message sent.')}>
+            Test
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => window.confirm(`Remove ${t.name}? Its signing secret is deleted.`) && void act(() => removeWebhook(t.id), () => 'Removed.')}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+
+      <div className="mem-add">
+        <label>
+          Name{' '}
+          <input type="text" autoComplete="off" value={name} placeholder="n8n" aria-label="Webhook name" onChange={(e) => setName(e.target.value)} />
+        </label>{' '}
+        <label>
+          Address{' '}
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={url}
+            placeholder="https://…"
+            aria-label="Webhook address"
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </label>{' '}
+        <label>
+          <input type="checkbox" checked={pre} onChange={(e) => setPre(e.target.checked)} /> Send without asking
+        </label>{' '}
+        <button disabled={busy || !name.trim() || !url.trim()} onClick={() => void add()}>
+          Add
+        </button>
+      </div>
+      {pre && <p className="mem-note">{PRE_APPROVE_WARNING}</p>}
+      {problem && <p className="mem-note">{problem}</p>}
+    </section>
   )
 }

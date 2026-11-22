@@ -74,6 +74,7 @@ function percentile(sorted, p) {
  * @param {{ publish: Function } | null} [deps.bus]
  * @param {(entry: object) => void} [deps.audit]   an auditSink
  * @param {object} [deps.adapterDeps]  extra deps for adapters (tests pass a fake `fetch`)
+ * @param {{ handle: Function, targets: () => object[] } | null} [deps.webhook]  the outbound webhook sender (webhook-service.mjs), which has its own routes
  */
 export function createChannelService({
   setting,
@@ -83,6 +84,7 @@ export function createChannelService({
   bus = null,
   audit = null,
   adapterDeps = {},
+  webhook = null,
   registry = ADAPTERS,
   now = () => Date.now(),
   log = console,
@@ -272,6 +274,8 @@ export function createChannelService({
       bindings: masterOn() || allowlist ? list().list().map(bindingView) : [],
       notices: [...notices],
       stats: stats(),
+      // The outbound webhook targets: names and hosts only, never an address's path or a secret.
+      webhook: webhook ? { targets: webhook.targets() } : null,
     }
   }
 
@@ -311,6 +315,9 @@ export function createChannelService({
   async function handle({ method, path, body = {} }) {
     if (path === '/channels' && method === 'GET') return ok(status())
     if (path === '/channels/stats' && method === 'GET') return ok(stats())
+    // The webhook sender is a channel with no inbound side, so it has no switch
+    // or pairing; its targets are added, tested and removed here.
+    if (webhook && path.startsWith('/channels/webhook/')) return webhook.handle({ method, path, body })
     if (method !== 'POST' || !path.startsWith('/channels/')) return null
     const action = path.slice('/channels/'.length)
     const channel = body?.channel ?? 'telegram'

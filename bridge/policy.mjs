@@ -43,6 +43,15 @@ export const CODER_TOOL_NAMES = Object.freeze([
 export const CODER_ID = 'coder'
 
 /**
+ * The outbound webhook tool (channels/webhook-service.mjs): one tool that posts
+ * a short public message, signed, to a target the owner added in Settings. It
+ * leaves the machine, so it needs general writes, and the sender asks for
+ * approval on every send unless the owner pre-approved that one target.
+ */
+export const WEBHOOK_SERVER = 'jarvis_webhook'
+export const WEBHOOK_SEND_TOOL = 'send_webhook'
+
+/**
  * The morning briefing's server (briefing-agent.mjs): one tool that reads the
  * briefing the bridge already builds by plain rules from synced connector
  * documents. It sends nothing and changes nothing, not even "briefing given".
@@ -450,6 +459,10 @@ function toolRule(name, { allowWrites, isMemoryTool, isWorkflowTool, isTaskTool,
       if (agentId !== CODER_ID) return fixed(false, 'coder-pull-request-only')
       return writes('coder-pull-request')
     }
+    // The webhook sender: one tool, an effectful one, so it waits for writes.
+    if (server === WEBHOOK_SERVER) {
+      return tool === WEBHOOK_SEND_TOOL ? writes('webhook-send') : fixed(false, 'own-server-list')
+    }
     // The morning briefing, read as the page would hear it; nothing is sent or marked.
     if (server === BRIEFING_SERVER) return fixed(BRIEFING_TOOL_NAMES.includes(tool), 'own-server-list')
     // The Watcher's check: reads only, with no arguments to steer it.
@@ -613,6 +626,7 @@ export const RULE_REASONS = Object.freeze({
   'coder-pull-request-only': 'Only the Coder may open a pull request.',
   'browser-act-only': 'Only the Browser Operator may fill in or submit a page.',
   'browser-act': 'Filling in and submitting a page needs general writes, and every submit asks for approval.',
+  'webhook-send': 'Sending a webhook message leaves this computer, so it needs general writes and approval for each send unless the target is pre-approved.',
   'coder-pull-request': 'Opening a pull request publishes code, so it needs general writes and approval each time.',
   'read-only-builtin': 'A built-in tool that only reads.',
   'write-builtin': 'A built-in tool that writes or runs commands needs general writes.',

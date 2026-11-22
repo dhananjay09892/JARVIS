@@ -306,6 +306,9 @@ export function outboundKind(toolName, input, { isEffectful = () => false } = {}
   // A drafted agent's description becomes its instructions, so it is checked too.
   if (mcp.server === 'jarvis_tasks') return ['spawn_task', 'start_agent', 'start_team', 'draft_agent', 'schedule_mission'].includes(mcp.tool) ? 'scan' : 'none'
   if (mcp.server === 'jarvis_delegate') return mcp.tool === 'start_agent' ? 'scan' : 'none'
+  // The webhook sender (channels/webhook-service.mjs) posts to an address the
+  // model cannot read, so a tainted session always asks, even for a pre-approved target.
+  if (mcp.server === 'jarvis_webhook') return 'always'
   if (mcp.server.startsWith('jarvis')) return 'scan'
   return isEffectful(mcp.server, mcp.tool) ? 'always' : 'scan'
 }
