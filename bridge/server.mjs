@@ -40,6 +40,7 @@ import { createSkillRegistry, createSkillSwitches } from './skill-registry.mjs'
 import { createSkillRunner } from './skill-runner.mjs'
 import { createSkillRoutes } from './skill-routes.mjs'
 import { createSkillHost } from './skill-host.mjs'
+import { createKnowledgeBase, parseSources, KNOWLEDGE_SETTINGS } from './knowledge-base.mjs'
 import { wrapUntrusted } from './untrusted.mjs'
 import { createAgentDrafter } from './agent-drafts.mjs'
 import { createAgentProposer, createProposalState, proposalsStateFile } from './agent-proposals.mjs'
@@ -1891,6 +1892,41 @@ const handleRequest = async (req, res) => {
     }
   }
 
+  // ---- Knowledge base (plan 33 phase 1, Q96) ------------------------------
+  // Counts are open like the other stats; indexing and asking need one of our
+  // own pages (an allowed Origin). Asking here answers on this computer only.
+  if (requestUrl.pathname === '/knowledge/stats' && req.method === 'GET') {
+    res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+    return res.end(JSON.stringify(knowledgeOn() || knowledgeStore ? { ...knowledgeBase().stats(), folders: knowledgeBase().sourcesList() } : { enabled: false }))
+  }
+  if ((requestUrl.pathname === '/knowledge/index' || requestUrl.pathname === '/knowledge/ask') && req.method === 'POST') {
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    let raw = ''
+    for await (const chunk of req) {
+      raw += chunk
+      if (raw.length > 4 * 1024) {
+        req.destroy()
+        res.writeHead(400, cors)
+        return res.end('body too large')
+      }
+    }
+    let body = {}
+    try { body = raw ? JSON.parse(raw) : {} } catch { body = null }
+    const json = (status, out) => {
+      res.writeHead(status, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+      return res.end(JSON.stringify(out))
+    }
+    if (!body || typeof body !== 'object') return json(400, { ok: false, reason: 'Send JSON.' })
+    if (killSwitch.isFrozen()) return json(423, { ok: false, reason: 'JARVIS is frozen by the kill switch.' })
+    if (requestUrl.pathname === '/knowledge/index') return json(200, knowledgeBase().indexAll())
+    if (typeof body.question !== 'string' || !body.question.trim()) return json(400, { ok: false, reason: 'Send a question.' })
+    if (!knowledgeOn()) return json(200, { ok: false, reason: 'The knowledge base is switched off.' })
+    return json(200, { ok: true, ...knowledgeBase().answer(body.question) })
+  }
+
   // ---- Turn traces (plans 16 + 05) ------------------------------------
   // The page posts one trace per finished turn and Diagnostics reads the
   // rolling numbers back. Same Origin rule as settings for the write.
@@ -2994,6 +3030,37 @@ async function skillNote(said) {
 }
 
 /**
+ * Knowledge base (plan 33 phase 1, Q96; see bridge/knowledge-base.mjs). Off
+ * until switched on; reads only the folders listed in Settings. Index and
+ * passages stay in one file on this computer.
+ */
+let knowledgeStore = null
+const knowledgeOn = () => setting(KNOWLEDGE_SETTINGS.enabled) === '1'
+// Opened on first use, so a bridge with the switch off never creates a file.
+const knowledgeBase = () => (knowledgeStore ??= createKnowledgeBase({
+  enabled: knowledgeOn,
+  sources: () => parseSources(setting(KNOWLEDGE_SETTINGS.folders)),
+}))
+if (knowledgeOn()) setTimeout(() => { try { knowledgeBase().indexAll() } catch (err) { console.warn('[jarvis] knowledge index failed:', err.message) } }, 5000).unref()
+const KNOWLEDGE_WORDS = /\b(my (notes|files|documents|docs|folders)|knowledge base|in my (notes|files))\b/i
+
+/**
+ * When the owner asks about their own files, add the passages from folders
+ * they marked "|cloud" (restricted folders are never offered to a brain),
+ * labelled as untrusted data with their file and page. Restricted folders are
+ * still answered locally at /knowledge/ask. Anything that goes wrong leaves
+ * the sentence as it was.
+ */
+function knowledgeNote(said) {
+  try {
+    if (!KNOWLEDGE_WORDS.test(said) || setting(KNOWLEDGE_SETTINGS.enabled) !== '1') return ''
+    return knowledgeBase().forBrain(said).block
+  } catch {
+    return ''
+  }
+}
+
+/**
  * Scheduled agents (agent-schedule.mjs): on the workflow engine's ticker, so
  * the bridge keeps one scheduler. Each is off until switched on; a due run
  * is an ordinary named-agent task, so the cap, budget, pause and kill switch
@@ -3584,6 +3651,7 @@ wss.on('connection', (socket, req) => {
       contextQueue = context.catch(() => {})
       void settling.then(() => context).catch(() => null).then(async (gathered) => {
         const ranSkill = await skillNote(msg.text)
+        const fromFiles = knowledgeNote(msg.text)
         answering = id
         const plain = preface ? `${preface}\n\n${msg.text}` : msg.text
         const turn = stored ? stored.start() : plain
@@ -3595,8 +3663,9 @@ wss.on('connection', (socket, req) => {
         if (hasPrivate(slices)) taint.markPrivate(`context: ${slices.map((s) => s.source).join(', ')}`)
         const block = renderContext(slices)
         if (ranSkill) taint.markPrivate('a skill read files')
+        if (fromFiles) taint.markPrivate('passages from the knowledge base')
         const withBlock = block ? `${block}\n\n${turn}` : turn
-        const text = ranSkill ? `${withBlock}\n\n${ranSkill}` : withBlock
+        const text = [withBlock, ranSkill, fromFiles].filter(Boolean).join('\n\n')
         // Routed on the owner's own words, never the memory context.
         handOver(id, msg.text, text)
       })
