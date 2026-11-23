@@ -1900,7 +1900,7 @@ const handleRequest = async (req, res) => {
     res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
     return res.end(JSON.stringify(knowledgeOn() || knowledgeStore ? { ...knowledgeBase().stats(), folders: knowledgeBase().sourcesList() } : { enabled: false }))
   }
-  if ((requestUrl.pathname === '/knowledge/index' || requestUrl.pathname === '/knowledge/ask') && req.method === 'POST') {
+  if ((requestUrl.pathname === '/knowledge/index' || requestUrl.pathname === '/knowledge/ask' || requestUrl.pathname === '/knowledge/forget') && req.method === 'POST') {
     if (!origin) {
       res.writeHead(403, cors)
       return res.end('forbidden')
@@ -1922,6 +1922,7 @@ const handleRequest = async (req, res) => {
     }
     if (!body || typeof body !== 'object') return json(400, { ok: false, reason: 'Send JSON.' })
     if (killSwitch.isFrozen()) return json(423, { ok: false, reason: 'JARVIS is frozen by the kill switch.' })
+    if (requestUrl.pathname === '/knowledge/forget') return json(200, knowledgeBase().clear())
     if (requestUrl.pathname === '/knowledge/index') return json(200, knowledgeBase().indexAll())
     if (typeof body.question !== 'string' || !body.question.trim()) return json(400, { ok: false, reason: 'Send a question.' })
     if (!knowledgeOn()) return json(200, { ok: false, reason: 'The knowledge base is switched off.' })
