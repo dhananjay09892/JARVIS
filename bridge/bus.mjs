@@ -129,7 +129,7 @@ const NOTIFICATION = {
   clean: { actions: (list) => list.map(({ id, label }) => ({ id, label })) },
 }
 
-const CHANNEL_IDS = ['telegram', 'slack', 'sms', 'whatsapp', 'signal', 'email']
+const CHANNEL_IDS = ['telegram', 'slack', 'discord', 'sms', 'whatsapp', 'signal', 'email']
 
 /**
  * `ChannelEvent` in shared/contracts.ts (plan 20, Q79): one message a channel

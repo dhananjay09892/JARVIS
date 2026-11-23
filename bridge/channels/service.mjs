@@ -28,6 +28,8 @@ export const CHANNEL_SETTINGS = Object.freeze([
   'JARVIS_CHANNEL_PRIVATE_SLACK',
   'SLACK_BOT_TOKEN',
   'SLACK_APP_TOKEN',
+  'JARVIS_DISCORD',
+  'DISCORD_BOT_TOKEN',
   'JARVIS_SMS',
   'TWILIO_ACCOUNT_SID',
   'TWILIO_AUTH_TOKEN',
@@ -39,7 +41,7 @@ export const CHANNEL_SETTINGS = Object.freeze([
 ])
 
 /** Adapters this build has, and the setting that switches each on. */
-export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', slack: 'JARVIS_SLACK', sms: 'JARVIS_SMS' })
+export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', slack: 'JARVIS_SLACK', discord: 'JARVIS_DISCORD', sms: 'JARVIS_SMS' })
 /**
  * What each adapter needs set before it starts: vault secrets (for SMS also the
  * number and the public webhook address).
@@ -47,6 +49,7 @@ export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', sla
 const SECRETS = Object.freeze({
   telegram: ['TELEGRAM_BOT_TOKEN'],
   slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
+  discord: ['DISCORD_BOT_TOKEN'],
   sms: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'TWILIO_WEBHOOK_URL'],
 })
 
