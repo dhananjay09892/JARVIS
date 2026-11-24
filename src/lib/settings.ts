@@ -88,6 +88,10 @@ export type PublicSettings = {
   JARVIS_KNOWLEDGE: string
   /** Folders to index, "path;path|cloud" or 'none'. '' means the default (none). */
   JARVIS_KNOWLEDGE_FOLDERS: string
+  /** '1' | '0' — meeting capture and minutes (plan 33, Q97). '' means the default (off). */
+  JARVIS_MEETINGS: string
+  /** Days to keep saved minutes, 1 to 365. '' means the default (30). */
+  JARVIS_MEETINGS_KEEP_DAYS: string
   /** Watch rules for the Watcher agent, or 'none'. '' means the default (none). */
   JARVIS_WATCHES: string
   /** '1' | '0' — the morning briefing answers "brief me" (plan 12, Q34). '' means the default (on). */

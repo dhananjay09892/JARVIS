@@ -41,6 +41,7 @@ import { createSkillRunner } from './skill-runner.mjs'
 import { createSkillRoutes } from './skill-routes.mjs'
 import { createSkillHost } from './skill-host.mjs'
 import { createKnowledgeBase, parseSources, KNOWLEDGE_SETTINGS } from './knowledge-base.mjs'
+import { createMeetingCapture, defaultMeetingsDir, parseKeepDays, MEETING_SETTINGS } from './meeting-capture.mjs'
 import { wrapUntrusted } from './untrusted.mjs'
 import { createAgentDrafter } from './agent-drafts.mjs'
 import { createAgentProposer, createProposalState, proposalsStateFile } from './agent-proposals.mjs'
@@ -1928,6 +1929,51 @@ const handleRequest = async (req, res) => {
     return json(200, { ok: true, ...knowledgeBase().answer(body.question) })
   }
 
+  // ---- Meeting capture and minutes (plan 33 phase 2, Q97) -----------------
+  // The notice and the counts are open like the other stats; everything that
+  // starts, feeds, reads or deletes needs one of our own pages (an allowed Origin).
+  if (requestUrl.pathname.startsWith('/meetings/') || requestUrl.pathname === '/meetings') {
+    const json = (status, out) => {
+      res.writeHead(status, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' })
+      return res.end(JSON.stringify(out))
+    }
+    const path = requestUrl.pathname
+    if (req.method === 'GET' && path === '/meetings/notice') return json(200, meetingCapture().notice())
+    if (req.method === 'GET' && path === '/meetings/status') return json(200, meetingsOn() || meetingStore ? meetingCapture().status() : { enabled: false })
+    if (!origin) {
+      res.writeHead(403, cors)
+      return res.end('forbidden')
+    }
+    if (req.method === 'GET' && path === '/meetings') return json(200, { minutes: meetingsOn() || meetingStore ? meetingCapture().list() : [] })
+    if (req.method === 'GET' && path.startsWith('/meetings/minutes/')) {
+      const m = meetingCapture().get(decodeURIComponent(path.slice('/meetings/minutes/'.length)))
+      return m ? json(200, m) : json(404, { ok: false, reason: 'No such minutes.' })
+    }
+    if (req.method !== 'POST') return json(404, { ok: false })
+    let raw = ''
+    for await (const chunk of req) {
+      raw += chunk
+      if (raw.length > 16 * 1024) {
+        req.destroy()
+        res.writeHead(400, cors)
+        return res.end('body too large')
+      }
+    }
+    let body = {}
+    try { body = raw ? JSON.parse(raw) : {} } catch { body = null }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { ok: false, reason: 'Send JSON.' })
+    const mc = meetingCapture()
+    // Deleting is always allowed (even when frozen or off); starting or feeding a capture is not.
+    if (path === '/meetings/delete') return json(200, typeof body.id === 'string' ? mc.remove(body.id) : mc.forgetAll())
+    if (killSwitch.isFrozen()) return json(423, { ok: false, reason: 'JARVIS is frozen by the kill switch.' })
+    if (path === '/meetings/start') return json(200, mc.start(body))
+    if (path === '/meetings/segment') return json(200, mc.addSegment(String(body.id ?? ''), body))
+    if (path === '/meetings/end') return json(200, mc.end(String(body.id ?? '')))
+    if (path === '/meetings/abandon') return json(200, mc.abandon())
+    if (path === '/meetings/action') return json(200, mc.decide(String(body.minutesId ?? ''), String(body.actionId ?? ''), body.decision))
+    return json(404, { ok: false })
+  }
+
   // ---- Turn traces (plans 16 + 05) ------------------------------------
   // The page posts one trace per finished turn and Diagnostics reads the
   // rolling numbers back. Same Origin rule as settings for the write.
@@ -3029,6 +3075,20 @@ async function skillNote(said) {
     return ''
   }
 }
+
+/**
+ * Meeting capture (plan 33 phase 2, Q97; see bridge/meeting-capture.mjs). Off
+ * until switched on. Only text lines are fed in (never audio); minutes are the
+ * only thing kept, in a private file on this computer.
+ */
+let meetingStore = null
+const meetingsOn = () => setting(MEETING_SETTINGS.enabled) === '1'
+// Opened on first use, so a bridge with the switch off never creates a file.
+const meetingCapture = () => (meetingStore ??= createMeetingCapture({
+  dir: defaultMeetingsDir(),
+  enabled: () => meetingsOn() && !killSwitch.isFrozen(),
+  keepDays: () => parseKeepDays(setting(MEETING_SETTINGS.keepDays)),
+}))
 
 /**
  * Knowledge base (plan 33 phase 1, Q96; see bridge/knowledge-base.mjs). Off
