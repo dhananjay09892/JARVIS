@@ -10,7 +10,7 @@ import { createKillSwitch } from './kill-switch.mjs'
 import { createAdapter, normaliseMessage, redact, escapeText, isGatewayUrl, INTENTS } from './discord.mjs'
 
 // Built in pieces so no token-shaped literal sits in the source.
-const TOKEN = ['MTIzNDU2Nzg5MDEyMzQ1Njc4OQ', 'GabcDe', 'fakeTokenForTestsOnly_0123456789'].join('.')
+const TOKEN = ['x'.repeat(24), 'y'.repeat(6), 'fakeToken' + 'z'.repeat(20)].join('.')
 const BOT_ID = '900000000000000001'
 const OWNER = '100000000000000001'
 const STRANGER = '100000000000000999'
