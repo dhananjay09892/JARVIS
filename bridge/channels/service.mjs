@@ -34,12 +34,19 @@ export const CHANNEL_SETTINGS = Object.freeze([
   'TWILIO_PHONE_NUMBER',
   'TWILIO_WEBHOOK_URL',
   'JARVIS_SMS_MONTHLY_CAP',
+  'JARVIS_EMAIL',
+  'EMAIL_USERNAME',
+  'EMAIL_PASSWORD',
+  'EMAIL_IMAP_SERVER',
+  'EMAIL_SMTP_SERVER',
+  'JARVIS_EMAIL_DAILY_CAP',
+  'JARVIS_EMAIL_POLL_SECONDS',
   'JARVIS_CHANNEL_PRIVATE_TELEGRAM',
   'JARVIS_CHANNEL_LIMITS',
 ])
 
 /** Adapters this build has, and the setting that switches each on. */
-export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', slack: 'JARVIS_SLACK', sms: 'JARVIS_SMS' })
+export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', slack: 'JARVIS_SLACK', sms: 'JARVIS_SMS', email: 'JARVIS_EMAIL' })
 /**
  * What each adapter needs set before it starts: vault secrets (for SMS also the
  * number and the public webhook address).
@@ -48,6 +55,7 @@ const SECRETS = Object.freeze({
   telegram: ['TELEGRAM_BOT_TOKEN'],
   slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
   sms: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'TWILIO_WEBHOOK_URL'],
+  email: ['EMAIL_USERNAME', 'EMAIL_PASSWORD', 'EMAIL_IMAP_SERVER', 'EMAIL_SMTP_SERVER'],
 })
 
 const BUS_TOPIC = { received: 'channel.received', rejected: 'channel.rejected', sent: 'channel.sent' }
@@ -187,7 +195,7 @@ export function createChannelService({
     await stopNow()
     if (want === 'off') return
     const channels = Object.fromEntries(want.split(',').map((id) => [id, true]))
-    const adapters = await loadAdapters({ enabled: true, channels, deps: { getSecret, log, ...adapterDeps }, registry })
+    const adapters = await loadAdapters({ enabled: true, channels, deps: { getSecret, getSetting: setting, log, ...adapterDeps }, registry })
     pipeline = createChannels({
       enabled: true,
       adapters,
@@ -264,6 +272,8 @@ export function createChannelService({
     // SMS is paid by the message: the card shows the cap and what is used.
     channels.sms.cap = Number.parseInt(String(setting('JARVIS_SMS_MONTHLY_CAP') ?? ''), 10) || 50
     channels.sms.sentThisMonth = channels.sms.health?.sentThisMonth ?? null
+    channels.email.cap = Number.parseInt(String(setting('JARVIS_EMAIL_DAILY_CAP') ?? ''), 10) || 50
+    channels.email.sentToday = channels.email.health?.sentToday ?? null
     return {
       enabled: masterOn(),
       privateTelegram: setting('JARVIS_CHANNEL_PRIVATE_TELEGRAM') !== '0',
@@ -288,7 +298,7 @@ export function createChannelService({
     if (!tokenSet(channel)) return no(400, 'The token is not set.')
     try {
       const running = pipeline?.adapters[channel]
-      const adapter = running ?? (await registry[channel]()).createAdapter({ getSecret, log, ...adapterDeps })
+      const adapter = running ?? (await registry[channel]()).createAdapter({ getSecret, getSetting: setting, log, ...adapterDeps })
       const r = await adapter.check()
       return ok({ username: r.username })
     } catch (err) {

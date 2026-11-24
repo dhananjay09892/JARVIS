@@ -3225,7 +3225,7 @@ const channels = createChannelService({
   killSwitch,
   bus,
   audit,
-  adapterDeps: { usageFile: join(settingsDir(), 'sms-usage.json') },
+  adapterDeps: { usageFile: join(settingsDir(), 'sms-usage.json'), emailUsageFile: join(settingsDir(), 'email-usage.json') },
 })
 void channels.apply()
 
