@@ -26,6 +26,7 @@ const registryIds = new Set(
 const slack = channelCard('slack')!
 const telegram = channelCard('telegram')!
 const sms = channelCard('sms')!
+const discord = channelCard('discord')!
 
 test('every card names a channel the bridge knows and settings it registers', () => {
   assert.deepEqual(CHANNEL_CARDS.map((c) => c.id).sort(), Object.keys(CHANNEL_SWITCHES).sort())
@@ -104,4 +105,12 @@ test('SMS card shows the count against the cap, or just the cap when it is not r
   assert.equal(usageNote({ cap: 50, sentThisMonth: null }), 'Limit: 50 messages a month.')
   assert.equal(usageNote(undefined), '')
   assert.match(runningNote(true, { on: true, tokenSet: false }, sms), /every field/)
+})
+
+test('Discord has one token, no private-answers switch and a plain pairing line', () => {
+  assert.deepEqual(clearPatch(discord), { DISCORD_BOT_TOKEN: '' })
+  assert.equal(discord.privateSetting, undefined)
+  assert.ok(discord.noPrivateNote)
+  assert.match(discord.pairInstruction('ABC123'), /\/pair ABC123/)
+  assert.equal(privateAnswers(discord, {}), false)
 })
