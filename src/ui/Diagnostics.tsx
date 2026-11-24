@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getKnowledgeStats, knowledgeStatsText, type KnowledgeStats } from '../lib/knowledge'
 import { listSkills, skillStatsText, type SkillsList } from '../lib/skills'
 import { useStore } from '../store'
 import { fetchTraceStats, traceDiag, type TraceStats } from '../lib/trace'
@@ -157,6 +158,22 @@ export function Diagnostics() {
     let alive = true
     const load = () => {
       void fetchSetupStats(BRIDGE_HTTP_URL).then((st) => alive && setSetup(st))
+    }
+    load()
+    const id = setInterval(load, 10_000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [open])
+
+  // Plan 33 (Q131): knowledge base counts and how many questions found an answer. Counts only.
+  const [kbInfo, setKbInfo] = useState<KnowledgeStats | null | undefined>(undefined)
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    const load = () => {
+      getKnowledgeStats().then((k) => alive && setKbInfo(k)).catch(() => alive && setKbInfo(null))
     }
     load()
     const id = setInterval(load, 10_000)
@@ -371,6 +388,9 @@ export function Diagnostics() {
           v={setup === undefined ? '…' : setup === null ? 'bridge unreachable' : 'off (opt in under Settings → Diagnostics)'}
         />
       )}
+
+      <div className="diag-sec">KNOWLEDGE BASE</div>
+      <Row k="indexed" v={kbInfo === undefined ? '…' : kbInfo === null ? 'bridge unreachable' : knowledgeStatsText(kbInfo)} />
 
       <div className="diag-sec">SKILLS</div>
       <Row
