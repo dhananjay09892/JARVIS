@@ -583,6 +583,22 @@ export function createImapReader({
     },
 
     /**
+     * A cursor at the end of the mailbox, so a later `sync` returns only mail
+     * that arrives after this call (the email channel, task C50, must not act
+     * on old mail). Read-only: LOGIN, EXAMINE, UID SEARCH, LOGOUT.
+     */
+    async baseline(creds) {
+      const conn = await login(creds)
+      try {
+        const { uidValidity } = await examine(conn)
+        const all = await uidSearch(conn, 'ALL')
+        return imapCursor(uidValidity, all.length ? all[all.length - 1] : 0)
+      } finally {
+        await conn.logout()
+      }
+    },
+
+    /**
      * Sync. Yields `{ message }` for each fetched message (newest first) and
      * `{ cursor }` checkpoints; the adapter maps messages to documents.
      * @param {{ user: string, pass: string, cursor?: string, since?: number, perSync?: number, maxInitial?: number }} o

@@ -29,6 +29,7 @@ export const ADAPTERS = Object.freeze({
   telegram: () => import('./telegram.mjs'),
   slack: () => import('./slack.mjs'),
   sms: () => import('./sms.mjs'),
+  email: () => import('./email.mjs'),
 })
 
 export const REPLIES = Object.freeze({

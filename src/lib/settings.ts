@@ -124,6 +124,20 @@ export type PublicSettings = {
   TWILIO_WEBHOOK_URL_set: boolean
   /** The most SMS messages JARVIS sends in a month. '' means the default (50). */
   JARVIS_SMS_MONTHLY_CAP: string
+  /** '1' | '0' — the email channel. '' means the default (off). */
+  JARVIS_EMAIL: string
+  /** Whether the mailbox address is saved. The address itself never reaches the page. */
+  EMAIL_USERNAME_set: boolean
+  /** Whether the mailbox app password is saved. The password itself never reaches the page. */
+  EMAIL_PASSWORD_set: boolean
+  /** Whether the incoming mail server is saved. */
+  EMAIL_IMAP_SERVER_set: boolean
+  /** Whether the outgoing mail server is saved. */
+  EMAIL_SMTP_SERVER_set: boolean
+  /** The most emails JARVIS sends in a day. '' means the default (50). */
+  JARVIS_EMAIL_DAILY_CAP: string
+  /** How often the mailbox is checked, in seconds. '' means the default (60). */
+  JARVIS_EMAIL_POLL_SECONDS: string
   /** 'N/min,M/day' per paired person. '' means the default (20/min,300/day). */
   JARVIS_CHANNEL_LIMITS: string
   setupDone: string
