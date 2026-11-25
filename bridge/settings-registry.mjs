@@ -347,7 +347,7 @@ const DEFS = [
     id: 'JARVIS_KNOWLEDGE_FOLDERS',
     section: 'context',
     label: 'Knowledge base folders',
-    help: 'Folders to index (text, Markdown and log files), separated by ";", like "C:\\Notes;C:\\Work\\Docs|cloud". A folder is restricted by default: its passages never go to a cloud brain. Add "|cloud" after a folder to let the brain read passages from it when you ask about your files.',
+    help: 'Folders to index (text, Markdown, log, PDF and Word .docx files; scanned or password-protected PDFs are skipped), separated by ";", like "C:\\Notes;C:\\Work\\Docs|cloud". A folder is restricted by default: its passages never go to a cloud brain. Add "|cloud" after a folder to let the brain read passages from it when you ask about your files.',
     type: 'string',
     pattern: /^(none|(?:[A-Za-z]:[\\/]|[\\/~])[^;|\u0000-\u001f\u007f]{0,258}(\|cloud)?(;(?:[A-Za-z]:[\\/]|[\\/~])[^;|\u0000-\u001f\u007f]{0,258}(\|cloud)?){0,49})$/i,
     default: 'none',

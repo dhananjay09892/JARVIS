@@ -23,7 +23,9 @@
  *     computer. Removing a folder deletes its passages and vectors in the same
  *     step, with secure_delete on (ADR 004: derived data, forget must forget).
  *   - Files are read, never changed. Symbolic links, hidden folders and large
- *     files are skipped. Text only for now (.txt .md .markdown .rst .log).
+ *     files are skipped. Text (.txt .md .markdown .rst .log), PDF and DOCX (Q132);
+ *     a PDF with no text layer (a scan), an encrypted one, or a damaged one is
+ *     skipped and counted, never guessed at.
  *
  * Vectors are exact search over Float32 BLOBs (the plain-SQLite option in
  * ADR 004) behind `createVectorIndex`, so the store can change without the
@@ -38,13 +40,18 @@ import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'n
 import { homedir } from 'node:os'
 import { basename, join, relative, sep } from 'node:path'
 import { redact } from './memory.mjs'
+import { extractDocument } from './doc-extract.mjs'
 import { neutraliseControlTags, stripHiddenText, wrapUntrusted } from './untrusted.mjs'
 
 export const KNOWLEDGE_SETTINGS = Object.freeze({ enabled: 'JARVIS_KNOWLEDGE', folders: 'JARVIS_KNOWLEDGE_FOLDERS' })
 export const KNOWLEDGE_SETTING_IDS = Object.freeze(Object.values(KNOWLEDGE_SETTINGS))
 
-const EXTENSIONS = new Set(['.txt', '.md', '.markdown', '.rst', '.log'])
+const TEXT_EXTENSIONS = new Set(['.txt', '.md', '.markdown', '.rst', '.log'])
+/** Read by `doc-extract.mjs`: a PDF cites its page, a DOCX the page breaks Word saved. */
+const DOCUMENT_EXTENSIONS = new Set(['.pdf', '.docx'])
+const EXTENSIONS = new Set([...TEXT_EXTENSIONS, ...DOCUMENT_EXTENSIONS])
 const MAX_FILE_BYTES = 1024 * 1024
+const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024
 const MAX_FILES_PER_SOURCE = 2000
 const MAX_DEPTH = 8
 const CHUNK_CHARS = 700
@@ -337,13 +344,23 @@ export function createKnowledgeBase({ dir = defaultKnowledgeDir(), sources = () 
       const rel = relative(path, file).split(sep).join('/')
       let st
       try { st = lstatSync(file) } catch { result.skipped++; continue }
-      if (st.size > MAX_FILE_BYTES || st.size === 0) { result.skipped++; continue }
+      const ext = file.slice(file.lastIndexOf('.')).toLowerCase()
+      const isDocument = DOCUMENT_EXTENSIONS.has(ext)
+      if (st.size > (isDocument ? MAX_DOCUMENT_BYTES : MAX_FILE_BYTES) || st.size === 0) { result.skipped++; continue }
       seen.add(rel)
       const prev = known.get(rel)
       if (prev && prev.size === st.size && prev.mtime === Math.trunc(st.mtimeMs)) { result.files++; continue }
       let raw
-      try { raw = readFileSync(file, 'utf8') } catch { result.skipped++; continue }
-      if (raw.includes('\u0000')) { result.skipped++; continue }
+      if (isDocument) {
+        let bytes
+        try { bytes = readFileSync(file) } catch { result.skipped++; continue }
+        const doc = extractDocument(bytes, ext)
+        if (!doc.text) { result.skipped++; continue }
+        raw = doc.text
+      } else {
+        try { raw = readFileSync(file, 'utf8') } catch { result.skipped++; continue }
+        if (raw.includes('\u0000')) { result.skipped++; continue }
+      }
       const clean = redact(stripHiddenText(raw).text).text
       const hash = sha(clean)
       if (prev && prev.hash === hash) {
