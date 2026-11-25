@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { BACKEND, BRIDGE_HTTP_URL } from '../config'
 import { Agents } from './Agents'
 import { Skills } from './Skills'
+import { Knowledge } from './Knowledge'
 import { Connectors } from './Connectors'
 import { Channels } from './Channels'
 import { MissionSchedules } from './MissionSchedules'
@@ -442,6 +443,7 @@ export function Settings() {
         </select>
       </label>
       <p className="mem-note">Only what you tick here is added, and it goes to the brain you use.</p>
+      <Knowledge settings={s} busy={busy} patchSetting={patchSetting} />
     </>
   )
   // Settings → Agents (agents phase A3): the limits that apply to every agent;

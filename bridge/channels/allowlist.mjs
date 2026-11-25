@@ -22,7 +22,7 @@ import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { DEFAULT_LIMITS } from './limits.mjs'
 
 export const ROLES = ['owner', 'member', 'child', 'guest']
-export const CHANNELS = ['telegram', 'slack', 'sms', 'whatsapp', 'signal', 'email']
+export const CHANNELS = ['telegram', 'slack', 'discord', 'sms', 'whatsapp', 'signal', 'email']
 /** No 0/O, 1/I/L: the code is read off a screen and typed on a phone. */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 export const CODE_LENGTH = 8

@@ -116,6 +116,10 @@ export type PublicSettings = {
   SLACK_APP_TOKEN_set: boolean
   /** '1' | '0' — private answers to the owner on Slack. '' means the default (off). */
   JARVIS_CHANNEL_PRIVATE_SLACK: string
+  /** '1' | '0' — the Discord direct-message channel. '' means the default (off). */
+  JARVIS_DISCORD: string
+  /** Whether a Discord bot token is saved. The token itself never reaches the page. */
+  DISCORD_BOT_TOKEN_set: boolean
   /** '1' | '0' — the SMS channel over Twilio. '' means the default (off). */
   JARVIS_SMS: string
   /** Whether a Twilio account SID is saved. The SID itself never reaches the page. */

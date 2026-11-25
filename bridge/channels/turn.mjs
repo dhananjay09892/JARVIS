@@ -42,7 +42,7 @@ export function scopeGuard(toolScope, next = null) {
   }
 }
 
-const CHANNEL_NAMES = { telegram: 'Telegram', slack: 'Slack', sms: 'SMS', whatsapp: 'WhatsApp', signal: 'Signal', email: 'email' }
+const CHANNEL_NAMES = { telegram: 'Telegram', slack: 'Slack', discord: 'Discord', sms: 'SMS', whatsapp: 'WhatsApp', signal: 'Signal', email: 'email' }
 
 /**
  * The text the brain is given for a chat turn: a one-line header (who and

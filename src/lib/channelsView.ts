@@ -24,7 +24,7 @@ export type ChannelNumber = {
 }
 
 export type ChannelCardSpec = {
-  id: 'telegram' | 'slack' | 'sms'
+  id: 'telegram' | 'slack' | 'discord' | 'sms'
   title: string
   /** Per-channel on/off switch. */
   switchSetting: string
@@ -77,6 +77,18 @@ export const CHANNEL_CARDS: readonly ChannelCardSpec[] = [
     privateDefault: false,
     pairInstruction: (code) => `Send /pair ${code} to the app in a direct message from your own Slack account within 10 minutes.`,
     accountNoun: 'Slack account',
+  },
+  {
+    id: 'discord',
+    title: 'Discord',
+    switchSetting: 'JARVIS_DISCORD',
+    switchLabel: 'Use my Discord bot',
+    secrets: [{ setting: 'DISCORD_BOT_TOKEN', label: 'Bot token', placeholder: 'Bot token from the Bot page' }],
+    intro:
+      'Create an application and bot at discord.com/developers, copy the bot token from its Bot page, and paste it here. No public address is needed and no privileged intent is required: JARVIS only listens to direct messages. Discord can read these messages.',
+    noPrivateNote: 'Over Discord JARVIS never sends answers from your mail, calendar or files, and never asks for approvals. Look in the app for those.',
+    pairInstruction: (code) => `Send /pair ${code} to your bot in a direct message from your own Discord account within 10 minutes.`,
+    accountNoun: 'Discord account',
   },
   {
     id: 'sms',

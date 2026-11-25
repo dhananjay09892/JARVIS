@@ -28,6 +28,7 @@ import { createLimits } from './limits.mjs'
 export const ADAPTERS = Object.freeze({
   telegram: () => import('./telegram.mjs'),
   slack: () => import('./slack.mjs'),
+  discord: () => import('./discord.mjs'),
   sms: () => import('./sms.mjs'),
 })
 
