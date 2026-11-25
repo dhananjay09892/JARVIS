@@ -30,6 +30,7 @@ export const ADAPTERS = Object.freeze({
   slack: () => import('./slack.mjs'),
   discord: () => import('./discord.mjs'),
   sms: () => import('./sms.mjs'),
+  whatsapp: () => import('./whatsapp.mjs'),
 })
 
 export const REPLIES = Object.freeze({

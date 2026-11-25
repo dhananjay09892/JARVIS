@@ -1760,6 +1760,33 @@ const handleRequest = async (req, res) => {
     return res.end(out.body)
   }
 
+  // ---- WhatsApp webhook (task C52) ---------------------------------------
+  // Meta (through a relay or tunnel the owner set up) checks this address once
+  // with a GET and then posts each incoming message here. No Origin and no
+  // session: the adapter checks the verify token and Meta's signature and
+  // refuses everything else. With the WhatsApp channel off this is a plain 404.
+  if (requestUrl.pathname === '/inbound/whatsapp') {
+    const none = { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }
+    if (req.method !== 'GET' && req.method !== 'POST') {
+      res.writeHead(404, none)
+      return res.end()
+    }
+    let raw = ''
+    if (req.method === 'POST') {
+      for await (const chunk of req) {
+        raw += chunk
+        if (raw.length > 256 * 1024) {
+          req.destroy()
+          res.writeHead(413, none)
+          return res.end()
+        }
+      }
+    }
+    const out = await channels.inbound('whatsapp', { method: req.method, query: Object.fromEntries(requestUrl.searchParams), headers: req.headers, body: raw })
+    res.writeHead(out.status, { 'content-type': out.contentType, 'cache-control': 'no-store' })
+    return res.end(out.body)
+  }
+
   // ---- Messaging channels (plan 20, Q79) --------------------------------
   // Settings → Channels: status, pairing, bindings, the token test, freeze.
   // Same Origin rule as connectors for anything that changes state.
