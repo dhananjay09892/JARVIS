@@ -36,12 +36,18 @@ export const CHANNEL_SETTINGS = Object.freeze([
   'TWILIO_PHONE_NUMBER',
   'TWILIO_WEBHOOK_URL',
   'JARVIS_SMS_MONTHLY_CAP',
+  'JARVIS_WHATSAPP',
+  'WHATSAPP_ACCESS_TOKEN',
+  'WHATSAPP_PHONE_NUMBER_ID',
+  'WHATSAPP_APP_SECRET',
+  'WHATSAPP_VERIFY_TOKEN',
+  'JARVIS_WHATSAPP_DAILY_CAP',
   'JARVIS_CHANNEL_PRIVATE_TELEGRAM',
   'JARVIS_CHANNEL_LIMITS',
 ])
 
 /** Adapters this build has, and the setting that switches each on. */
-export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', slack: 'JARVIS_SLACK', discord: 'JARVIS_DISCORD', sms: 'JARVIS_SMS' })
+export const CHANNEL_SWITCHES = Object.freeze({ telegram: 'JARVIS_TELEGRAM', slack: 'JARVIS_SLACK', discord: 'JARVIS_DISCORD', sms: 'JARVIS_SMS', whatsapp: 'JARVIS_WHATSAPP' })
 /**
  * What each adapter needs set before it starts: vault secrets (for SMS also the
  * number and the public webhook address).
@@ -51,6 +57,7 @@ const SECRETS = Object.freeze({
   slack: ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'],
   discord: ['DISCORD_BOT_TOKEN'],
   sms: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER', 'TWILIO_WEBHOOK_URL'],
+  whatsapp: ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_APP_SECRET', 'WHATSAPP_VERIFY_TOKEN'],
 })
 
 const BUS_TOPIC = { received: 'channel.received', rejected: 'channel.rejected', sent: 'channel.sent' }
@@ -267,6 +274,8 @@ export function createChannelService({
     // SMS is paid by the message: the card shows the cap and what is used.
     channels.sms.cap = Number.parseInt(String(setting('JARVIS_SMS_MONTHLY_CAP') ?? ''), 10) || 50
     channels.sms.sentThisMonth = channels.sms.health?.sentThisMonth ?? null
+    channels.whatsapp.cap = Number.parseInt(String(setting('JARVIS_WHATSAPP_DAILY_CAP') ?? ''), 10) || 100
+    channels.whatsapp.sentToday = channels.whatsapp.health?.sentToday ?? null
     return {
       enabled: masterOn(),
       privateTelegram: setting('JARVIS_CHANNEL_PRIVATE_TELEGRAM') !== '0',

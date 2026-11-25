@@ -128,6 +128,18 @@ export type PublicSettings = {
   TWILIO_WEBHOOK_URL_set: boolean
   /** The most SMS messages JARVIS sends in a month. '' means the default (50). */
   JARVIS_SMS_MONTHLY_CAP: string
+  /** '1' | '0' — the WhatsApp channel over Meta's Cloud API. '' means the default (off). */
+  JARVIS_WHATSAPP: string
+  /** Whether a WhatsApp access token is saved. The token itself never reaches the page. */
+  WHATSAPP_ACCESS_TOKEN_set: boolean
+  /** Whether the WhatsApp phone number id is saved. The id itself never reaches the page. */
+  WHATSAPP_PHONE_NUMBER_ID_set: boolean
+  /** Whether the Meta app secret is saved. The secret itself never reaches the page. */
+  WHATSAPP_APP_SECRET_set: boolean
+  /** Whether the webhook verify token is saved. The token itself never reaches the page. */
+  WHATSAPP_VERIFY_TOKEN_set: boolean
+  /** The most WhatsApp messages JARVIS sends in a day. '' means the default (100). */
+  JARVIS_WHATSAPP_DAILY_CAP: string
   /** 'N/min,M/day' per paired person. '' means the default (20/min,300/day). */
   JARVIS_CHANNEL_LIMITS: string
   setupDone: string
