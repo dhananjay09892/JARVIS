@@ -176,3 +176,52 @@ test('stats hold counts only and the audit event carries no passage text', () =>
   assert.equal(s.queries, 2); assert.equal(s.found, 1); assert.equal(s.notFound, 1)
   assert.doesNotMatch(JSON.stringify([s, events]), /Hartley|pressure valve/)
 })
+
+test('restrictedAnswer answers from a restricted folder locally, and steps aside for cloud folders and unknowns', () => {
+  const restricted = folder({ 'health/notes.md': 'Blood pressure was 128 over 84 at the clinic visit on Tuesday.' })
+  const open = folder({ 'public/trip.md': 'The conference talk is on Thursday at ten in the main hall.' })
+  const events = []
+  const kb = make({ sources: () => [{ path: restricted, cloud: false }, { path: open, cloud: true }], audit: (e) => events.push(e) })
+  kb.indexAll()
+  const a = kb.restrictedAnswer('What was my blood pressure at the clinic?')
+  assert.equal(a.local, true)
+  assert.match(a.text, /128 over 84/)
+  assert.match(a.citations[0], /notes\.md, page 1/)
+  assert.equal(kb.restrictedAnswer('When is the conference talk?'), null)
+  assert.equal(kb.restrictedAnswer('Where is the wedding venue?'), null)
+  assert.equal(kb.stats().restrictedLocalAnswers, 1)
+  assert.doesNotMatch(JSON.stringify([kb.stats(), events]), /128/)
+})
+
+test('restrictedAnswer is null when the knowledge base is off', () => {
+  const kb = make({ sources: () => [{ path: folder(CORPUS), cloud: false }], enabled: () => false })
+  assert.equal(kb.restrictedAnswer('car insurance renew'), null)
+})
+
+test('held-out file: scores are kept (counts only) and measuring does not count as asking', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kb-db-'))
+  writeFileSync(join(dir, 'held-out.json'), JSON.stringify([
+    { q: 'When does the car insurance renew?', file: 'home/car-insurance.md', contains: '9 January' },
+    { q: 'Where is the wedding venue?', none: true },
+    { nonsense: true },
+  ]))
+  const kb = createKnowledgeBase({ dir, sources: () => [{ path: folder(CORPUS), cloud: false }] })
+  const r = kb.indexAll()
+  assert.equal(r.heldOut.questions, 2)
+  assert.equal(r.heldOut.hitRate, 100)
+  assert.equal(r.heldOut.citationCorrectness, 100)
+  assert.equal(r.heldOut.correctRefusals, 100)
+  const s = kb.stats()
+  assert.equal(s.heldOut.hitRate, 100)
+  assert.equal(s.queries, 0)
+  assert.doesNotMatch(JSON.stringify(s), /insurance|wedding/)
+})
+
+test('a missing or broken held-out file reports nothing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kb-db-'))
+  const kb = createKnowledgeBase({ dir, sources: () => [{ path: folder(CORPUS), cloud: false }] })
+  assert.equal(kb.indexAll().heldOut, undefined)
+  writeFileSync(join(dir, 'held-out.json'), '{not json')
+  assert.equal(kb.runHeldOut(), null)
+  assert.equal(kb.stats().heldOut, undefined)
+})

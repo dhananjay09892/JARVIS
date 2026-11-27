@@ -36,7 +36,7 @@
  */
 import { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
-import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, relative, sep } from 'node:path'
 import { redact } from './memory.mjs'
@@ -289,7 +289,7 @@ export function createKnowledgeBase({ dir = defaultKnowledgeDir(), sources = () 
   db.exec('PRAGMA secure_delete = ON; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = OFF;')
   db.exec(SCHEMA)
   const index = createVectorIndex(db, embedder.dims)
-  const counters = { queries: 0, found: 0, notFound: 0, restrictedWithheld: 0, brainPassages: 0, indexRuns: 0, filesIndexed: 0, filesSkipped: 0 }
+  const counters = { queries: 0, found: 0, notFound: 0, restrictedWithheld: 0, restrictedLocalAnswers: 0, brainPassages: 0, indexRuns: 0, filesIndexed: 0, filesSkipped: 0 }
 
   // A different embedder means the stored vectors mean something else: embed again.
   const stored = db.prepare('SELECT value FROM meta WHERE key = ?').get('embedder')?.value
@@ -397,7 +397,8 @@ export function createKnowledgeBase({ dir = defaultKnowledgeDir(), sources = () 
     counters.indexRuns++
     const results = syncSources().map(indexSource)
     audit({ kind: 'knowledge-index', sources: results.length, files: results.reduce((n, r) => n + r.files, 0), chunks: results.reduce((n, r) => n + r.chunks, 0) })
-    return { ok: true, sources: results }
+    const heldOut = runHeldOut()
+    return { ok: true, sources: results, ...(heldOut ? { heldOut } : {}) }
   }
 
   const sourceRows = () => db.prepare('SELECT id, path, cloud FROM sources').all()
@@ -425,6 +426,7 @@ export function createKnowledgeBase({ dir = defaultKnowledgeDir(), sources = () 
     const qWords = new Set(words(q).map(stem))
     if (!qWords.size || !allowed.length) { counters.notFound++; return { found: false, hits: [] } }
     const names = new Map(allowed.map((s) => [s.id, basename(s.path)]))
+    const restrictedIds = new Set(allowed.filter((s) => !s.cloud).map((s) => s.id))
     const cands = index.search(embedder.embed(q), { scopes: allowed.map((s) => s.id), k: k * 3, minScore: MIN_SCORE })
     const hits = []
     for (const c of cands) {
@@ -437,7 +439,7 @@ export function createKnowledgeBase({ dir = defaultKnowledgeDir(), sources = () 
       hits.push({
         score: Math.round(score * 1000) / 1000,
         source: names.get(row.sid), file: row.rel, page: row.page, lines: [row.ls, row.le],
-        cite: cite(row, names.get(row.sid)), text: row.text,
+        cite: cite(row, names.get(row.sid)), text: row.text, restricted: restrictedIds.has(row.sid),
       })
     }
     hits.sort((a, b) => b.score - a.score)
@@ -464,13 +466,56 @@ export function createKnowledgeBase({ dir = defaultKnowledgeDir(), sources = () 
     return clipText((sentences[0] ?? text).trim(), SNIPPET_CHARS)
   }
 
+  function answerFrom(question, hits) {
+    const qWords = new Set(words(question).map(stem))
+    const lines = hits.slice(0, 2).map((h) => `${snippet(h.text, qWords, new Set(words(h.file.replace(/[/_.-]+/g, ' ')).map(stem)))} (${h.cite})`)
+    return { found: true, text: lines.join('\n'), citations: hits.map((h) => h.cite) }
+  }
+
   /** A local answer: the best sentences with their citations. Nothing leaves this computer. */
   function answer(question) {
     const r = search(question, { audience: 'local', k: 3 })
     if (!r.found) return { found: false, text: "I can't find that in your indexed folders.", citations: [] }
-    const qWords = new Set(words(question).map(stem))
-    const lines = r.hits.slice(0, 2).map((h) => `${snippet(h.text, qWords, new Set(words(h.file.replace(/[/_.-]+/g, ' ')).map(stem)))} (${h.cite})`)
-    return { found: true, text: lines.join('\n'), citations: r.hits.map((h) => h.cite) }
+    return answerFrom(question, r.hits)
+  }
+
+  /**
+   * For a spoken question about the owner's files: when the best passages come
+   * from a restricted folder, the answer is built here from those passages and
+   * the turn never goes to a brain. Returns null when no restricted folder
+   * answers it (the normal path then applies). The answer text holds
+   * passage text, so the caller must show or say it and must not store it.
+   */
+  function restrictedAnswer(question) {
+    if (!enabled()) return null
+    const r = search(question, { audience: 'local', k: 3 })
+    if (!r.found || !r.hits.some((h) => h.restricted)) return null
+    counters.restrictedLocalAnswers++
+    audit({ kind: 'knowledge-restricted-answer', citations: r.hits.length })
+    return { ...answerFrom(question, r.hits), local: true }
+  }
+
+  // Held-out questions the owner labelled: `held-out.json` in the index folder,
+  // an array of { q, file, contains } or { q, none: true }. Only the scores are
+  // kept (never the questions, their answers or the misses).
+  const heldOutFile = join(dir, 'held-out.json')
+  let lastHeldOut = null
+  function runHeldOut() {
+    if (!enabled() || !existsSync(heldOutFile)) return null
+    let questions
+    try {
+      const parsed = JSON.parse(readFileSync(heldOutFile, 'utf8'))
+      questions = (Array.isArray(parsed) ? parsed : []).filter((x) => x && typeof x.q === 'string' && (x.none === true || (typeof x.file === 'string' && typeof x.contains === 'string'))).slice(0, 500)
+    } catch { return null }
+    if (!questions.length) return null
+    const before = { ...counters }
+    const r = evaluate({ search }, questions, { audience: 'local' })
+    Object.assign(counters, before) // measuring is not asking
+    lastHeldOut = {
+      at: new Date(now()).toISOString(), questions: questions.length,
+      hitRate: r.hitRate, citationCorrectness: r.citationCorrectness, correctRefusals: r.correctRefusals,
+    }
+    return lastHeldOut
   }
 
   /**
@@ -497,6 +542,7 @@ export function createKnowledgeBase({ dir = defaultKnowledgeDir(), sources = () 
       files: total('SELECT COUNT(*) AS n FROM docs'),
       passages: total('SELECT COUNT(*) AS n FROM chunks'),
       ...counters,
+      ...(lastHeldOut ? { heldOut: lastHeldOut } : {}),
     }
   }
 
@@ -507,7 +553,7 @@ export function createKnowledgeBase({ dir = defaultKnowledgeDir(), sources = () 
     return { ok: true }
   }
 
-  return { indexAll, search, answer, forBrain, stats, clear, close: () => db.close(), sourcesList: () => sourceRows().map((s) => ({ name: basename(s.path), restricted: !s.cloud })) }
+  return { indexAll, search, answer, restrictedAnswer, runHeldOut, forBrain, stats, clear, close: () => db.close(), sourcesList: () => sourceRows().map((s) => ({ name: basename(s.path), restricted: !s.cloud })) }
 }
 
 /**

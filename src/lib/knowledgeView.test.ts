@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { addFolder, folderProblem, foundShare, knowledgeStatsText, parseFolders, removeFolder, serialiseFolders, setFolderCloud } from './knowledgeView.ts'
+import { addFolder, folderProblem, foundShare, knowledgeStatsText, heldOutText, parseFolders, removeFolder, serialiseFolders, setFolderCloud } from './knowledgeView.ts'
 // @ts-expect-error plain JS bridge module, no type declarations
 import { parseSources } from '../../bridge/knowledge-base.mjs'
 // @ts-expect-error plain JS bridge module, no type declarations
@@ -48,4 +48,14 @@ test('the counts line shows counts only', () => {
     '3 files · 40 passages · 2 folders · 4 questions, 75% answered · 2 kept from the brain',
   )
   assert.equal(foundShare({ queries: 0, found: 0 }), null)
+})
+
+test('the held-out line shows scores against the targets, and nothing before a set exists', () => {
+  assert.equal(heldOutText(null), null)
+  assert.equal(heldOutText({ enabled: true }), null)
+  assert.equal(
+    heldOutText({ enabled: true, heldOut: { at: 'x', questions: 20, hitRate: 95, citationCorrectness: null, correctRefusals: 100 } }),
+    '20 questions · hit rate 95% (target 90%) · citations n/a (target 98%)',
+  )
+  assert.equal(knowledgeStatsText({ enabled: true, files: 1, passages: 2, sources: 1, restrictedLocalAnswers: 3 }), '1 files · 2 passages · 1 folders · 3 answered locally from restricted folders')
 })
