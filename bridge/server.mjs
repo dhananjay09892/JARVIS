@@ -3113,6 +3113,15 @@ const KNOWLEDGE_WORDS = /\b(my (notes|files|documents|docs|folders)|knowledge ba
  * still answered locally at /knowledge/ask. Anything that goes wrong leaves
  * the sentence as it was.
  */
+function knowledgeLocalReply(said) {
+  try {
+    if (!KNOWLEDGE_WORDS.test(said) || setting(KNOWLEDGE_SETTINGS.enabled) !== '1') return null
+    return knowledgeBase().restrictedAnswer(said)
+  } catch {
+    return null
+  }
+}
+
 function knowledgeNote(said) {
   try {
     if (!KNOWLEDGE_WORDS.test(said) || setting(KNOWLEDGE_SETTINGS.enabled) !== '1') return ''
@@ -3729,6 +3738,20 @@ wss.on('connection', (socket, req) => {
       const context = contextQueue.then(() => contextBroker.forTurn(msg.text, { role: speakerRole() }))
       contextQueue = context.catch(() => {})
       void settling.then(() => context).catch(() => null).then(async (gathered) => {
+        // A question the owner's restricted folders answer is answered here, from
+        // those passages, and never reaches a brain. What is saved with the
+        // conversation says only that it happened, so the passages cannot come
+        // back later as memory context for a brain.
+        const local = knowledgeLocalReply(msg.text)
+        if (local) {
+          answering = id
+          stored?.start()
+          sm?.delta('(Answered on this computer from a restricted folder.)')
+          sm?.done({ reason: 'complete' })
+          sendTurn({ type: 'text', delta: local.text })
+          sendTurn({ type: 'done', text: local.text, costUsd: 0 })
+          return
+        }
         const ranSkill = await skillNote(msg.text)
         const fromFiles = knowledgeNote(msg.text)
         answering = id

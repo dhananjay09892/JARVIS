@@ -13,6 +13,8 @@ export interface KnowledgeStats {
   found?: number
   notFound?: number
   restrictedWithheld?: number
+  restrictedLocalAnswers?: number
+  heldOut?: { at: string; questions: number; hitRate: number | null; citationCorrectness: number | null; correctRefusals: number | null }
   brainPassages?: number
   filesSkipped?: number
   folders?: { name: string; restricted: boolean }[]
@@ -67,6 +69,14 @@ export function foundShare(stats: Pick<KnowledgeStats, 'queries' | 'found'>): nu
   return q > 0 ? Math.round(((stats.found ?? 0) / q) * 100) : null
 }
 
+/** The held-out scores as a line for Diagnostics, or null before the owner has a held-out set. */
+export function heldOutText(stats: KnowledgeStats | null | undefined): string | null {
+  const h = stats?.heldOut
+  if (!stats?.enabled || !h) return null
+  const pct = (n: number | null) => (n === null ? 'n/a' : `${n}%`)
+  return `${h.questions} questions · hit rate ${pct(h.hitRate)} (target 90%) · citations ${pct(h.citationCorrectness)} (target 98%)`
+}
+
 /** One line for Settings and Diagnostics. Counts only, never a passage. */
 export function knowledgeStatsText(stats: KnowledgeStats | null | undefined): string {
   if (!stats || !stats.enabled) return 'off'
@@ -74,5 +84,6 @@ export function knowledgeStatsText(stats: KnowledgeStats | null | undefined): st
   const share = foundShare(stats)
   if (share !== null) parts.push(`${stats.queries} questions, ${share}% answered`)
   if ((stats.restrictedWithheld ?? 0) > 0) parts.push(`${stats.restrictedWithheld} kept from the brain`)
+  if ((stats.restrictedLocalAnswers ?? 0) > 0) parts.push(`${stats.restrictedLocalAnswers} answered locally from restricted folders`)
   return parts.join(' · ')
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getKnowledgeStats, knowledgeStatsText, type KnowledgeStats } from '../lib/knowledge'
+import { getKnowledgeStats, heldOutText, knowledgeStatsText, type KnowledgeStats } from '../lib/knowledge'
 import { listSkills, skillStatsText, type SkillsList } from '../lib/skills'
 import { useStore } from '../store'
 import { fetchTraceStats, traceDiag, type TraceStats } from '../lib/trace'
@@ -391,6 +391,7 @@ export function Diagnostics() {
 
       <div className="diag-sec">KNOWLEDGE BASE</div>
       <Row k="indexed" v={kbInfo === undefined ? '…' : kbInfo === null ? 'bridge unreachable' : knowledgeStatsText(kbInfo)} />
+      {heldOutText(kbInfo) && <Row k="held-out set" v={heldOutText(kbInfo) ?? ''} bad={(kbInfo?.heldOut?.hitRate ?? 100) < 90 || (kbInfo?.heldOut?.citationCorrectness ?? 100) < 98} />}
 
       <div className="diag-sec">SKILLS</div>
       <Row
