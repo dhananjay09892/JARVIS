@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getMeetingStatus, meetingStatsText, type MeetingStatus } from '../lib/meetings'
 import { getKnowledgeStats, knowledgeStatsText, type KnowledgeStats } from '../lib/knowledge'
 import { listSkills, skillStatsText, type SkillsList } from '../lib/skills'
 import { useStore } from '../store'
@@ -158,6 +159,22 @@ export function Diagnostics() {
     let alive = true
     const load = () => {
       void fetchSetupStats(BRIDGE_HTTP_URL).then((st) => alive && setSetup(st))
+    }
+    load()
+    const id = setInterval(load, 10_000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
+  }, [open])
+
+  // Plan 33 (Q133): meeting minutes counts and the action-item accuracy on the labelled test call. Counts only.
+  const [meetInfo, setMeetInfo] = useState<MeetingStatus | null | undefined>(undefined)
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    const load = () => {
+      getMeetingStatus().then((m) => alive && setMeetInfo(m)).catch(() => alive && setMeetInfo(null))
     }
     load()
     const id = setInterval(load, 10_000)
@@ -391,6 +408,9 @@ export function Diagnostics() {
 
       <div className="diag-sec">KNOWLEDGE BASE</div>
       <Row k="indexed" v={kbInfo === undefined ? '…' : kbInfo === null ? 'bridge unreachable' : knowledgeStatsText(kbInfo)} />
+
+      <div className="diag-sec">MEETINGS</div>
+      <Row k="minutes" v={meetInfo === undefined ? '…' : meetInfo === null ? 'bridge unreachable' : meetingStatsText(meetInfo)} />
 
       <div className="diag-sec">SKILLS</div>
       <Row

@@ -41,7 +41,8 @@ import { createSkillRunner } from './skill-runner.mjs'
 import { createSkillRoutes } from './skill-routes.mjs'
 import { createSkillHost } from './skill-host.mjs'
 import { createKnowledgeBase, parseSources, KNOWLEDGE_SETTINGS } from './knowledge-base.mjs'
-import { createMeetingCapture, defaultMeetingsDir, parseKeepDays, MEETING_SETTINGS } from './meeting-capture.mjs'
+import { createMeetingCapture, defaultMeetingsDir, minutesAccuracy, parseKeepDays, MEETING_SETTINGS } from './meeting-capture.mjs'
+import { LABELLED_CALL } from './meeting-selfcheck.mjs'
 import { wrapUntrusted } from './untrusted.mjs'
 import { createAgentDrafter } from './agent-drafts.mjs'
 import { createAgentProposer, createProposalState, proposalsStateFile } from './agent-proposals.mjs'
@@ -1940,7 +1941,7 @@ const handleRequest = async (req, res) => {
     }
     const path = requestUrl.pathname
     if (req.method === 'GET' && path === '/meetings/notice') return json(200, meetingCapture().notice())
-    if (req.method === 'GET' && path === '/meetings/status') return json(200, meetingsOn() || meetingStore ? meetingCapture().status() : { enabled: false })
+    if (req.method === 'GET' && path === '/meetings/status') return json(200, { ...(meetingsOn() || meetingStore ? meetingCapture().status() : { enabled: false }), accuracy: minutesAccuracy(LABELLED_CALL) })
     if (!origin) {
       res.writeHead(403, cors)
       return res.end('forbidden')
