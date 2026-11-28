@@ -176,3 +176,15 @@ test('parseKeepDays accepts 1 to 365 and falls back to 30', () => {
   assert.equal(parseKeepDays('7'), 7)
   for (const bad of ['', '0', '366', '1.5', 'x', undefined]) assert.equal(parseKeepDays(bad), 30)
 })
+
+test('the minutes accuracy metric scores the labelled call, counts only', async () => {
+  const { LABELLED_CALL } = await import('./meeting-selfcheck.mjs')
+  const { minutesAccuracy } = await import('./meeting-capture.mjs')
+  const a = minutesAccuracy(LABELLED_CALL)
+  assert.equal(a.actionsExpected, 3)
+  assert.ok(a.actionsCaptured >= 2, JSON.stringify(a))
+  assert.ok(a.recall >= 66 && a.precision >= 66, JSON.stringify(a))
+  assert.equal(a.decisionsCaptured, 2)
+  assert.ok(Object.values(a).every((v) => v === null || typeof v === 'number'), 'numbers only')
+  assert.equal(minutesAccuracy({ segments: [], actions: [], decisions: [] }).recall, null)
+})

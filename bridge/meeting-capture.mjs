@@ -165,6 +165,31 @@ export function minutesFrom(segments) {
   return { summary: scored.map((s) => clean(s.text)), decisions, actions, speakers }
 }
 
+/**
+ * How well the minutes match a labelled call: of the action items and
+ * decisions the call really contained, how many were captured (recall), and of
+ * the action items captured, how many were real (precision). Counts and
+ * percentages only; nothing from the call is kept.
+ *
+ * @param {{ segments: { speaker: string, text: string }[], actions: { owner: string | null, words: string[] }[], decisions: string[][] }} call
+ */
+export function minutesAccuracy(call) {
+  const made = minutesFrom(call.segments)
+  const has = (text, words) => words.every((w) => text.toLowerCase().includes(w.toLowerCase()))
+  const matched = new Set()
+  for (const want of call.actions) {
+    const i = made.actions.findIndex((a, j) => !matched.has(j) && has(a.text, want.words) && (want.owner === null || a.owner === want.owner))
+    if (i >= 0) matched.add(i)
+  }
+  const decisionsFound = call.decisions.filter((words) => made.decisions.some((d) => has(d, words))).length
+  const pct = (n, d) => (d > 0 ? Math.round((n / d) * 100) : null)
+  return {
+    actionsExpected: call.actions.length, actionsCaptured: matched.size, actionsReturned: made.actions.length,
+    recall: pct(matched.size, call.actions.length), precision: pct(matched.size, made.actions.length),
+    decisionsExpected: call.decisions.length, decisionsCaptured: decisionsFound,
+  }
+}
+
 // --- the capture ---------------------------------------------------------------------------------
 
 /**
